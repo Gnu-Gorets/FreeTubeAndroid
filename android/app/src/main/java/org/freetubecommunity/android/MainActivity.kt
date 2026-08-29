@@ -6,14 +6,12 @@ import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
+import android.view.ViewGroup
 import android.webkit.WebView
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
+import android.webkit.WebViewClient
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.webkit.WebViewAssetLoader
-import androidx.webkit.WebViewClientCompat
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -30,18 +28,13 @@ class MainActivity : Activity() {
             val safeInsets = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
-            view.setPadding(safeInsets.left, safeInsets.top, safeInsets.right, safeInsets.bottom)
+            val params = view.layoutParams as ViewGroup.MarginLayoutParams
+            params.setMargins(safeInsets.left, safeInsets.top, safeInsets.right, safeInsets.bottom)
+            view.layoutParams = params
+            view.setPadding(0, 0, 0, 0)
             insets
         }
-        val assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
-            .build()
-        webView.webViewClient = object : WebViewClientCompat() {
-            override fun shouldInterceptRequest(
-                view: WebView,
-                request: WebResourceRequest
-            ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
-        }
+        webView.webViewClient = WebViewClient()
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 Log.d("FreeTubeWebView", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
@@ -50,8 +43,16 @@ class MainActivity : Activity() {
         }
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        @Suppress("DEPRECATION")
+        webView.settings.allowUniversalAccessFromFileURLs = true
+        @Suppress("DEPRECATION")
+        webView.settings.allowFileAccessFromFileURLs = true
+        webView.settings.userAgentString = webView.settings.userAgentString
+            .replace(Regex("Mozilla/5.0 \\([^)]*\\)"), "Mozilla/5.0 (X11; Linux x86_64)")
+            .replace("Mobile Safari", "Safari")
+        webView.setInitialScale(100)
         webView.settings.mediaPlaybackRequiresUserGesture = false
-        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+        webView.loadUrl("file:///android_asset/index.html")
     }
 
     override fun onBackPressed() {
