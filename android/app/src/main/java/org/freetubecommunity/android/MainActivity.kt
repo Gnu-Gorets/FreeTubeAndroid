@@ -6,12 +6,15 @@ import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
+import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -35,12 +38,34 @@ class MainActivity : Activity() {
             insets
         }
         webView.webViewClient = WebViewClient()
+        var fullscreenView: View? = null
+        val root = webView.parent as ViewGroup
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                if (fullscreenView != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                fullscreenView = view
+                root.addView(view, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+
+            override fun onHideCustomView() {
+                fullscreenView?.let(root::removeView)
+                fullscreenView = null
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
+
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 Log.d("FreeTubeWebView", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
                 return true
             }
         }
+        window.attributes.layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         @Suppress("DEPRECATION")
