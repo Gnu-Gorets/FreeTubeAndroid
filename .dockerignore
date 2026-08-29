@@ -1,0 +1,7 @@
+.git
+node_modules
+dist
+build
+coverage
+android/app/build
+*.log
