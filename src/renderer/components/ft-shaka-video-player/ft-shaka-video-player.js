@@ -1180,6 +1180,9 @@ export default defineComponent({
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing'
       }
+      if (process.env.IS_ANDROID && window.Android) {
+        window.Android.updateMediaSessionState(3, Math.round(video.value.currentTime * 1000))
+      }
     }
 
     function handlePause() {
@@ -1188,6 +1191,9 @@ export default defineComponent({
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused'
       }
+      if (process.env.IS_ANDROID && window.Android) {
+        window.Android.updateMediaSessionState(2, Math.round(video.value.currentTime * 1000))
+      }
     }
 
     function handleEnded() {
@@ -1195,6 +1201,9 @@ export default defineComponent({
 
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'none'
+      }
+      if (process.env.IS_ANDROID && window.Android) {
+        window.Android.updateMediaSessionState(0, Math.round(video.value.currentTime * 1000))
       }
 
       emit('ended')

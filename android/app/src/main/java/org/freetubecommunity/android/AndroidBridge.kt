@@ -1,6 +1,13 @@
 package org.freetubecommunity.android
 
 import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
+import android.os.Build
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
@@ -23,9 +30,76 @@ class AndroidBridge(
     private val scripts = ConcurrentHashMap<String, String>()
     private var sigWebView: WebView? = null
     private var sigReady = false
+    private val notificationManager = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private val mediaSession = MediaSession(activity, "FreeTubeAndroid").apply {
+        isActive = true
+    }
+    private var mediaTitle = "FreeTube Android"
+    private var mediaArtist = ""
+    private var mediaDuration = 0L
 
     @JavascriptInterface
     fun getSyncMessage(id: String): String? = messages.remove(id)
+
+    @JavascriptInterface
+    fun createMediaSession(title: String, artist: String, duration: Long) {
+        mediaTitle = title
+        mediaArtist = artist
+        mediaDuration = duration
+        activity.runOnUiThread {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                notificationManager.createNotificationChannel(
+                    NotificationChannel("media_controls", "Media controls", NotificationManager.IMPORTANCE_LOW)
+                )
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                activity.requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 100)
+            }
+            updateMediaState(PlaybackState.STATE_PAUSED, 0)
+        }
+    }
+
+    @JavascriptInterface
+    fun updateMediaSessionState(state: Int, position: Long) {
+        activity.runOnUiThread { updateMediaState(state, position) }
+    }
+
+    @JavascriptInterface
+    fun cancelMediaSession() {
+        notificationManager.cancel(1001)
+        mediaSession.isActive = false
+    }
+
+    private fun updateMediaState(state: Int, position: Long) {
+        mediaSession.setMetadata(
+            android.media.MediaMetadata.Builder()
+                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, mediaTitle)
+                .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, mediaArtist)
+                .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, mediaDuration)
+                .build()
+        )
+        mediaSession.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(state, position, if (state == PlaybackState.STATE_PLAYING) 1f else 0f)
+                .setActions(PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SEEK_TO)
+                .build()
+        )
+        val notification = Notification.Builder(activity, "media_controls")
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle(mediaTitle)
+            .setContentText(mediaArtist)
+            .setOngoing(state == PlaybackState.STATE_PLAYING)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setStyle(Notification.MediaStyle().setMediaSession(mediaSession.sessionToken))
+            .build()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationManager.notify(1001, notification)
+        }
+    }
 
     @JavascriptInterface
     fun generatePOToken(
