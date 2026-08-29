@@ -397,6 +397,11 @@ class AndroidBridge(
     @JavascriptInterface
     fun restart() { activity.runOnUiThread { activity.recreate() } }
 
+    @JavascriptInterface
+    fun openExternalLink(url: String) {
+        activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
     private fun updateMediaState(state: Int, position: Long) {
         mediaSession.setMetadata(MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, mediaTitle)
