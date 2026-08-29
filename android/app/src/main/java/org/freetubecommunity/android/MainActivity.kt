@@ -3,6 +3,9 @@ package org.freetubecommunity.android
 import android.app.Activity
 import android.graphics.Color
 import android.os.Bundle
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -38,6 +41,12 @@ class MainActivity : Activity() {
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+        }
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                Log.d("FreeTubeWebView", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                return true
+            }
         }
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
