@@ -54,6 +54,24 @@ if (process.env.SUPPORTS_LOCAL_API) {
 
         window.addEventListener('message', listener)
         iframe.contentWindow.postMessage(JSON.stringify({ id: messageId, code }), '*')
+      } else if (process.env.IS_ANDROID) {
+        const listener = () => {
+          window.removeEventListener(`${messageId}-resolve`, listener)
+          window.removeEventListener(`${messageId}-reject`, rejectListener)
+          try {
+            resolve(JSON.parse(window.Android.getSyncMessage(messageId)))
+          } catch (error) {
+            reject(error)
+          }
+        }
+        const rejectListener = () => {
+          window.removeEventListener(`${messageId}-resolve`, listener)
+          window.removeEventListener(`${messageId}-reject`, rejectListener)
+          reject(window.Android.getSyncMessage(messageId))
+        }
+        window.addEventListener(`${messageId}-resolve`, listener)
+        window.addEventListener(`${messageId}-reject`, rejectListener)
+        window.Android.runDecipherScript(messageId, code, 10000)
       } else {
         reject(new Error('Please setup the eval function for the n/sig deciphering'))
       }

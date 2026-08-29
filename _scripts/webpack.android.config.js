@@ -15,6 +15,7 @@ const {
 } = require('./getShakaLocales')
 
 const isDevMode = process.env.NODE_ENV === 'development'
+const sigViewScript = fs.readFileSync(path.join(__dirname, '../src/renderer/sigAndroidScript.js'), 'utf8')
 
 const { version: swiperVersion } = JSON.parse(fs.readFileSync(path.join(__dirname, '../node_modules/swiper/package.json')))
 
@@ -147,6 +148,11 @@ const config = {
       excludeChunks: ['processTaskWorker'],
       filename: 'index.html',
       template: path.resolve(__dirname, '../src/index.ejs')
+    }),
+    new HtmlWebpackPlugin({
+      filename: 'decipher.html',
+      inject: false,
+      templateContent: `<!doctype html><script>${sigViewScript}</script>`
     }),
     new VueLoaderPlugin(),
     new MiniCssExtractPlugin({

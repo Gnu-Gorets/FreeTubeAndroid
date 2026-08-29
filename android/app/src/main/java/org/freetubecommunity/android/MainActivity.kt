@@ -52,6 +52,10 @@ class MainActivity : Activity() {
             .replace("Mobile Safari", "Safari")
         webView.setInitialScale(100)
         webView.settings.mediaPlaybackRequiresUserGesture = false
+        webView.addJavascriptInterface(
+            AndroidBridge(this, webView, webView.parent as ViewGroup),
+            "Android"
+        )
         webView.loadUrl("file:///android_asset/index.html")
     }
 
