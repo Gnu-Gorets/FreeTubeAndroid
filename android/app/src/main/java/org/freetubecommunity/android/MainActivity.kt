@@ -16,6 +16,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     companion object {
@@ -26,6 +27,7 @@ class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private lateinit var androidBridge: AndroidBridge
+    private var pendingDeepLink: Intent? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,7 +47,16 @@ class MainActivity : Activity() {
             view.setPadding(0, 0, 0, 0)
             insets
         }
-        webView.webViewClient = WebViewClient()
+        pendingDeepLink = intent
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                pendingDeepLink?.let {
+                    dispatchDeepLink(it)
+                    pendingDeepLink = null
+                }
+            }
+        }
         var fullscreenView: View? = null
         val root = webView.parent as ViewGroup
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
@@ -91,6 +102,15 @@ class MainActivity : Activity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    private fun dispatchDeepLink(intent: Intent?) {
+        val url = intent?.data?.toString() ?: return
+        val event = JSONObject.quote(url)
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('youtube-link', { detail: { link: $event } }))",
+            null
+        )
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -118,11 +138,12 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    override fun onNewIntent(intent: android.content.Intent?) {
+    override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         when (intent?.action) {
             "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
             "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
+            Intent.ACTION_VIEW -> dispatchDeepLink(intent)
         }
     }
 

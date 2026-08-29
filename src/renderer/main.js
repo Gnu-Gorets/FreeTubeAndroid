@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import i18n from './i18n/index'
 import router from './router/index'
 import store from './store/index'
+import { migrationReady } from '../datastores/index'
 import App from './App.vue'
 import { showExternalPlayerUnsupportedActionToast, showToast } from './helpers/utils'
 import { library } from './fontawesome-minimal'
@@ -275,7 +276,8 @@ app
   .use(store)
   .use(i18n)
 
-router.isReady().then(() => {
+router.isReady().then(async () => {
+  await migrationReady
   app.mount('#app')
 })
 

@@ -167,6 +167,12 @@ const defaultInvidiousInstance = computed(() => store.getters.getDefaultInvidiou
 const dataReady = ref(false)
 
 onMounted(async () => {
+  if (process.env.IS_ANDROID) {
+    window.addEventListener('youtube-link', ({ detail }) => {
+      if (detail?.link) handleYoutubeLink(detail.link)
+    })
+  }
+
   await store.dispatch('grabUserSettings')
 
   updateTheme()
