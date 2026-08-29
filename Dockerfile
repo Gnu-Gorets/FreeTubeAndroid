@@ -4,7 +4,7 @@ ARG ANDROID_CMDLINE_TOOLS=13114758
 
 ENV ANDROID_HOME=/opt/android-sdk \
     ANDROID_SDK_ROOT=/opt/android-sdk \
-    PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH
+    PATH=/opt/android-sdk/cmdline-tools/latest/bin:$PATH
 
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes \
@@ -22,7 +22,7 @@ RUN apt-get update \
     && mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest" \
     && rm /tmp/android-commandline-tools.zip \
     && yes | sdkmanager --licenses >/dev/null || true \
-    && sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" \
+    && sdkmanager "platforms;android-35" "build-tools;35.0.0" \
     && npm install --global pnpm@11.23.0 \
     && git config --global --add safe.directory /workspace \
     && rm -rf /root/.npm
