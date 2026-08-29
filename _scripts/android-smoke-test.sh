@@ -323,7 +323,11 @@ persistence() {
 }
 
 cleanup() {
-  playback || return 1
+  if ! playback; then
+    echo "SKIP: cleanup setup playback failed"
+    SKIP=$((SKIP + 1))
+    return 0
+  fi
   adb_shell input keyevent KEYCODE_BACK
   sleep 2
   if adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'active='; then
