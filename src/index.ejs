@@ -20,7 +20,16 @@
           })
           return response
         }
-        return await window.ofetch(...args)
+        try {
+          const response = await window.ofetch(...args)
+          if (!response.ok) {
+            console.error(`[Android fetch] ${args[0]} -> ${response.status}`)
+          }
+          return response
+        } catch (error) {
+          console.error(`[Android fetch] ${args[0]} -> ${error}`)
+          throw error
+        }
       }
       window.addEventListener('error', event => console.error(event.error?.stack || event.message))
       window.addEventListener('unhandledrejection', event => console.error(event.reason?.stack || event.reason))

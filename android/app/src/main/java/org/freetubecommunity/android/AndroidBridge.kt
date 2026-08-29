@@ -72,8 +72,33 @@ class AndroidBridge(
                             if (url.startsWith("https://www.youtube.com/youtubei/")) {
                                 connection.setRequestProperty("Referer", "https://www.youtube.com/")
                                 connection.setRequestProperty("Origin", "https://www.youtube.com")
+                                connection.setRequestProperty("Sec-Fetch-Site", "same-origin")
+                                connection.setRequestProperty("Sec-Fetch-Mode", "same-origin")
+                                connection.setRequestProperty("X-Youtube-Bootstrap-Logged-In", "false")
                             }
-                            WebResourceResponse(connection.contentType, connection.contentEncoding, connection.inputStream)
+                            if (url.startsWith("https://www.google.com/js/")) {
+                                connection.setRequestProperty("Referer", "https://www.google.com/")
+                                connection.setRequestProperty("Origin", "https://www.google.com")
+                                connection.setRequestProperty("Sec-Fetch-Dest", "script")
+                                connection.setRequestProperty("Sec-Fetch-Site", "cross-site")
+                                connection.setRequestProperty("Accept-Language", "*")
+                            }
+                            if (url.startsWith("https://www.google.com/js/")) {
+                                WebResourceResponse(
+                                    connection.contentType,
+                                    connection.contentEncoding,
+                                    connection.responseCode,
+                                    connection.responseMessage,
+                                    mapOf(
+                                        "Access-Control-Allow-Origin" to "https://www.youtube.com",
+                                        "Access-Control-Allow-Methods" to "GET, OPTIONS",
+                                        "Access-Control-Allow-Headers" to "*"
+                                    ),
+                                    connection.inputStream
+                                )
+                            } else {
+                                WebResourceResponse(connection.contentType, connection.contentEncoding, connection.inputStream)
+                            }
                         } catch (error: Exception) {
                             Log.e("FreeTubeBotGuard", error.toString())
                             super.shouldInterceptRequest(view, request)
