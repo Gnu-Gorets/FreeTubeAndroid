@@ -6,6 +6,7 @@ ACTIVITY="$PACKAGE/.MainActivity"
 APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/debug/app-debug.apk"
 SERIAL=""
 TEST="all"
+SUITE="all"
 KEEP_DATA=1
 TIMEOUT=45
 ARTIFACT_DIR="$(cd "$(dirname "$0")/.." && pwd)/tmp/android-smoke/$(date +%Y%m%d-%H%M%S)"
@@ -21,7 +22,8 @@ Usage: _scripts/android-smoke-test.sh [options]
 Options:
   --serial SERIAL       adb device serial
   --apk PATH            debug APK path
-  --test NAME           all, preflight, cold-start, search, playback, controls,
+  --suite NAME          unlocked, locked, all (default: all)
+  --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -35,6 +37,7 @@ while (($#)); do
   case "$1" in
     --serial) SERIAL="$2"; shift 2 ;;
     --apk) APK="$2"; shift 2 ;;
+    --suite) SUITE="$2"; shift 2 ;;
     --test) TEST="$2"; shift 2 ;;
     --keep-data) KEEP_DATA=1; shift ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
@@ -87,6 +90,11 @@ wait_for() {
   done
 }
 
+device_is_unlocked() {
+  adb_shell dumpsys power | grep -q 'mWakefulness=Awake' || return 1
+  ! adb_shell dumpsys window | grep -qE 'mShowingLockscreen=true|mDreamingLockscreen=true'
+}
+
 wake_device() {
   if adb_shell dumpsys power | grep -qE 'mWakefulness=(Asleep|Dozing)'; then
     adb_shell input keyevent KEYCODE_POWER
@@ -98,8 +106,15 @@ wake_device() {
   sleep 2
 }
 
-start_app() {
+require_unlocked() {
   wake_device
+  if ! device_is_unlocked; then
+    echo "SKIP: device is locked; unlocked suite requires manual unlock"
+    exit 77
+  fi
+}
+
+start_app() {
   adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
   wait_for "$PACKAGE" || return 1
   sleep 2
@@ -159,6 +174,9 @@ search() {
 open_video() {
   adb_shell input tap 400 380
   sleep 25
+  adb_shell input tap 400 340
+  adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
+  sleep 3
   screenshot video
 }
 
@@ -187,15 +205,10 @@ controls() {
 }
 
 lock_screen() {
-  adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
-  sleep 2
-  adb_shell input keyevent KEYCODE_POWER
-  sleep 8
-  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'active=true' || { adb_shell input keyevent KEYCODE_POWER; return 1; }
-  adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001' || { adb_shell input keyevent KEYCODE_POWER; return 1; }
-  adb_shell input keyevent KEYCODE_POWER
-  sleep 2
-  screenshot lock-screen-return
+  adb_shell dumpsys power | grep -qE 'mWakefulness=(Asleep|Dozing)' || return 1
+  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'active=true' || return 1
+  adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001' || return 1
+  # Intentionally leave device locked. No UI action is allowed after this point.
   no_runtime_errors
 }
 
@@ -257,18 +270,52 @@ recovery() {
   adb_shell dumpsys activity activities | grep -q "$PACKAGE"
 }
 
+run_unlocked_suite() {
+  require_unlocked
+  if ! preflight; then
+    echo "FAIL preflight"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  echo "PASS preflight"
+  PASS=$((PASS + 1))
+  run_test cold-start cold_start
+  run_test search search
+  run_test playback playback
+  run_test controls controls
+  run_test audio-focus audio_focus
+  run_test persistence persistence
+  run_test cleanup cleanup
+  run_test recovery recovery
+}
+
+run_locked_suite() {
+  if device_is_unlocked; then
+    require_unlocked
+    playback || return
+    adb_shell input keyevent KEYCODE_POWER
+    sleep 3
+  else
+    echo "Using existing locked playback state"
+  fi
+  if ! preflight; then
+    echo "FAIL preflight"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  echo "PASS preflight"
+  PASS=$((PASS + 1))
+  run_test lock-screen lock_screen
+}
+
 case "$TEST" in
   all)
-    run_test preflight preflight
-    run_test cold-start cold_start
-    run_test search search
-    run_test playback playback
-    run_test controls controls
-    run_test lock-screen lock_screen
-    run_test audio-focus audio_focus
-    run_test persistence persistence
-    run_test cleanup cleanup
-    run_test recovery recovery
+    case "$SUITE" in
+      all) run_unlocked_suite; run_locked_suite ;;
+      unlocked) run_unlocked_suite ;;
+      locked) run_locked_suite ;;
+      *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;
+    esac
     ;;
   preflight) run_test preflight preflight ;;
   cold-start) run_test cold-start cold_start ;;
