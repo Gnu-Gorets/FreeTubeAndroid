@@ -22,6 +22,8 @@
         }
         return await window.ofetch(...args)
       }
+      window.addEventListener('error', event => console.error(event.error?.stack || event.message))
+      window.addEventListener('unhandledrejection', event => console.error(event.reason?.stack || event.reason))
     </script>
     <% } %>
     <meta charset="utf-8" />
