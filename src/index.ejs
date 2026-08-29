@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0" />
-    <% if (!process.env.IS_ELECTRON) { %>
+    <% if (!process.env.IS_ELECTRON && !process.env.IS_ANDROID) { %>
     <link rel="manifest" href="static/manifest.json" />
     <% } %>
     <title></title>
@@ -24,7 +24,7 @@
       style="display: none; pointer-events: none"
       tabindex="-1"
     ></iframe>
-    <% } else { %>
+    <% } else if (!process.env.IS_ANDROID) { %>
     <script>
     // This is the service worker with the Advanced caching
 
