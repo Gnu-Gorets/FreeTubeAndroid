@@ -130,6 +130,7 @@ import packageDetails from '../../package.json'
 import { openExternalLink, openInternalPath, showToast } from './helpers/utils'
 import { translateWindowTitle } from './helpers/strings'
 import { loadLocale } from './i18n/index'
+import { updateAndroidTheme } from './helpers/android/system'
 
 const route = useRoute()
 const router = useRouter()
@@ -246,6 +247,7 @@ watch(secColor, updateTheme)
 function updateTheme() {
   document.body.className = `${baseTheme.value || 'system'} main${mainColor.value || 'Red'} sec${secColor.value || 'Blue'}`
   document.body.dataset.systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  if (process.env.IS_ANDROID) updateAndroidTheme()
 }
 
 updateTheme()

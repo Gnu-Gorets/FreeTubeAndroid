@@ -20,6 +20,7 @@ import org.json.JSONObject
 
 class MainActivity : Activity() {
     companion object {
+        val consoleMessages = java.util.concurrent.CopyOnWriteArrayList<String>()
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
         const val DIRECTORY_REQUEST = 1003
@@ -79,6 +80,13 @@ class MainActivity : Activity() {
             }
 
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                val entry = JSONObject().apply {
+                    put("message", message.message())
+                    put("source", message.sourceId())
+                    put("line", message.lineNumber())
+                    put("level", message.messageLevel())
+                }.toString()
+                consoleMessages.add(entry)
                 Log.d("FreeTubeWebView", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
                 return true
             }

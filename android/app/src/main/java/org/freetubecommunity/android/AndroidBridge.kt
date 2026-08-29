@@ -25,6 +25,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -396,6 +397,21 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun restart() { activity.runOnUiThread { activity.recreate() } }
+
+    @JavascriptInterface
+    fun getLogs(): String = JSONArray(MainActivity.consoleMessages.toList()).toString()
+
+    @JavascriptInterface
+    fun themeSystemUi(navigationHex: String, statusHex: String, navigationDarkMode: Boolean, statusDarkMode: Boolean) {
+        activity.runOnUiThread {
+            activity.window.navigationBarColor = android.graphics.Color.parseColor(navigationHex)
+            activity.window.statusBarColor = android.graphics.Color.parseColor(statusHex)
+            androidx.core.view.WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+                isAppearanceLightNavigationBars = !navigationDarkMode
+                isAppearanceLightStatusBars = !statusDarkMode
+            }
+        }
+    }
 
     @JavascriptInterface
     fun openExternalLink(url: String) {
