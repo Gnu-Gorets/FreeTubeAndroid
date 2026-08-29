@@ -1,4 +1,4 @@
-FROM node:22-bookworm
+FROM node:26-bookworm
 
 ARG ANDROID_CMDLINE_TOOLS=13114758
 
@@ -23,7 +23,7 @@ RUN apt-get update \
     && rm /tmp/android-commandline-tools.zip \
     && yes | sdkmanager --licenses >/dev/null || true \
     && sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" \
-    && npm install --global pnpm@10.34.5 \
+    && npm install --global pnpm@11.23.0 \
     && git config --global --add safe.directory /workspace \
     && rm -rf /root/.npm
 
