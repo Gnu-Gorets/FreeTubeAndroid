@@ -205,6 +205,7 @@ const exportSubscriptionsPromptNames = computed(() => {
 
 const profileList = computed(() => store.getters.getProfileList)
 const primaryProfile = computed(() => deepCopy(profileList.value[0]))
+const primarySubscriptions = computed(() => profileList.value[0]?.subscriptions ?? [])
 
 // #region subscriptions import
 
@@ -241,7 +242,13 @@ async function importSubscriptions() {
   } else if (filename.endsWith('.opml') || filename.endsWith('.xml')) {
     importOpmlYouTubeSubscriptions(content)
   } else if (filename.endsWith('.json')) {
-    const jsonContent = JSON.parse(content)
+    let jsonContent
+    try {
+      jsonContent = JSON.parse(content)
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Invalid subscriptions file')}: ${error}`)
+      return
+    }
     if (jsonContent.subscriptions) {
       importNewPipeSubscriptions(jsonContent)
     } else {
@@ -649,7 +656,7 @@ async function exportYouTubeSubscriptions() {
   const dateStr = getTodayDateStrLocalTimezone()
   const exportFileName = 'youtube-subscriptions-' + dateStr + '.json'
 
-  const subscriptionsObject = profileList.value[0].subscriptions.map((channel) => {
+  const subscriptionsObject = primarySubscriptions.value.map((channel) => {
     const object = {
       contentDetails: {
         activityType: 'all',
@@ -701,7 +708,7 @@ async function exportOpmlYouTubeSubscriptions() {
 
   let opmlData = '<opml version="1.1"><body><outline text="YouTube Subscriptions" title="YouTube Subscriptions">'
 
-  profileList.value[0].subscriptions.forEach((channel) => {
+  primarySubscriptions.value.forEach((channel) => {
     const escapedName = escapeHTML(channel.name)
 
     const channelOpmlString = `<outline text="${escapedName}" title="${escapedName}" type="rss" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=${channel.id}"/>`
@@ -725,7 +732,7 @@ async function exportCsvYouTubeSubscriptions() {
   const exportFileName = 'youtube-subscriptions-' + dateStr + '.csv'
 
   let exportText = 'Channel ID,Channel URL,Channel title\n'
-  profileList.value[0].subscriptions.forEach((channel) => {
+  primarySubscriptions.value.forEach((channel) => {
     const channelUrl = `https://www.youtube.com/channel/${channel.id}`
 
     // always have channel name quoted to simplify things
@@ -754,7 +761,7 @@ async function exportNewPipeSubscriptions() {
     subscriptions: []
   }
 
-  profileList.value[0].subscriptions.forEach((channel) => {
+  primarySubscriptions.value.forEach((channel) => {
     const channelUrl = `https://www.youtube.com/channel/${channel.id}`
     const subscription = {
       service_id: 0,
@@ -825,7 +832,11 @@ async function importWatchHistory() {
   if (filename.endsWith('.db')) {
     importFreeTubeWatchHistory(content.split('\n'))
   } else if (filename.endsWith('.json')) {
-    importYouTubeWatchHistory(JSON.parse(content))
+    try {
+      importYouTubeWatchHistory(JSON.parse(content))
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+    }
   }
 }
 
@@ -1099,15 +1110,20 @@ async function importPlaylists() {
   // that didn't match the actual database format
   const trimmedData = data.trim()
 
-  if (trimmedData[0] === '[' && trimmedData[trimmedData.length - 1] === ']') {
-    playlists = JSON.parse(trimmedData)
-  } else {
-    // otherwise assume this is the correct database format,
-    // which is also what we export now (used in 0.20.0 and later versions)
-    data = data.split('\n')
-    data.pop()
+  try {
+    if (trimmedData[0] === '[' && trimmedData[trimmedData.length - 1] === ']') {
+      playlists = JSON.parse(trimmedData)
+    } else {
+      // otherwise assume this is the correct database format,
+      // which is also what we export now (used in 0.20.0 and later versions)
+      data = data.split('\n')
+      data.pop()
 
-    playlists = data.map(playlistJson => JSON.parse(playlistJson))
+      playlists = data.map(playlistJson => JSON.parse(playlistJson))
+    }
+  } catch (error) {
+    showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+    return
   }
 
   const requiredKeys = [
@@ -1334,7 +1350,11 @@ async function importSearchHistory() {
   if (filename.endsWith('.db')) {
     importFreeTubeSearchHistory(content.split('\n'))
   } else if (filename.endsWith('.json')) {
-    importYouTubeSearchHistory(JSON.parse(content))
+    try {
+      importYouTubeSearchHistory(JSON.parse(content))
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+    }
   }
 }
 
@@ -1516,7 +1536,13 @@ async function importSettings() {
   const currentSettings = store.state.settings
 
   textDecode.forEach((rawEntry) => {
-    const entry = JSON.parse(rawEntry)
+    let entry
+    try {
+      entry = JSON.parse(rawEntry)
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+      return
+    }
     if (typeof entry._id !== 'string' || !Object.hasOwn(entry, 'value')) {
       showToast(t('Settings.Data Settings.Setting object has insufficient data, skipping item'))
       console.error('Missing keys:', entry)

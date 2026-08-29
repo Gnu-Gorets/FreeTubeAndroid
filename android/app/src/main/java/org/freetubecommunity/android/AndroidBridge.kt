@@ -6,6 +6,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.app.PendingIntent
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -39,6 +41,86 @@ class AndroidBridge(
     private var mediaTitle = "FreeTube Android"
     private var mediaArtist = ""
     private var mediaDuration = 0L
+    private var pendingFile: Triple<String, String, String>? = null
+
+    @JavascriptInterface
+    fun openFile(eventName: String, mimeTypes: String): Boolean {
+        activity.runOnUiThread {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.split(',').toTypedArray())
+            }
+            pendingReadEvent = eventName
+            activity.startActivityForResult(intent, MainActivity.OPEN_FILE_REQUEST)
+        }
+        return true
+    }
+
+    private var pendingReadEvent: String? = null
+
+    fun finishOpenFile(resultCode: Int, uri: Uri?) {
+        val eventName = pendingReadEvent ?: return
+        pendingReadEvent = null
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            val event = JSONObject.quote(eventName)
+            activity.runOnUiThread {
+                mainWebView.evaluateJavascript(
+                    "window.dispatchEvent(new CustomEvent($event, {detail: null}))",
+                    null
+                )
+            }
+            return
+        }
+
+        try {
+            val filename = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "imported-file" }
+                ?: "imported-file"
+            val content = activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: throw IllegalStateException("Unable to open input stream for $uri")
+            val event = JSONObject.quote(eventName)
+            val filenameJson = JSONObject.quote(filename)
+            val contentJson = JSONObject.quote(content)
+            activity.runOnUiThread {
+                mainWebView.evaluateJavascript(
+                    "window.dispatchEvent(new CustomEvent($event, {detail: {filename: $filenameJson, content: $contentJson}}))",
+                    null
+                )
+            }
+        } catch (error: Exception) {
+            Log.e("FreeTubeWebView", "Unable to read imported file", error)
+        }
+    }
+
+    @JavascriptInterface
+    fun saveFile(fileName: String, mimeType: String, content: String): Boolean {
+        Log.d("FreeTubeWebView", "Opening save picker for $fileName")
+        pendingFile = Triple(fileName, mimeType, content)
+        activity.runOnUiThread {
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = mimeType
+                putExtra(Intent.EXTRA_TITLE, fileName)
+            }
+            activity.startActivityForResult(intent, MainActivity.CREATE_FILE_REQUEST)
+        }
+        return true
+    }
+
+    fun finishSaveFile(resultCode: Int, uri: Uri?) {
+        val file = pendingFile ?: return
+        pendingFile = null
+        if (resultCode != Activity.RESULT_OK || uri == null) return
+
+        try {
+            activity.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(file.third.toByteArray(Charsets.UTF_8))
+            } ?: Log.e("FreeTubeWebView", "Unable to open output stream for $uri")
+        } catch (error: Exception) {
+            Log.e("FreeTubeWebView", "Unable to save ${file.first}", error)
+        }
+    }
 
     init {
         mediaSession.setCallback(object : MediaSession.Callback() {

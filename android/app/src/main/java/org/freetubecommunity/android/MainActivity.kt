@@ -17,7 +17,13 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : Activity() {
+    companion object {
+        const val CREATE_FILE_REQUEST = 1001
+        const val OPEN_FILE_REQUEST = 1002
+    }
+
     private lateinit var webView: WebView
+    private lateinit var androidBridge: AndroidBridge
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,11 +83,18 @@ class MainActivity : Activity() {
             .replace("Mobile Safari", "Safari")
         webView.setInitialScale(100)
         webView.settings.mediaPlaybackRequiresUserGesture = false
-        webView.addJavascriptInterface(
-            AndroidBridge(this, webView, webView.parent as ViewGroup),
-            "Android"
-        )
+        androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
+        webView.addJavascriptInterface(androidBridge, "Android")
         webView.loadUrl("file:///android_asset/index.html")
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            CREATE_FILE_REQUEST -> androidBridge.finishSaveFile(resultCode, data?.data)
+            OPEN_FILE_REQUEST -> androidBridge.finishOpenFile(resultCode, data?.data)
+        }
     }
 
     override fun onNewIntent(intent: android.content.Intent?) {

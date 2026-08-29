@@ -300,11 +300,20 @@ export async function readFileWithPicker(
 ) {
   let file
 
+  if (process.env.IS_ANDROID && typeof window.Android?.openFile === 'function') {
+    const eventName = `android-file-${Date.now()}`
+    const response = new Promise((resolve) => {
+      window.addEventListener(eventName, (event) => resolve(event.detail), { once: true })
+    })
+    window.Android.openFile(eventName, Object.keys(acceptedTypes).join(','))
+    return response
+  }
+
   // Only supported in Electron and desktop Chromium browsers
   // https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker#browser_compatibility
   // As we know it is supported in Electron, adding the build flag means we can skip the runtime check in Electron
   // and allow terser to remove the unused else block
-  if (process.env.IS_ELECTRON || 'showOpenFilePicker' in window) {
+  if (process.env.IS_ELECTRON || typeof window.showOpenFilePicker === 'function') {
     try {
       /** @type {FileSystemFileHandle[]} */
       const [handle] = await window.showOpenFilePicker({
@@ -388,11 +397,19 @@ export async function writeFileWithPicker(
   rememberDirectoryId,
   startInDirectory
 ) {
+  if (process.env.IS_ANDROID && typeof window.Android?.saveFile === 'function') {
+    if (content instanceof Blob) {
+      content = await content.text()
+    }
+
+    return window.Android.saveFile(fileName, mimeType, content)
+  }
+
   // Only supported in Electron and desktop Chromium browsers
   // https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker#browser_compatibility
   // As we know it is supported in Electron, adding the build flag means we can skip the runtime check in Electron
   // and allow terser to remove the unused else block
-  if (process.env.IS_ELECTRON || 'showSaveFilePicker' in window) {
+  if (process.env.IS_ELECTRON || typeof window.showSaveFilePicker === 'function') {
     let writableFileStream
 
     try {

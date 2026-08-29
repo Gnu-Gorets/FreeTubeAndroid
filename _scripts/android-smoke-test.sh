@@ -26,7 +26,7 @@ Options:
   --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        locked-controls, locked-audio-focus, locked-cleanup,
+                        export, locked-controls, locked-audio-focus, locked-cleanup,
                         locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -287,6 +287,21 @@ audio_focus() {
   no_runtime_errors
 }
 
+export_data() {
+  start_app || return 1
+  adb_shell input tap 40 445
+  sleep 1
+  adb_shell input tap 390 1020
+  sleep 1
+  adb_shell input tap 570 313
+  sleep 1
+  adb_shell input tap 150 840
+  wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
+  screenshot export-picker
+  adb_shell input keyevent KEYCODE_BACK
+  wait_for "$PACKAGE"
+}
+
 persistence() {
   start_app || return 1
   # Toggle Theme setting, restart, and keep an artifact for visual confirmation.
@@ -340,6 +355,7 @@ run_unlocked_suite() {
   run_test controls controls
   run_test audio-focus audio_focus
   run_test persistence persistence
+  run_test export export_data
   run_test cleanup cleanup
   run_test recovery recovery
   (( FAIL == 0 ))
@@ -395,6 +411,7 @@ case "$TEST" in
   locked-force-stop) run_test locked-force-stop locked_force_stop ;;
   audio-focus) run_test audio-focus audio_focus ;;
   persistence) run_test persistence persistence ;;
+  export) run_test export export_data ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
