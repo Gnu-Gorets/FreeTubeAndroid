@@ -1,4 +1,4 @@
-FROM node:26-bookworm
+FROM node:26-bookworm-slim
 
 ARG ANDROID_CMDLINE_TOOLS=13114758
 
