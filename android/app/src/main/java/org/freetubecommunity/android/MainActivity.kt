@@ -20,6 +20,7 @@ class MainActivity : Activity() {
     companion object {
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
+        const val DIRECTORY_REQUEST = 1003
     }
 
     private lateinit var webView: WebView
@@ -94,6 +95,7 @@ class MainActivity : Activity() {
         when (requestCode) {
             CREATE_FILE_REQUEST -> androidBridge.finishSaveFile(resultCode, data?.data)
             OPEN_FILE_REQUEST -> androidBridge.finishOpenFile(resultCode, data?.data)
+            DIRECTORY_REQUEST -> androidBridge.finishDirectoryAccess(resultCode, data?.data)
         }
     }
 

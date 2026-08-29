@@ -2,6 +2,8 @@ import { nextTick } from 'vue'
 import i18n from '../i18n/index'
 import router from '../router/index'
 import { UnsupportedPlayerActions } from '../../constants'
+import { requestOpenDialog, requestSaveDialog } from './android/dialogs'
+import { writeFile } from './android/storage'
 
 // allowed characters in channel handle: A-Z, a-z, 0-9, -, _, .
 // https://support.google.com/youtube/answer/11585688#change_handle
@@ -300,13 +302,10 @@ export async function readFileWithPicker(
 ) {
   let file
 
-  if (process.env.IS_ANDROID && typeof window.Android?.openFile === 'function') {
-    const eventName = `android-file-${Date.now()}`
-    const response = new Promise((resolve) => {
-      window.addEventListener(eventName, (event) => resolve(event.detail), { once: true })
-    })
-    window.Android.openFile(eventName, Object.keys(acceptedTypes).join(','))
-    return response
+  if (process.env.IS_ANDROID && typeof window.Android?.requestOpenDialog === 'function') {
+    const response = await requestOpenDialog(Object.keys(acceptedTypes))
+    if (response.canceled) return null
+    return { content: await response.text(), filename: response.name }
   }
 
   // Only supported in Electron and desktop Chromium browsers
@@ -397,12 +396,12 @@ export async function writeFileWithPicker(
   rememberDirectoryId,
   startInDirectory
 ) {
-  if (process.env.IS_ANDROID && typeof window.Android?.saveFile === 'function') {
-    if (content instanceof Blob) {
-      content = await content.text()
-    }
-
-    return window.Android.saveFile(fileName, mimeType, content)
+  if (process.env.IS_ANDROID && typeof window.Android?.requestSaveDialog === 'function') {
+    if (content instanceof Blob) content = await content.text()
+    const response = await requestSaveDialog(fileName, mimeType)
+    if (response.canceled) return false
+    await writeFile(response.uri, content)
+    return true
   }
 
   // Only supported in Electron and desktop Chromium browsers

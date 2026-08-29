@@ -1,4 +1,5 @@
 import Datastore from '@seald-io/nedb'
+import * as androidStorage from '../renderer/helpers/android/nedb'
 
 let dbPath = null
 
@@ -30,7 +31,8 @@ function createDatastore(name) {
     filename: dbPath(name),
     autoload: !process.env.IS_ELECTRON_MAIN,
     // Automatically clean up corrupted data, instead of crashing
-    corruptAlertThreshold: 1
+    corruptAlertThreshold: 1,
+    storage: process.env.IS_ANDROID ? androidStorage : undefined
   })
 }
 

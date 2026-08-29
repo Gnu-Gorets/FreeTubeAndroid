@@ -31,6 +31,9 @@ const config = {
     path: path.join(__dirname, '../android/app/src/main/assets'),
     filename: '[name].js',
   },
+  externals: {
+    android: 'Android'
+  },
   module: {
     rules: [
       {

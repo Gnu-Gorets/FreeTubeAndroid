@@ -2,6 +2,26 @@
   <FtSettingsSection
     :title="$t('Settings.Data Settings.Data Settings')"
   >
+    <template v-if="usingAndroid">
+      <h4 class="groupTitle data-directory-heading">
+        {{ $t('Data Settings.Data Directory') }}
+      </h4>
+      <FtFlexBox class="dataSettingsBox">
+        <FtButton :label="$t('Data Settings.Select Data Directory')" @click="selectDirectory" />
+        <FtButton :label="$t('Data Settings.Reset Data Directory')" @click="resetDirectory" />
+        <FtToggleSwitch
+          :label="$t('Data Settings.Copy Data Files When Moving')"
+          :compact="true"
+          :default-value="shouldCopyDataFilesWhenMoving"
+          :tooltip="$t('Data Settings.Copy Data Files When Moving Tooltip')"
+          @change="toggleCopyDataDir"
+        />
+      </FtFlexBox>
+      <FtFlexBox>
+        <p>{{ $t('Data Settings.Data Is Currently Stored In') }}</p>
+        <p class="data-directory">{{ dataDirectory }}</p>
+      </FtFlexBox>
+    </template>
     <h4 class="groupTitle">
       {{ $t('Subscriptions.Subscriptions') }}
     </h4>
@@ -116,6 +136,7 @@ import FtButton from '../FtButton/FtButton.vue'
 import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import FtSettingsSection from '../FtSettingsSection/FtSettingsSection.vue'
+import FtToggleSwitch from '../FtToggleSwitch/FtToggleSwitch.vue'
 import FtTooltip from '../FtTooltip/FtTooltip.vue'
 
 import store from '../../store/index'
@@ -133,6 +154,9 @@ import {
 } from '../../helpers/utils'
 import { processToBeAddedPlaylistVideo } from '../../helpers/playlists'
 
+import android from 'android'
+import { DATA_DIRECTORY, getCurrentDataDirectory, selectDataDirectory } from '../../helpers/android/storage'
+
 const IMPORT_DIRECTORY_ID = 'data-settings-import'
 const START_IN_DIRECTORY = 'downloads'
 
@@ -141,6 +165,42 @@ const router = useRouter()
 
 function openProfileSettings() {
   router.push('/settings/profile')
+}
+
+const usingAndroid = process.env.IS_ANDROID
+const shouldCopyDataFilesWhenMoving = ref(false)
+const dataDirectory = ref(usingAndroid ? android.getDirectory(DATA_DIRECTORY) : '')
+
+function toggleCopyDataDir() {
+  shouldCopyDataFilesWhenMoving.value = !shouldCopyDataFilesWhenMoving.value
+}
+
+async function selectDirectory() {
+  try {
+    const uri = await selectDataDirectory(shouldCopyDataFilesWhenMoving.value)
+    if (uri !== undefined && uri !== null) dataDirectory.value = uri
+    showToast(t('Data Settings.Your data directory has been moved successfully'))
+  } catch (error) {
+    console.error(error)
+    showToast(t('Data Settings.Error moving data directory'))
+  }
+}
+
+async function resetDirectory() {
+  try {
+    const uri = await selectDataDirectory(shouldCopyDataFilesWhenMoving.value, true)
+    if (uri !== undefined && uri !== null) dataDirectory.value = uri
+    showToast(t('Data Settings.Your data directory has been moved successfully'))
+  } catch (error) {
+    console.error(error)
+    showToast(t('Data Settings.Error moving data directory'))
+  }
+}
+
+if (usingAndroid) {
+  getCurrentDataDirectory().then(({ uri }) => {
+    if (uri !== DATA_DIRECTORY) dataDirectory.value = uri
+  })
 }
 
 /**

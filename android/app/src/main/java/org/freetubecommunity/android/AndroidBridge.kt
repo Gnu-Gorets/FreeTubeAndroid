@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import android.provider.OpenableColumns
 import android.app.PendingIntent
 import android.media.session.MediaSession
@@ -23,7 +24,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.util.Log
 import org.json.JSONObject
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 class AndroidBridge(
     private val activity: Activity,
@@ -31,6 +34,10 @@ class AndroidBridge(
     private val parent: ViewGroup
 ) {
     private val messages = ConcurrentHashMap<String, String>()
+    private val fileExecutor = Executors.newSingleThreadExecutor()
+    private var pendingDirectoryRequest: String? = null
+    private val dataDirectory: java.io.File
+        get() = java.io.File(activity.filesDir, "data").also { it.mkdirs() }
     private val scripts = ConcurrentHashMap<String, String>()
     private var sigWebView: WebView? = null
     private var sigReady = false
@@ -59,7 +66,178 @@ class AndroidBridge(
 
     private var pendingReadEvent: String? = null
 
+    private fun asyncFileOperation(operation: () -> String): String {
+        val id = UUID.randomUUID().toString()
+        fileExecutor.execute {
+            try {
+                messages[id] = operation()
+                notifyMain(id, true)
+            } catch (error: Exception) {
+                messages[id] = error.stackTraceToString()
+                notifyMain(id, false)
+            }
+        }
+        return id
+    }
+
+    private fun resolveUri(uri: String): Uri = if (uri.startsWith("data://")) {
+        Uri.fromFile(java.io.File(dataDirectory, uri.removePrefix("data://")))
+    } else {
+        Uri.parse(uri)
+    }
+
+    private fun content(uri: String): ByteArray = if (uri.startsWith("data://")) {
+        java.io.FileInputStream(java.io.File(dataDirectory, uri.removePrefix("data://"))).use { it.readBytes() }
+    } else {
+        activity.contentResolver.openInputStream(resolveUri(uri))?.use { it.readBytes() }
+            ?: throw IllegalStateException("File not found: $uri")
+    }
+
+    private fun write(uri: String, bytes: ByteArray, append: Boolean) {
+        if (uri.startsWith("data://")) {
+            java.io.FileOutputStream(java.io.File(dataDirectory, uri.removePrefix("data://")), append).use {
+                it.write(bytes)
+                it.flush()
+            }
+            return
+        }
+        val mode = if (append) "wa" else "wt"
+        activity.contentResolver.openOutputStream(resolveUri(uri), mode)?.use {
+            it.write(bytes)
+            it.flush()
+        } ?: throw IllegalStateException("Unable to open file: $uri")
+    }
+
+    @JavascriptInterface
+    fun readFile(uri: String): String = asyncFileOperation {
+        content(uri).toString(Charsets.UTF_8)
+    }
+
+    @JavascriptInterface
+    fun writeFile(uri: String, value: String): String = asyncFileOperation {
+        val bytes = if (value.startsWith("data:")) {
+            android.util.Base64.decode(value.substringAfter("base64,"), android.util.Base64.DEFAULT)
+        } else value.toByteArray()
+        if (uri.startsWith("data://")) java.io.File(dataDirectory, uri.removePrefix("data://")).parentFile?.mkdirs()
+        write(uri, bytes, false)
+        ""
+    }
+
+    @JavascriptInterface
+    fun appendFile(uri: String, value: String): String = asyncFileOperation {
+        val bytes = if (value.startsWith("data:")) {
+            android.util.Base64.decode(value.substringAfter("base64,"), android.util.Base64.DEFAULT)
+        } else value.toByteArray()
+        write(uri, bytes, true)
+        ""
+    }
+
+    @JavascriptInterface
+    fun getDirectory(directory: String): String = if (directory == "data://") dataDirectory.absolutePath else directory
+
+    @JavascriptInterface
+    fun listFilesInDataDir(): String = dataDirectory.listFiles().orEmpty().map { fileJson("data://${it.name}", it.name, it.isFile, it.isDirectory) }.joinToString(",", "[", "]")
+
+    @JavascriptInterface
+    fun listFilesInTree(tree: String): String = DocumentFile.fromTreeUri(activity, Uri.parse(tree))?.listFiles().orEmpty()
+        .map { fileJson(it.uri.toString(), it.name, it.isFile, it.isDirectory) }.joinToString(",", "[", "]")
+
+    @JavascriptInterface
+    fun createFileInTree(tree: String, fileName: String): String? = DocumentFile.fromTreeUri(activity, Uri.parse(tree))
+        ?.createFile("application/octet-stream", fileName)?.uri?.toString()
+
+    private fun fileJson(uri: String, name: String?, isFile: Boolean, isDirectory: Boolean): String = JSONObject().apply {
+        put("uri", uri)
+        put("fileName", name)
+        put("isFile", isFile)
+        put("isDirectory", isDirectory)
+    }.toString()
+
+    @JavascriptInterface
+    fun revokePermissionForTree(tree: String) {
+        activity.revokeUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+
+    @JavascriptInterface
+    fun requestDirectoryAccessDialog(): String {
+        val id = UUID.randomUUID().toString()
+        pendingDirectoryRequest = id
+        activity.runOnUiThread {
+            activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), MainActivity.DIRECTORY_REQUEST)
+        }
+        return id
+    }
+
+    fun finishDirectoryAccess(resultCode: Int, uri: Uri?) {
+        val id = pendingDirectoryRequest ?: return
+        pendingDirectoryRequest = null
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            messages[id] = "USER_CANCELED"
+            notifyMain(id, true)
+            return
+        }
+        try {
+            activity.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            messages[id] = uri.toString()
+            notifyMain(id, true)
+        } catch (error: Exception) {
+            messages[id] = error.stackTraceToString()
+            notifyMain(id, false)
+        }
+    }
+
+    @JavascriptInterface
+    fun requestSaveDialog(fileName: String, fileType: String): String {
+        val id = UUID.randomUUID().toString()
+        activity.runOnUiThread {
+            pendingSaveRequest = id
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(fileType).putExtra(Intent.EXTRA_TITLE, fileName)
+            activity.startActivityForResult(intent, MainActivity.CREATE_FILE_REQUEST)
+        }
+        return id
+    }
+
+    @JavascriptInterface
+    fun requestOpenDialog(fileTypes: String): String {
+        val id = UUID.randomUUID().toString()
+        pendingOpenRequest = id
+        activity.runOnUiThread {
+            activity.startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("*/*")
+                .putExtra(Intent.EXTRA_MIME_TYPES, fileTypes.split(',').toTypedArray()), MainActivity.OPEN_FILE_REQUEST)
+        }
+        return id
+    }
+
+    private var pendingSaveRequest: String? = null
+    private var pendingOpenRequest: String? = null
+
     fun finishOpenFile(resultCode: Int, uri: Uri?) {
+        val openRequest = pendingOpenRequest
+        if (openRequest != null) {
+            pendingOpenRequest = null
+            if (resultCode != Activity.RESULT_OK || uri == null) {
+                messages[openRequest] = "USER_CANCELED"
+                notifyMain(openRequest, true)
+                return
+            }
+            try {
+                val filename = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "imported-file" }
+                    ?: "imported-file"
+                val payload = JSONObject().apply {
+                    put("uri", uri.toString())
+                    put("type", activity.contentResolver.getType(uri))
+                    put("fileName", filename)
+                }
+                messages[openRequest] = payload.toString()
+                notifyMain(openRequest, true)
+            } catch (error: Exception) {
+                messages[openRequest] = error.stackTraceToString()
+                notifyMain(openRequest, false)
+            }
+            return
+        }
         val eventName = pendingReadEvent ?: return
         pendingReadEvent = null
         if (resultCode != Activity.RESULT_OK || uri == null) {
@@ -109,6 +287,18 @@ class AndroidBridge(
     }
 
     fun finishSaveFile(resultCode: Int, uri: Uri?) {
+        val saveRequest = pendingSaveRequest
+        if (saveRequest != null) {
+            pendingSaveRequest = null
+            if (resultCode != Activity.RESULT_OK || uri == null) {
+                messages[saveRequest] = "USER_CANCELED"
+                notifyMain(saveRequest, true)
+            } else {
+                messages[saveRequest] = JSONObject().apply { put("uri", uri.toString()) }.toString()
+                notifyMain(saveRequest, true)
+            }
+            return
+        }
         val file = pendingFile ?: return
         pendingFile = null
         if (resultCode != Activity.RESULT_OK || uri == null) return
