@@ -10,6 +10,7 @@
         android:theme="@style/Theme.FreeTubeAndroidCommunity">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
             android:exported="true"
             android:screenOrientation="unspecified">
             <intent-filter>
