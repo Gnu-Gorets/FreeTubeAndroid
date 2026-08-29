@@ -5,6 +5,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
+import android.app.PendingIntent
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
@@ -37,6 +39,42 @@ class AndroidBridge(
     private var mediaTitle = "FreeTube Android"
     private var mediaArtist = ""
     private var mediaDuration = 0L
+
+    init {
+        mediaSession.setCallback(object : MediaSession.Callback() {
+            override fun onPlay() = dispatchMediaEvent("play")
+            override fun onPause() = dispatchMediaEvent("pause")
+            override fun onSeekTo(pos: Long) {
+                activity.runOnUiThread {
+                    mainWebView.evaluateJavascript("document.querySelector('video')?.fastSeek($pos / 1000)", null)
+                }
+            }
+        })
+    }
+
+    private fun dispatchMediaEvent(action: String) {
+        activity.runOnUiThread {
+            val script = if (action == "play") {
+                "document.querySelector('video')?.play()"
+            } else {
+                "document.querySelector('video')?.pause()"
+            }
+            mainWebView.evaluateJavascript(script, null)
+        }
+    }
+
+    private fun mediaAction(icon: Int, label: String, action: String): Notification.Action {
+        val intent = Intent(activity, MainActivity::class.java)
+            .setAction(action)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pendingIntent = PendingIntent.getActivity(
+            activity,
+            action.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Action.Builder(icon, label, pendingIntent).build()
+    }
 
     @JavascriptInterface
     fun getSyncMessage(id: String): String? = messages.remove(id)
@@ -92,6 +130,13 @@ class AndroidBridge(
             .setContentText(mediaArtist)
             .setOngoing(state == PlaybackState.STATE_PLAYING)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .addAction(
+                if (state == PlaybackState.STATE_PLAYING) {
+                    mediaAction(android.R.drawable.ic_media_pause, "Pause", "MEDIA_PAUSE")
+                } else {
+                    mediaAction(android.R.drawable.ic_media_play, "Play", "MEDIA_PLAY")
+                }
+            )
             .setStyle(Notification.MediaStyle().setMediaSession(mediaSession.sessionToken))
             .build()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||

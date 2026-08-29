@@ -84,6 +84,14 @@ class MainActivity : Activity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    override fun onNewIntent(intent: android.content.Intent?) {
+        super.onNewIntent(intent)
+        when (intent?.action) {
+            "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
+            "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
+        }
+    }
+
     override fun onBackPressed() {
         if (webView.canGoBack()) {
             webView.goBack()
