@@ -50,7 +50,7 @@ export async function writeFile(uri, content, append = false) {
       delete directory.files[key]
       await updateFilesInCurrentDataDirectory(directory.files)
     }
-    return false
+    throw exception
   }
 }
 
@@ -89,7 +89,9 @@ function restoreHandleFromDirectoryUri(uri) {
     return {
       uri,
       async createFile(fileName) {
-        return await writeFile(`${DATA_DIRECTORY}${fileName}`, '', false)
+        const uri = `${DATA_DIRECTORY}${fileName}`
+        if (!await writeFile(uri, '', false)) throw new Error(`Unable to create ${fileName}`)
+        return uri
       },
       listFiles() {
         return JSON.parse(android.listFilesInDataDir())
@@ -170,11 +172,12 @@ export async function getCurrentDataDirectory() {
     }
   }
 
-  return {
+  currentDataDirectory = {
     ...restoreHandleFromDirectoryUri(DATA_DIRECTORY),
     directory: DATA_DIRECTORY,
     files: EXPECTED_FILES_MAP
   }
+  return currentDataDirectory
 }
 
 /**

@@ -4,21 +4,21 @@
   >
     <template v-if="usingAndroid">
       <h4 class="groupTitle data-directory-heading">
-        {{ $t('Data Settings.Data Directory') }}
+        {{ $t('Settings.Data Settings.Data Directory') }}
       </h4>
       <FtFlexBox class="dataSettingsBox">
-        <FtButton :label="$t('Data Settings.Select Data Directory')" @click="selectDirectory" />
-        <FtButton :label="$t('Data Settings.Reset Data Directory')" @click="resetDirectory" />
+        <FtButton :label="$t('Settings.Data Settings.Select Data Directory')" @click="selectDirectory" />
+        <FtButton :label="$t('Settings.Data Settings.Reset Data Directory')" @click="resetDirectory" />
         <FtToggleSwitch
-          :label="$t('Data Settings.Copy Data Files When Moving')"
+          :label="$t('Settings.Data Settings.Copy Data Files When Moving')"
           :compact="true"
           :default-value="shouldCopyDataFilesWhenMoving"
-          :tooltip="$t('Data Settings.Copy Data Files When Moving Tooltip')"
+          :tooltip="$t('Settings.Data Settings.Copy Data Files When Moving Tooltip')"
           @change="toggleCopyDataDir"
         />
       </FtFlexBox>
       <FtFlexBox>
-        <p>{{ $t('Data Settings.Data Is Currently Stored In') }}</p>
+        <p>{{ $t('Settings.Data Settings.Data Is Currently Stored In') }}</p>
         <p class="data-directory">{{ dataDirectory }}</p>
       </FtFlexBox>
     </template>
@@ -179,10 +179,10 @@ async function selectDirectory() {
   try {
     const uri = await selectDataDirectory(shouldCopyDataFilesWhenMoving.value)
     if (uri !== undefined && uri !== null) dataDirectory.value = uri
-    showToast(t('Data Settings.Your data directory has been moved successfully'))
+    showToast(t('Settings.Data Settings.Your data directory has been moved successfully'))
   } catch (error) {
     console.error(error)
-    showToast(t('Data Settings.Error moving data directory'))
+    showToast(t('Settings.Data Settings.Error moving data directory'))
   }
 }
 
@@ -190,10 +190,10 @@ async function resetDirectory() {
   try {
     const uri = await selectDataDirectory(shouldCopyDataFilesWhenMoving.value, true)
     if (uri !== undefined && uri !== null) dataDirectory.value = uri
-    showToast(t('Data Settings.Your data directory has been moved successfully'))
+    showToast(t('Settings.Data Settings.Your data directory has been moved successfully'))
   } catch (error) {
     console.error(error)
-    showToast(t('Data Settings.Error moving data directory'))
+    showToast(t('Settings.Data Settings.Error moving data directory'))
   }
 }
 

@@ -10,6 +10,8 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import android.provider.OpenableColumns
 import android.app.PendingIntent
+import android.graphics.BitmapFactory
+import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
@@ -48,6 +50,7 @@ class AndroidBridge(
     private var mediaTitle = "FreeTube Android"
     private var mediaArtist = ""
     private var mediaDuration = 0L
+    private var mediaThumbnail: android.graphics.Bitmap? = null
     private var pendingFile: Triple<String, String, String>? = null
 
     @JavascriptInterface
@@ -313,36 +316,27 @@ class AndroidBridge(
     }
 
     init {
+        MediaControlsReceiver.onAction = { dispatchMediaEvent(it) }
         mediaSession.setCallback(object : MediaSession.Callback() {
             override fun onPlay() = dispatchMediaEvent("play")
             override fun onPause() = dispatchMediaEvent("pause")
-            override fun onSeekTo(pos: Long) {
-                activity.runOnUiThread {
-                    mainWebView.evaluateJavascript("document.querySelector('video')?.fastSeek($pos / 1000)", null)
-                }
-            }
+            override fun onSkipToNext() = dispatchMediaEvent("next")
+            override fun onSkipToPrevious() = dispatchMediaEvent("previous")
+            override fun onSeekTo(pos: Long) = dispatchMediaEvent("seek", pos)
         })
     }
 
-    private fun dispatchMediaEvent(action: String) {
+    private fun dispatchMediaEvent(action: String, position: Long? = null) {
         activity.runOnUiThread {
-            val script = if (action == "play") {
-                "document.querySelector('video')?.play()"
-            } else {
-                "document.querySelector('video')?.pause()"
-            }
-            mainWebView.evaluateJavascript(script, null)
+            val event = JSONObject.quote("media-$action")
+            val detail = position?.let { ", { detail: { position: $it } }" } ?: ""
+            mainWebView.evaluateJavascript("window.dispatchEvent(new CustomEvent($event$detail))", null)
         }
     }
 
     private fun mediaAction(icon: Int, label: String, action: String): Notification.Action {
-        val intent = Intent(activity, MainActivity::class.java)
-            .setAction(action)
-            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val pendingIntent = PendingIntent.getActivity(
-            activity,
-            action.hashCode(),
-            intent,
+        val pendingIntent = PendingIntent.getBroadcast(
+            activity, action.hashCode(), Intent(activity, MediaControlsReceiver::class.java).setAction(action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return Notification.Action.Builder(icon, label, pendingIntent).build()
@@ -352,71 +346,78 @@ class AndroidBridge(
     fun getSyncMessage(id: String): String? = messages.remove(id)
 
     @JavascriptInterface
-    fun createMediaSession(title: String, artist: String, duration: Long) {
+    fun createMediaSession(title: String, artist: String, duration: Long, thumbnail: String? = null) {
         mediaTitle = title
         mediaArtist = artist
         mediaDuration = duration
         mediaSession.isActive = true
-        activity.runOnUiThread {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                notificationManager.createNotificationChannel(
-                    NotificationChannel("media_controls", "Media controls", NotificationManager.IMPORTANCE_LOW)
-                )
+        if (!thumbnail.isNullOrBlank()) {
+            fileExecutor.execute {
+                try {
+                    mediaThumbnail = java.net.URL(thumbnail).openStream().use(BitmapFactory::decodeStream)
+                } catch (error: Exception) { Log.w("FreeTubeWebView", "Unable to load media thumbnail", error) }
+                activity.runOnUiThread { updateMediaState(PlaybackState.STATE_PAUSED, 0) }
             }
+        }
+        activity.runOnUiThread {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) notificationManager.createNotificationChannel(
+                NotificationChannel("media_controls", "Media controls", NotificationManager.IMPORTANCE_LOW)
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                activity.requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 100)
-            }
+            ) activity.requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 100)
             updateMediaState(PlaybackState.STATE_PAUSED, 0)
         }
     }
 
     @JavascriptInterface
-    fun updateMediaSessionState(state: Int, position: Long) {
-        activity.runOnUiThread { updateMediaState(state, position) }
+    fun updateMediaSessionData(title: String, artist: String, duration: Long, thumbnail: String? = null) =
+        createMediaSession(title, artist, duration, thumbnail)
+
+    @JavascriptInterface
+    fun updateMediaSessionState(state: String?, position: String?) {
+        activity.runOnUiThread { updateMediaState(state?.toIntOrNull() ?: PlaybackState.STATE_PAUSED, position?.toLongOrNull() ?: 0) }
     }
 
     @JavascriptInterface
-    fun cancelMediaSession() {
+    fun cancelMediaNotification() {
         notificationManager.cancel(1001)
         mediaSession.isActive = false
     }
 
+    @JavascriptInterface
+    fun cancelMediaSession() = cancelMediaNotification()
+
+    @JavascriptInterface
+    fun enableKeepScreenOn() { activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+
+    @JavascriptInterface
+    fun disableKeepScreenOn() { activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+
+    @JavascriptInterface
+    fun restart() { activity.runOnUiThread { activity.recreate() } }
+
     private fun updateMediaState(state: Int, position: Long) {
-        mediaSession.setMetadata(
-            android.media.MediaMetadata.Builder()
-                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, mediaTitle)
-                .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, mediaArtist)
-                .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, mediaDuration)
-                .build()
-        )
-        mediaSession.setPlaybackState(
-            PlaybackState.Builder()
-                .setState(state, position, if (state == PlaybackState.STATE_PLAYING) 1f else 0f)
-                .setActions(PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SEEK_TO)
-                .build()
-        )
+        mediaSession.setMetadata(MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, mediaTitle)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, mediaArtist)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, mediaDuration)
+            .apply { mediaThumbnail?.let { putBitmap(MediaMetadata.METADATA_KEY_ART, it); putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it) } }
+            .build())
+        mediaSession.setPlaybackState(PlaybackState.Builder()
+            .setState(state, position, if (state == PlaybackState.STATE_PLAYING) 1f else 0f)
+            .setActions(PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
+            .build())
         val notification = Notification.Builder(activity, "media_controls")
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(mediaTitle)
-            .setContentText(mediaArtist)
-            .setOngoing(state == PlaybackState.STATE_PLAYING)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .addAction(
-                if (state == PlaybackState.STATE_PLAYING) {
-                    mediaAction(android.R.drawable.ic_media_pause, "Pause", "MEDIA_PAUSE")
-                } else {
-                    mediaAction(android.R.drawable.ic_media_play, "Play", "MEDIA_PLAY")
-                }
-            )
+            .setSmallIcon(R.drawable.ic_media_notification_icon)
+            .setContentTitle(mediaTitle).setContentText(mediaArtist)
+            .setOngoing(state == PlaybackState.STATE_PLAYING).setVisibility(Notification.VISIBILITY_PUBLIC)
+            .addAction(mediaAction(android.R.drawable.ic_media_previous, "Previous", "previous"))
+            .addAction(mediaAction(if (state == PlaybackState.STATE_PLAYING) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, if (state == PlaybackState.STATE_PLAYING) "Pause" else "Play", if (state == PlaybackState.STATE_PLAYING) "pause" else "play"))
+            .addAction(mediaAction(android.R.drawable.ic_media_next, "Next", "next"))
             .setStyle(Notification.MediaStyle().setMediaSession(mediaSession.sessionToken))
             .build()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationManager.notify(1001, notification)
-        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED) notificationManager.notify(1001, notification)
     }
 
     @JavascriptInterface

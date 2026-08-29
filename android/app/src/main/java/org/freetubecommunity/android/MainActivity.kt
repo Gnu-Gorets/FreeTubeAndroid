@@ -2,6 +2,7 @@ package org.freetubecommunity.android
 
 import android.app.Activity
 import android.graphics.Color
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -86,6 +87,7 @@ class MainActivity : Activity() {
         webView.settings.mediaPlaybackRequiresUserGesture = false
         androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
         webView.addJavascriptInterface(androidBridge, "Android")
+        startService(Intent(this, KeepAliveService::class.java))
         webView.loadUrl("file:///android_asset/index.html")
     }
 
@@ -97,6 +99,23 @@ class MainActivity : Activity() {
             OPEN_FILE_REQUEST -> androidBridge.finishOpenFile(resultCode, data?.data)
             DIRECTORY_REQUEST -> androidBridge.finishDirectoryAccess(resultCode, data?.data)
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
+    }
+
+    override fun onDestroy() {
+        stopService(Intent(this, KeepAliveService::class.java))
+        androidBridge.cancelMediaNotification()
+        webView.destroy()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: android.content.Intent?) {

@@ -41,6 +41,8 @@ import {
 import { sortCaptions } from '../../helpers/player/utils'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
+import android from 'android'
+import { createMediaSession } from '../../helpers/android/media-session'
 
 /**
  * @typedef {{
@@ -343,6 +345,9 @@ export default defineComponent({
     userPlaylistsReady() {
       this.onMountedDependOnLocalStateLoading()
     },
+    thumbnail() {
+      if (process.env.IS_ANDROID) createMediaSession(this.videoTitle, this.channelName, this.videoLengthSeconds * 1000, this.thumbnail)
+    }
   },
   created: function () {
     this.videoId = this.$route.params.id
@@ -355,7 +360,18 @@ export default defineComponent({
     this.currentPlaybackRate = this.$store.getters.getDefaultPlayback
   },
   mounted: function () {
+    if (process.env.IS_ANDROID) {
+      window.addEventListener('media-next', this.handleSkipToNext)
+      window.addEventListener('media-previous', this.handleSkipToPrev)
+    }
     this.onMountedDependOnLocalStateLoading()
+  },
+  beforeUnmount() {
+    if (process.env.IS_ANDROID) {
+      window.removeEventListener('media-next', this.handleSkipToNext)
+      window.removeEventListener('media-previous', this.handleSkipToPrev)
+      android.cancelMediaNotification()
+    }
   },
   methods: {
     async reloadView() {

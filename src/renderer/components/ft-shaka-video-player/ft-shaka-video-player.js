@@ -31,6 +31,7 @@ import {
 } from '../../helpers/utils'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
+import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -2737,8 +2738,22 @@ export default defineComponent({
     // #region setup
     const initLoadWaitTimeToastAC = new AbortController()
 
+    const mediaPlay = () => video.value?.play()
+    const mediaPause = () => video.value?.pause()
+    const mediaSeek = event => {
+      if (video.value && Number.isFinite(event.detail?.position)) video.value.currentTime = event.detail.position / 1000
+    }
+
     onMounted(async () => {
       const videoElement = video.value
+      if (process.env.IS_ANDROID) {
+        window.addEventListener('media-play', mediaPlay)
+        window.addEventListener('media-pause', mediaPause)
+        window.addEventListener('media-seek', mediaSeek)
+        videoElement.addEventListener('play', () => updateMediaSessionState(STATE_PLAYING))
+        videoElement.addEventListener('pause', () => updateMediaSessionState(STATE_PAUSED))
+        videoElement.addEventListener('timeupdate', () => updateMediaSessionState(videoElement.paused ? STATE_PAUSED : STATE_PLAYING, Math.floor(videoElement.currentTime * 1000)))
+      }
 
       const volume = sessionStorage.getItem('volume')
       if (volume !== null) {
@@ -3256,6 +3271,9 @@ export default defineComponent({
 
       window.removeEventListener('online', onlineHandler)
       window.removeEventListener('offline', offlineHandler)
+      window.removeEventListener('media-play', mediaPlay)
+      window.removeEventListener('media-pause', mediaPause)
+      window.removeEventListener('media-seek', mediaSeek)
     })
 
     // #endregion tear down
