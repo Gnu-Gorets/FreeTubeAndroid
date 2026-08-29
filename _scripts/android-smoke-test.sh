@@ -24,7 +24,10 @@ Options:
   --apk PATH            debug APK path
   --suite NAME          unlocked, locked, all (default: all)
   --test NAME           one test: preflight, cold-start, search, playback, controls,
-                        lock-screen, audio-focus, persistence, cleanup, recovery
+                        lock-screen, audio-focus, persistence, cleanup, recovery,
+                        locked-state, locked-notification, locked-session,
+                        locked-controls, locked-audio-focus, locked-cleanup,
+                        locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -204,11 +207,63 @@ controls() {
   no_runtime_errors
 }
 
+locked_state() {
+  adb_shell dumpsys power | grep -qE 'mWakefulness=(Asleep|Dozing)' && return 0
+  adb_shell dumpsys window | grep -qE 'mShowingLockscreen=true|mDreamingLockscreen=true'
+}
+
+media_session() {
+  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android'
+}
+
+locked_screen() {
+  locked_state || return 1
+  no_runtime_errors
+}
+
+locked_notification() {
+  locked_state || return 1
+  adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001'
+}
+
+locked_session() {
+  locked_state || return 1
+  media_session | grep -q 'active=true' || return 1
+  media_session | grep -q 'state=PlaybackState {state=PLAYING'
+}
+
+locked_controls() {
+  locked_state || return 1
+  adb_shell am start -a MEDIA_PAUSE -n "$ACTIVITY" >/dev/null
+  sleep 2
+  media_session | grep -q 'state=PlaybackState {state=PAUSED' || return 1
+  adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
+  sleep 2
+  media_session | grep -q 'state=PlaybackState {state=PLAYING'
+}
+
+locked_audio_focus() {
+  locked_state || return 1
+  adb_shell dumpsys audio | grep -q "$PACKAGE"
+}
+
+locked_cleanup() {
+  locked_state || return 1
+  media_session | grep -q 'active=true' || return 1
+  adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001'
+}
+
+locked_force_stop() {
+  locked_state || return 1
+  adb_shell am force-stop "$PACKAGE"
+  sleep 3
+  ! adb_shell dumpsys media_session | grep -q 'org.freetubecommunity.android/FreeTubeAndroid'
+}
+
 lock_screen() {
-  adb_shell dumpsys power | grep -qE 'mWakefulness=(Asleep|Dozing)' || return 1
-  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'active=true' || return 1
-  adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001' || return 1
-  # Intentionally leave device locked. No UI action is allowed after this point.
+  locked_screen || return 1
+  locked_notification || return 1
+  locked_session || return 1
   no_runtime_errors
 }
 
@@ -292,20 +347,26 @@ run_unlocked_suite() {
 run_locked_suite() {
   if device_is_unlocked; then
     require_unlocked
+    if ! preflight; then
+      echo "FAIL preflight"
+      FAIL=$((FAIL + 1))
+      return
+    fi
+    echo "PASS preflight"
+    PASS=$((PASS + 1))
     playback || return
     adb_shell input keyevent KEYCODE_POWER
-    sleep 3
+    sleep 8
   else
     echo "Using existing locked playback state"
   fi
-  if ! preflight; then
-    echo "FAIL preflight"
-    FAIL=$((FAIL + 1))
-    return
-  fi
-  echo "PASS preflight"
-  PASS=$((PASS + 1))
-  run_test lock-screen lock_screen
+  run_test locked-state locked_screen
+  run_test locked-notification locked_notification
+  run_test locked-session locked_session
+  run_test locked-controls locked_controls
+  run_test locked-audio-focus locked_audio_focus
+  run_test locked-cleanup locked_cleanup
+  run_test locked-force-stop locked_force_stop
 }
 
 case "$TEST" in
@@ -323,6 +384,13 @@ case "$TEST" in
   playback) run_test playback playback ;;
   controls) run_test controls controls ;;
   lock-screen) run_test lock-screen lock_screen ;;
+  locked-state) run_test locked-state locked_screen ;;
+  locked-notification) run_test locked-notification locked_notification ;;
+  locked-session) run_test locked-session locked_session ;;
+  locked-controls) run_test locked-controls locked_controls ;;
+  locked-audio-focus) run_test locked-audio-focus locked_audio_focus ;;
+  locked-cleanup) run_test locked-cleanup locked_cleanup ;;
+  locked-force-stop) run_test locked-force-stop locked_force_stop ;;
   audio-focus) run_test audio-focus audio_focus ;;
   persistence) run_test persistence persistence ;;
   cleanup) run_test cleanup cleanup ;;
