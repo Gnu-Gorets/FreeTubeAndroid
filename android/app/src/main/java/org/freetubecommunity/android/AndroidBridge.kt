@@ -84,6 +84,7 @@ class AndroidBridge(
         mediaTitle = title
         mediaArtist = artist
         mediaDuration = duration
+        mediaSession.isActive = true
         activity.runOnUiThread {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 notificationManager.createNotificationChannel(
