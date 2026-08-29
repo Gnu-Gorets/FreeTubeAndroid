@@ -625,6 +625,32 @@ export async function getLocalVideoInfo(id) {
       console.error('Local API, poToken generation failed', error)
       throw error
     }
+  } else if (process.env.IS_ANDROID) {
+    const tokenId = crypto.randomUUID()
+    contentPoToken = await new Promise((resolve, reject) => {
+      const resolveEvent = () => {
+        cleanup()
+        resolve(window.Android.getSyncMessage(tokenId))
+      }
+      const rejectEvent = () => {
+        cleanup()
+        reject(window.Android.getSyncMessage(tokenId))
+      }
+      const cleanup = () => {
+        window.removeEventListener(`${tokenId}-resolve`, resolveEvent)
+        window.removeEventListener(`${tokenId}-reject`, rejectEvent)
+      }
+      window.addEventListener(`${tokenId}-resolve`, resolveEvent)
+      window.addEventListener(`${tokenId}-reject`, rejectEvent)
+      window.Android.generatePOToken(
+        tokenId,
+        id,
+        JSON.stringify(htmlExtracts.session.context),
+        JSON.stringify(htmlExtracts.initialAttestationData),
+        JSON.stringify(htmlExtracts.ytConfig)
+      )
+    })
+    player.po_token = contentPoToken
   }
 
   let playerResponse

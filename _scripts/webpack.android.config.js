@@ -205,6 +205,10 @@ config.plugins.push(
   new CopyWebpackPlugin({
     patterns: [
       {
+        from: path.join(__dirname, '../dist/botGuardScript.js'),
+        to: path.join(__dirname, '../android/app/src/main/assets/botGuardScript.js'),
+      },
+      {
         from: path.join(__dirname, '../static/pwabuilder-sw.js'),
         to: path.join(__dirname, '../android/app/src/main/assets/pwabuilder-sw.js'),
       },
