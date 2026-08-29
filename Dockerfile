@@ -22,7 +22,7 @@ RUN apt-get update \
     && mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest" \
     && rm /tmp/android-commandline-tools.zip \
     && yes | sdkmanager --licenses >/dev/null || true \
-    && sdkmanager "platforms;android-35" "build-tools;35.0.0" \
+    && sdkmanager "platforms;android-36" "build-tools;36.0.0" \
     && npm install --global pnpm@11.23.0 \
     && git config --global --add safe.directory /workspace \
     && rm -rf /root/.npm
