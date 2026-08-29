@@ -342,6 +342,7 @@ run_unlocked_suite() {
   run_test persistence persistence
   run_test cleanup cleanup
   run_test recovery recovery
+  (( FAIL == 0 ))
 }
 
 run_locked_suite() {
@@ -367,12 +368,13 @@ run_locked_suite() {
   run_test locked-audio-focus locked_audio_focus
   run_test locked-cleanup locked_cleanup
   run_test locked-force-stop locked_force_stop
+  (( FAIL == 0 ))
 }
 
 case "$TEST" in
   all)
     case "$SUITE" in
-      all) run_unlocked_suite; run_locked_suite ;;
+      all) run_unlocked_suite && run_locked_suite ;;
       unlocked) run_unlocked_suite ;;
       locked) run_locked_suite ;;
       *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;
