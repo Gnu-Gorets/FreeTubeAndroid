@@ -156,6 +156,7 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        androidBridge.cancelMediaNotification()
         if (webView.canGoBack()) {
             webView.goBack()
         } else {

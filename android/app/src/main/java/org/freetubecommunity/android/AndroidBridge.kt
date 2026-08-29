@@ -45,9 +45,7 @@ class AndroidBridge(
     private var sigWebView: WebView? = null
     private var sigReady = false
     private val notificationManager = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private val mediaSession = MediaSession(activity, "FreeTubeAndroid").apply {
-        isActive = true
-    }
+    private val mediaSession = MediaSession(activity, "FreeTubeAndroid")
     private var mediaTitle = "FreeTube Android"
     private var mediaArtist = ""
     private var mediaDuration = 0L
@@ -419,6 +417,7 @@ class AndroidBridge(
     }
 
     private fun updateMediaState(state: Int, position: Long) {
+        if (!mediaSession.isActive) return
         mediaSession.setMetadata(MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, mediaTitle)
             .putString(MediaMetadata.METADATA_KEY_ARTIST, mediaArtist)

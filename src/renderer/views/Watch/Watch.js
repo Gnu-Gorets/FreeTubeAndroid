@@ -366,6 +366,10 @@ export default defineComponent({
     }
     this.onMountedDependOnLocalStateLoading()
   },
+  beforeRouteLeave(to, from, next) {
+    if (process.env.IS_ANDROID) android.cancelMediaNotification()
+    next()
+  },
   beforeUnmount() {
     if (process.env.IS_ANDROID) {
       window.removeEventListener('media-next', this.handleSkipToNext)
