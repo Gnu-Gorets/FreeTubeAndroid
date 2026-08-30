@@ -132,8 +132,22 @@ function filesToEntries(files) {
  * @param {FileList} entries
  * @returns {Record<string, string>}
  */
-function entriesToFiles(entries) {
-  return Object.fromEntries(entries.map((file) => { return [file.fileName, file.uri] }))
+function entriesToFiles(entries, strict = false) {
+  if (!Array.isArray(entries)) throw new Error('Invalid data directory files')
+
+  const files = {}
+  for (const file of entries) {
+    if (file === null || typeof file !== 'object') {
+      if (strict) throw new Error('Invalid data directory file entry')
+      continue
+    }
+    if (!EXPECTED_FILES.includes(file.fileName)) continue
+    if (typeof file.uri !== 'string' || file.uri === '' || Object.hasOwn(files, file.fileName)) {
+      throw new Error('Invalid data directory file entry')
+    }
+    files[file.fileName] = file.uri
+  }
+  return files
 }
 
 /**
@@ -159,12 +173,20 @@ export async function getCurrentDataDirectory() {
   if (fileContent !== '') {
     try {
       const data = JSON.parse(fileContent)
-      const handle = restoreHandleFromDirectoryUri(data.directory)
-      currentDataDirectory = {
-        ...handle,
-        files: entriesToFiles(data.files)
+      if (typeof data.directory !== 'string' || !Array.isArray(data.files)) {
+        throw new Error('Invalid data directory mapping')
       }
-      return currentDataDirectory
+
+      if (data.directory !== DATA_DIRECTORY && !android.isTreeAccessible(data.directory)) {
+        console.warn('Saved data directory is no longer accessible, using internal storage')
+      } else {
+        const handle = restoreHandleFromDirectoryUri(data.directory)
+        currentDataDirectory = {
+          ...handle,
+          files: entriesToFiles(data.files, true)
+        }
+        return currentDataDirectory
+      }
     } catch (ex) {
       // handle corruption
       console.warn('Loaded data was incomplete!')
@@ -247,15 +269,20 @@ export async function selectDataDirectory(copyFiles = false, reset = false) {
     }
   }
 
+  const mapping = JSON.stringify({
+    directory: newDirectory.uri,
+    files: filesToEntries(newFiles)
+  })
+  await writeFile(DATA_LOCATION, mapping)
+
   if (hasOldLocation) {
     android.revokePermissionForTree(currentDirectory.uri)
   }
 
-  currentDataDirectory = null
-  await writeFile(DATA_LOCATION, JSON.stringify({
-    directory: newDirectory.uri,
-    files: filesToEntries(newFiles)
-  }))
+  currentDataDirectory = {
+    ...newDirectory,
+    files: newFiles
+  }
 
   if (!copyFiles) {
     android.restart()

@@ -143,6 +143,22 @@ class AndroidBridge(
     fun listFilesInDataDir(): String = dataDirectory.listFiles().orEmpty().map { fileJson("data://${it.name}", it.name, it.isFile, it.isDirectory) }.joinToString(",", "[", "]")
 
     @JavascriptInterface
+    fun isTreeAccessible(tree: String): Boolean {
+        return try {
+            val uri = Uri.parse(tree)
+            val hasPersistedPermission = activity.contentResolver.persistedUriPermissions.any {
+                it.uri == uri && it.isReadPermission && it.isWritePermission
+            }
+            hasPersistedPermission && DocumentFile.fromTreeUri(activity, uri)?.let {
+                it.canRead() && it.canWrite()
+            } == true
+        } catch (error: Exception) {
+            Log.w("FreeTubeWebView", "Unable to access persisted data directory: $tree", error)
+            false
+        }
+    }
+
+    @JavascriptInterface
     fun listFilesInTree(tree: String): String = DocumentFile.fromTreeUri(activity, Uri.parse(tree))?.listFiles().orEmpty()
         .map { fileJson(it.uri.toString(), it.name, it.isFile, it.isDirectory) }.joinToString(",", "[", "]")
 
