@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var androidBridge: AndroidBridge
     private var pendingDeepLink: Intent? = null
 
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -99,14 +100,9 @@ class MainActivity : Activity() {
         webView.settings.allowUniversalAccessFromFileURLs = true
         @Suppress("DEPRECATION")
         webView.settings.allowFileAccessFromFileURLs = true
-        webView.settings.userAgentString = webView.settings.userAgentString
-            .replace(Regex("Mozilla/5.0 \\([^)]*\\)"), "Mozilla/5.0 (X11; Linux x86_64)")
-            .replace("Mobile Safari", "Safari")
-        webView.setInitialScale(100)
         webView.settings.mediaPlaybackRequiresUserGesture = false
         androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
         webView.addJavascriptInterface(androidBridge, "Android")
-        startService(Intent(this, KeepAliveService::class.java))
         webView.loadUrl("file:///android_asset/index.html")
     }
 
@@ -140,7 +136,6 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        stopService(Intent(this, KeepAliveService::class.java))
         androidBridge.cancelMediaNotification()
         webView.destroy()
         super.onDestroy()
@@ -155,6 +150,7 @@ class MainActivity : Activity() {
         }
     }
 
+    @Suppress("DEPRECATION")
     override fun onBackPressed() {
         androidBridge.cancelMediaNotification()
         if (webView.canGoBack()) {

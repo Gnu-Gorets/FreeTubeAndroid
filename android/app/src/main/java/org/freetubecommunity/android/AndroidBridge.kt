@@ -2,6 +2,7 @@ package org.freetubecommunity.android
 
 import android.app.Activity
 import android.app.Notification
+import android.graphics.drawable.Icon
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -117,6 +118,7 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun writeFile(uri: String, value: String): String = asyncFileOperation {
+        Log.i("FreeTubeWebView", "Writing file: $uri, ${value.length} chars")
         val bytes = if (value.startsWith("data:")) {
             android.util.Base64.decode(value.substringAfter("base64,"), android.util.Base64.DEFAULT)
         } else value.toByteArray()
@@ -202,11 +204,15 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun requestOpenDialog(fileTypes: String): String {
+        Log.i("FreeTubeWebView", "Opening import picker: $fileTypes")
         val id = UUID.randomUUID().toString()
         pendingOpenRequest = id
         activity.runOnUiThread {
-            activity.startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("*/*")
-                .putExtra(Intent.EXTRA_MIME_TYPES, fileTypes.split(',').toTypedArray()), MainActivity.OPEN_FILE_REQUEST)
+            activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, fileTypes.split(',').toTypedArray())
+            }, MainActivity.OPEN_FILE_REQUEST)
         }
         return id
     }
@@ -214,7 +220,16 @@ class AndroidBridge(
     private var pendingSaveRequest: String? = null
     private var pendingOpenRequest: String? = null
 
+    private fun getFileName(uri: Uri): String {
+        return activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+            }
+            ?: uri.toString().split(Regex("(/)|(%2F)")).last()
+    }
+
     fun finishOpenFile(resultCode: Int, uri: Uri?) {
+        Log.i("FreeTubeWebView", "Import picker result: code=$resultCode uri=$uri pending=$pendingOpenRequest")
         val openRequest = pendingOpenRequest
         if (openRequest != null) {
             pendingOpenRequest = null
@@ -224,9 +239,7 @@ class AndroidBridge(
                 return
             }
             try {
-                val filename = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                    ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "imported-file" }
-                    ?: "imported-file"
+                val filename = getFileName(uri)
                 val payload = JSONObject().apply {
                     put("uri", uri.toString())
                     put("type", activity.contentResolver.getType(uri))
@@ -254,9 +267,7 @@ class AndroidBridge(
         }
 
         try {
-            val filename = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "imported-file" }
-                ?: "imported-file"
+            val filename = getFileName(uri)
             val content = activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 ?: throw IllegalStateException("Unable to open input stream for $uri")
             val event = JSONObject.quote(eventName)
@@ -338,7 +349,7 @@ class AndroidBridge(
             activity, action.hashCode(), Intent(activity, MediaControlsReceiver::class.java).setAction(action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return Notification.Action.Builder(icon, label, pendingIntent).build()
+        return Notification.Action.Builder(Icon.createWithResource(activity, icon), label, pendingIntent).build()
     }
 
     @JavascriptInterface
@@ -399,7 +410,27 @@ class AndroidBridge(
     @JavascriptInterface
     fun getLogs(): String = JSONArray(MainActivity.consoleMessages.toList()).toString()
 
+    private var appliedScale: Int? = null
+
     @JavascriptInterface
+    fun setScale(scale: Int) {
+        activity.runOnUiThread {
+            if (scale == 100) {
+                if (appliedScale != null) {
+                    mainWebView.setInitialScale(0)
+                    appliedScale = null
+                    mainWebView.reload()
+                }
+            } else if (appliedScale != scale) {
+                mainWebView.setInitialScale(scale)
+                appliedScale = scale
+                mainWebView.reload()
+            }
+        }
+    }
+
+    @JavascriptInterface
+    @Suppress("DEPRECATION")
     fun themeSystemUi(navigationHex: String, statusHex: String, navigationDarkMode: Boolean, statusDarkMode: Boolean) {
         activity.runOnUiThread {
             activity.window.navigationBarColor = android.graphics.Color.parseColor(navigationHex)

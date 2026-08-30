@@ -188,6 +188,9 @@ const config = {
     extensions: ['.js', '.vue']
   },
   target: 'web',
+  performance: {
+    hints: false
+  },
 }
 
 const processLocalesPlugin = new ProcessLocalesPlugin({

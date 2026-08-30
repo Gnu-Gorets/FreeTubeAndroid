@@ -1,8 +1,11 @@
 import android from 'android'
 
 function isDark(color) {
-  const value = color.match(/\d+/g)?.map(Number) || [0, 0, 0]
-  return (value[0] * 299 + value[1] * 587 + value[2] * 114) < 128000
+  const value = color.trim().startsWith('#')
+    ? color.trim().slice(1).match(/.{2}/g)?.map((part) => parseInt(part, 16))
+    : color.match(/\d+/g)?.map(Number)
+  const [red, green, blue] = value || [0, 0, 0]
+  return (red * 299 + green * 587 + blue * 114) < 128000
 }
 
 export function updateAndroidTheme(usesMain = false) {
