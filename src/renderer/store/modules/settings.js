@@ -208,19 +208,19 @@ const state = {
   showAddedChannelsHidden: true,
   showAddedForbiddenTitles: true,
   hideVideoDescription: false,
-  hideLiveChat: false,
+  hideLiveChat: true,
   hideLiveStreams: false,
-  hideHeaderLogo: false,
-  hidePlaylists: false,
-  hidePopularVideos: false,
-  hideRecommendedVideos: false,
+  hideHeaderLogo: true,
+  hidePlaylists: true,
+  hidePopularVideos: true,
+  hideRecommendedVideos: true,
   hideSearchBar: false,
   hideSharingActions: false,
   hideSubscriptionsVideos: false,
-  hideSubscriptionsShorts: false,
-  hideSubscriptionsLive: false,
-  hideSubscriptionsCommunity: false,
-  hideTrendingVideos: false,
+  hideSubscriptionsShorts: true,
+  hideSubscriptionsLive: true,
+  hideSubscriptionsCommunity: true,
+  hideTrendingVideos: true,
   hideUnsubscribeButton: false,
   hideUpcomingPremieres: false,
   hideVideoLikesAndDislikes: false,
@@ -404,6 +404,8 @@ const sideEffectHandlers = {
   uiScale: (_, value) => {
     if (process.env.IS_ELECTRON) {
       window.ftElectron.setZoomFactor(value / 100)
+    } else if (process.env.IS_ANDROID) {
+      window.Android.setScale(value)
     }
   },
 
