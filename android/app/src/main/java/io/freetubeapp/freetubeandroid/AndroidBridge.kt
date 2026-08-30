@@ -500,55 +500,7 @@ class AndroidBridge(
                         return true
                     }
                 }
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView,
-                        request: WebResourceRequest
-                    ): WebResourceResponse? {
-                        val url = request.url.toString()
-                        if (url.startsWith("data:text/html") || url.startsWith("https://www.youtube.com/api/jnn/v1/GenerateIT")) {
-                            return super.shouldInterceptRequest(view, request)
-                        }
-                        return try {
-                            val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                            connection.requestMethod = request.method
-                            request.requestHeaders.forEach { (key, value) -> connection.setRequestProperty(key, value) }
-                            if (url.startsWith("https://www.youtube.com/youtubei/")) {
-                                connection.setRequestProperty("Referer", "https://www.youtube.com/")
-                                connection.setRequestProperty("Origin", "https://www.youtube.com")
-                                connection.setRequestProperty("Sec-Fetch-Site", "same-origin")
-                                connection.setRequestProperty("Sec-Fetch-Mode", "same-origin")
-                                connection.setRequestProperty("X-Youtube-Bootstrap-Logged-In", "false")
-                            }
-                            if (url.startsWith("https://www.google.com/js/")) {
-                                connection.setRequestProperty("Referer", "https://www.google.com/")
-                                connection.setRequestProperty("Origin", "https://www.google.com")
-                                connection.setRequestProperty("Sec-Fetch-Dest", "script")
-                                connection.setRequestProperty("Sec-Fetch-Site", "cross-site")
-                                connection.setRequestProperty("Accept-Language", "*")
-                            }
-                            if (url.startsWith("https://www.google.com/js/")) {
-                                WebResourceResponse(
-                                    connection.contentType,
-                                    connection.contentEncoding,
-                                    connection.responseCode,
-                                    connection.responseMessage,
-                                    mapOf(
-                                        "Access-Control-Allow-Origin" to "https://www.youtube.com",
-                                        "Access-Control-Allow-Methods" to "GET, OPTIONS",
-                                        "Access-Control-Allow-Headers" to "*"
-                                    ),
-                                    connection.inputStream
-                                )
-                            } else {
-                                WebResourceResponse(connection.contentType, connection.contentEncoding, connection.inputStream)
-                            }
-                        } catch (error: Exception) {
-                            Log.e("FreeTubeBotGuard", error.toString())
-                            super.shouldInterceptRequest(view, request)
-                        }
-                    }
-                }
+                webViewClient = WebViewClient()
                 this@AndroidBridge.parent.addView(this, ViewGroup.LayoutParams(1, 1))
                 loadDataWithBaseURL(
                     "https://www.youtube.com/",
