@@ -122,9 +122,11 @@ wait_for() {
 }
 
 close_picker() {
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 1
-  is_focused "$PACKAGE" || adb_shell input keyevent KEYCODE_BACK
+  for _ in 1 2 3; do
+    is_focused "$PACKAGE" && return 0
+    adb_shell input keyevent KEYCODE_BACK
+    sleep 1
+  done
   wait_for "$PACKAGE"
 }
 
@@ -399,6 +401,9 @@ data_directory_move_reset() {
   adb_shell input tap 215 460
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
+  # DocumentsUI reopens last tree location; normalize to Documents before selecting it.
+  adb_shell input tap 280 204
+  sleep 2
   adb_shell input tap 360 1560
   sleep 2
   adb_shell input tap 590 940
