@@ -93,6 +93,8 @@ fi
 if [[ -z "$SERIAL" ]] || ! adb_cmd get-state >/dev/null 2>&1; then
   echo "SKIP: no adb device connected"; exit 77
 fi
+adb_cmd root >/dev/null 2>&1 || true
+sleep 2
 
 run_test() {
   local name="$1"; shift
@@ -368,11 +370,8 @@ open_data_settings() {
   adb_shell input tap 615 1540
   sleep 3
   # At UI scale 100% Settings uses full-screen mobile section menu.
-  adb_shell input tap 63 245
-  sleep 2
   adb_shell input tap 300 1084
   sleep 3
-}
 
 export_data() {
   open_data_settings || return 1
@@ -406,7 +405,7 @@ data_directory_move_reset() {
   sleep 2
   adb_shell input tap 360 1560
   sleep 2
-  adb_shell input tap 590 940
+  adb_shell input tap 610 905
   sleep 8
   local mapping
   mapping=$(adb_shell cat "/data/user/0/$PACKAGE/files/data/data-location.json" 2>/dev/null || true)
