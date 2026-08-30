@@ -1258,8 +1258,18 @@ async function importPlaylists() {
   ]
 
   const newPlaylists = []
+  let importedPlaylistCount = 0
 
   for (const playlistData of playlists) {
+    if (playlistData === null || typeof playlistData !== 'object' || Array.isArray(playlistData)) {
+      showToast(t('Settings.Data Settings.Playlist insufficient data'))
+      continue
+    }
+    if (!Array.isArray(playlistData.videos)) {
+      showToast(t('Settings.Data Settings.Playlist insufficient data', { playlist: playlistData.playlistName }))
+      continue
+    }
+
     // We would technically already be done by the time the data is parsed,
     // however we want to limit the possibility of malicious data being sent
     // to the app, so we'll only grab the data we need here.
@@ -1275,6 +1285,7 @@ async function importPlaylists() {
       } else if (key === 'videos') {
         const videoArray = []
         playlistData.videos.forEach((video) => {
+          if (video === null || typeof video !== 'object') return
           const videoPropertyKeys = Object.keys(video)
           const videoObjectHasAllRequiredKeys = requiredVideoKeys.every((k) => videoPropertyKeys.includes(k))
 
@@ -1302,9 +1313,10 @@ async function importPlaylists() {
     if (countRequiredKeysPresent !== requiredKeys.length) {
       const message = t('Settings.Data Settings.Playlist insufficient data', { playlist: playlistData.playlistName })
       showToast(message)
-      return
+      continue
     }
 
+    importedPlaylistCount++
     const existingPlaylist = allPlaylists.value.find((playlist) => {
       if (playlistObject._id != null && playlist._id === playlistObject._id) {
         return true
@@ -1380,6 +1392,11 @@ async function importPlaylists() {
 
   if (newPlaylists.length > 0) {
     await store.dispatch('addPlaylists', newPlaylists)
+  }
+
+  if (importedPlaylistCount === 0) {
+    showToast(t('Settings.Data Settings.Unable to read file'))
+    return
   }
 
   showToast(t('Settings.Data Settings.All playlists has been successfully imported'))

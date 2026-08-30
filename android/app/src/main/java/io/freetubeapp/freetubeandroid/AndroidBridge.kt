@@ -159,12 +159,22 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun listFilesInTree(tree: String): String = DocumentFile.fromTreeUri(activity, Uri.parse(tree))?.listFiles().orEmpty()
-        .map { fileJson(it.uri.toString(), it.name, it.isFile, it.isDirectory) }.joinToString(",", "[", "]")
+    fun listFilesInTree(tree: String): String {
+        val directory = DocumentFile.fromTreeUri(activity, Uri.parse(tree))
+            ?: throw IllegalStateException("Unable to open tree: $tree")
+        if (!directory.canRead()) throw SecurityException("Unable to read tree: $tree")
+        return directory.listFiles()
+            .map { fileJson(it.uri.toString(), it.name, it.isFile, it.isDirectory) }.joinToString(",", "[", "]")
+    }
 
     @JavascriptInterface
-    fun createFileInTree(tree: String, fileName: String): String? = DocumentFile.fromTreeUri(activity, Uri.parse(tree))
-        ?.createFile("application/octet-stream", fileName)?.uri?.toString()
+    fun createFileInTree(tree: String, fileName: String): String {
+        val directory = DocumentFile.fromTreeUri(activity, Uri.parse(tree))
+            ?: throw IllegalStateException("Unable to open tree: $tree")
+        if (!directory.canWrite()) throw SecurityException("Unable to write tree: $tree")
+        return directory.createFile("application/octet-stream", fileName)?.uri?.toString()
+            ?: throw IllegalStateException("Unable to create file: $fileName")
+    }
 
     private fun fileJson(uri: String, name: String?, isFile: Boolean, isDirectory: Boolean): String = JSONObject().apply {
         put("uri", uri)
