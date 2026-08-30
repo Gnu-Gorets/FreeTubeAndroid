@@ -106,15 +106,26 @@ run_test() {
   fi
 }
 
+is_focused() {
+  adb_shell dumpsys activity activities 2>/dev/null | grep -qE "mResumedActivity:.*$1|mFocusedApp=.*$1"
+}
+
 wait_for() {
   local pattern="$1" start now
   start=$(date +%s)
   while :; do
-    if adb_shell dumpsys activity activities 2>/dev/null | grep -q "$pattern"; then return 0; fi
+    if is_focused "$pattern"; then return 0; fi
     now=$(date +%s)
     ((now - start >= TIMEOUT)) && return 1
     sleep 1
   done
+}
+
+close_picker() {
+  adb_shell input keyevent KEYCODE_BACK
+  sleep 1
+  is_focused "$PACKAGE" || adb_shell input keyevent KEYCODE_BACK
+  wait_for "$PACKAGE"
 }
 
 device_is_unlocked() {
@@ -144,6 +155,7 @@ require_unlocked() {
 ensure_ui_scale_100() {
   (( UI_SCALE_SET == 1 )) && return 0
   adb_shell am force-stop "$PACKAGE"
+  adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
   adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
   wait_for "$PACKAGE" || return 1
   sleep 5
@@ -176,6 +188,7 @@ ensure_ui_scale_100() {
 start_app() {
   set_display_scale_100 || return 1
   ensure_ui_scale_100 || return 1
+  adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
   adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
   wait_for "$PACKAGE" || return 1
   sleep 5
@@ -366,8 +379,7 @@ export_data() {
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
-  adb_shell input keyevent KEYCODE_BACK
-  wait_for "$PACKAGE"
+  close_picker
 }
 
 data_directory_cancel() {
@@ -377,8 +389,7 @@ data_directory_cancel() {
   adb_shell input tap 215 460
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
-  adb_shell input keyevent KEYCODE_BACK
-  wait_for "$PACKAGE" || return 1
+  close_picker || return 1
   mapping_after=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
   [[ "$mapping_before" == "$mapping_after" ]]
 }

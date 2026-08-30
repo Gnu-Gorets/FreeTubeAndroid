@@ -1327,7 +1327,7 @@ async function importPlaylists() {
 
     if (existingPlaylist === undefined) {
       newPlaylists.push(playlistObject)
-      return
+      continue
     }
 
     /** @type {Set<string> | undefined} */
