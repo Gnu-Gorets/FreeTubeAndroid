@@ -1,0 +1,112 @@
+# Development workflow
+
+## Prerequisites
+
+- Node.js and `pnpm` compatible with the lockfile.
+- JDK 17 for Android builds.
+- Android SDK with API 36 and Android build tools 36.0.0.
+- `adb` on `PATH` for Android installation, logs, and smoke tests.
+
+## JavaScript setup
+
+```bash
+pnpm install
+```
+
+Run Electron development mode:
+
+```bash
+pnpm dev
+```
+
+Run browser/PWA development mode:
+
+```bash
+pnpm dev:web
+```
+
+Run the main checks:
+
+```bash
+pnpm run lint
+pnpm run lint-json
+pnpm run lint-yml
+pnpm run checkforbadtemplates
+```
+
+Useful packaging commands:
+
+```bash
+pnpm run pack
+pnpm run pack:web
+pnpm run pack:android:dev
+pnpm run pack:android:core
+```
+
+`pack:android:dev` creates the development web bundle in `android/app/src/main/assets/`. Run it after changing shared JavaScript and before installing the Android app.
+
+## Android build and install
+
+From the repository root:
+
+```bash
+cd android
+./gradlew assembleDebug
+./gradlew installDebug
+cd ..
+```
+
+The debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. The Android application id is `io.freetubeapp.freetubeandroid`.
+
+## Required physical test device
+
+Android work must use the connected physical test phone whenever available.
+
+Before Android work or validation, run:
+
+```bash
+adb devices -l
+adb get-state
+```
+
+A physical phone must be present with state `device`. If it is missing, unlock the phone, confirm the USB debugging authorization dialog, reconnect USB, and do not claim Android validation is complete until ADB is working.
+
+Install and launch on the connected phone:
+
+```bash
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n io.freetubeapp.freetubeandroid/.MainActivity
+```
+
+Collect native and WebView logs when diagnosing Android behavior:
+
+```bash
+adb logcat -c
+adb logcat -v brief
+```
+
+## Android smoke test
+
+The repository includes a device-driven smoke test:
+
+```bash
+_scripts/android-smoke-test.sh
+```
+
+It returns `77` when `adb` or a device is unavailable. Its artifacts are written under ignored `tmp/android-smoke/`.
+
+The smoke test can run a smaller test or suite when debugging:
+
+```bash
+_scripts/android-smoke-test.sh --test cold-start
+_scripts/android-smoke-test.sh --suite locked
+```
+
+## Change workflow
+
+1. Read `docs/ARCHITECTURE.md` and this file before changing code.
+2. Inspect the nearest existing implementation and all callers before adding a new helper or platform branch.
+3. For Android changes, check the required ADB device first and use the physical phone for validation.
+4. Regenerate Android assets with `pnpm run pack:android:dev`; do not hand-edit generated bundle files.
+5. Run the smallest relevant lint/build/smoke checks and report any check skipped because the device or environment was unavailable.
+6. Keep generated output, local data, and logs out of commits.
