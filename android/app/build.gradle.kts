@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "org.freetubecommunity.android"
+    namespace = "io.freetubeapp.freetubeandroid"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "org.freetubecommunity.android"
+        applicationId = "io.freetubeapp.freetubeandroid"
         minSdk = 29
         targetSdk = 36
         versionCode = 1

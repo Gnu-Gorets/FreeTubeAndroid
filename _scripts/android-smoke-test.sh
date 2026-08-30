@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-PACKAGE="org.freetubecommunity.android"
+PACKAGE="io.freetubeapp.freetubeandroid"
 ACTIVITY="$PACKAGE/.MainActivity"
 APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/debug/app-debug.apk"
 SERIAL=""
@@ -188,7 +188,7 @@ playback() {
   open_search_results || return 1
   open_video
   no_runtime_errors || return 1
-  grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' "$ARTIFACT_DIR/media_session.txt" | grep -q 'state=PlaybackState {state=PLAYING'
+  grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' "$ARTIFACT_DIR/media_session.txt" | grep -q 'state=PlaybackState {state=PLAYING'
 }
 
 controls() {
@@ -199,10 +199,10 @@ controls() {
   sleep 1
   adb_shell am start -a MEDIA_PAUSE -n "$ACTIVITY" >/dev/null
   sleep 1
-  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'state=PlaybackState {state=PAUSED' || return 1
+  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'state=PlaybackState {state=PAUSED' || return 1
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
   sleep 2
-  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'state=PlaybackState {state=PLAYING' || return 1
+  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'state=PlaybackState {state=PLAYING' || return 1
   screenshot controls
   no_runtime_errors
 }
@@ -213,7 +213,7 @@ locked_state() {
 }
 
 media_session() {
-  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android'
+  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid'
 }
 
 locked_screen() {
@@ -223,7 +223,7 @@ locked_screen() {
 
 locked_notification() {
   locked_state || return 1
-  adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001'
+  adb_shell dumpsys notification --noredact | grep -q 'io.freetubeapp.freetubeandroid.*id=1001'
 }
 
 locked_session() {
@@ -250,14 +250,14 @@ locked_audio_focus() {
 locked_cleanup() {
   locked_state || return 1
   media_session | grep -q 'active=true' || return 1
-  adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001'
+  adb_shell dumpsys notification --noredact | grep -q 'io.freetubeapp.freetubeandroid.*id=1001'
 }
 
 locked_force_stop() {
   locked_state || return 1
   adb_shell am force-stop "$PACKAGE"
   sleep 3
-  ! adb_shell dumpsys media_session | grep -q 'org.freetubecommunity.android/FreeTubeAndroid'
+  ! adb_shell dumpsys media_session | grep -q 'io.freetubeapp.freetubeandroid/FreeTubeAndroid'
 }
 
 lock_screen() {
@@ -330,16 +330,16 @@ cleanup() {
   fi
   adb_shell input keyevent KEYCODE_BACK
   sleep 2
-  if adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'active='; then
-    adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid org.freetubecommunity.android' | grep -q 'active=false' || return 1
+  if adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active='; then
+    adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active=false' || return 1
   fi
-  ! adb_shell dumpsys notification --noredact | grep -q 'org.freetubecommunity.android.*id=1001'
+  ! adb_shell dumpsys notification --noredact | grep -q 'io.freetubeapp.freetubeandroid.*id=1001'
 }
 
 recovery() {
   adb_shell am force-stop "$PACKAGE"
   sleep 3
-  ! adb_shell dumpsys media_session | grep -q 'org.freetubecommunity.android/FreeTubeAndroid' || return 1
+  ! adb_shell dumpsys media_session | grep -q 'io.freetubeapp.freetubeandroid/FreeTubeAndroid' || return 1
   start_app || return 1
   adb_shell dumpsys activity activities | grep -q "$PACKAGE"
 }

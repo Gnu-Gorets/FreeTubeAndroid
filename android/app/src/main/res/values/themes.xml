@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.FreeTubeAndroidCommunity" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.FreeTubeAndroid" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorAccent">#ff0000</item>

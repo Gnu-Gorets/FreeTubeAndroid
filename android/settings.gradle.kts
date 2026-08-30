@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "FreeTube Android Community"
+rootProject.name = "FreeTube"
 include(":app")

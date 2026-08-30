@@ -1,4 +1,4 @@
-package org.freetubecommunity.android
+package io.freetubeapp.freetubeandroid
 
 import android.app.Activity
 import android.app.Notification
