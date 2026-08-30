@@ -377,7 +377,7 @@ open_data_settings() {
 export_data() {
   open_data_settings || return 1
   # Export Playlists button in Data settings.
-  adb_shell input tap 480 1400
+  adb_shell input tap 480 1070
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
@@ -388,7 +388,7 @@ data_directory_cancel() {
   open_data_settings || return 1
   local mapping_before mapping_after
   mapping_before=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
-  adb_shell input tap 215 460
+  adb_shell input tap 220 382
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   close_picker || return 1
@@ -398,7 +398,7 @@ data_directory_cancel() {
 
 data_directory_move_reset() {
   open_data_settings || return 1
-  adb_shell input tap 215 460
+  adb_shell input tap 220 382
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   # DocumentsUI reopens last tree location; normalize to Documents before selecting it.
