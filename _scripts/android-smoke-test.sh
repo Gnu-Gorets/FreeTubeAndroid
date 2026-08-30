@@ -26,8 +26,8 @@ Options:
   --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        export, locked-controls, locked-audio-focus, locked-cleanup,
-                        locked-force-stop
+                        export, data-directory-cancel, locked-controls, locked-audio-focus,
+                        locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -289,23 +289,42 @@ audio_focus() {
   no_runtime_errors
 }
 
-export_data() {
+open_data_settings() {
   start_app || return 1
-  sleep 3
-  adb_shell input tap 635 1540
+  adb_shell input tap 18 98
+  sleep 1
+  adb_shell input tap 55 280
   sleep 2
-  adb_shell input tap 635 1540
-  sleep 4
-  adb_shell input tap 350 1085
+  # Close the app navigation drawer so Settings content is visible.
+  adb_shell input tap 18 98
   sleep 2
-  adb_shell input tap 350 1085
-  sleep 4
-  adb_shell input tap 210 808
+  # Open Data settings in the mobile settings menu.
+  adb_shell input tap 80 465
+  sleep 2
+}
+
+export_data() {
+  open_data_settings || return 1
+  # Export Playlists button in Data settings.
+  adb_shell input tap 515 758
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
   adb_shell input keyevent KEYCODE_BACK
   wait_for "$PACKAGE"
+}
+
+data_directory_cancel() {
+  open_data_settings || return 1
+  local mapping_before mapping_after
+  mapping_before=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
+  adb_shell input tap 310 524
+  sleep 3
+  wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
+  adb_shell input keyevent KEYCODE_BACK
+  wait_for "$PACKAGE" || return 1
+  mapping_after=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
+  [[ "$mapping_before" == "$mapping_after" ]]
 }
 
 persistence() {
@@ -366,6 +385,7 @@ run_unlocked_suite() {
   run_test audio-focus audio_focus
   run_test persistence persistence
   run_test export export_data
+  run_test data-directory-cancel data_directory_cancel
   run_test cleanup cleanup
   run_test recovery recovery
   (( FAIL == 0 ))
@@ -422,6 +442,7 @@ case "$TEST" in
   audio-focus) run_test audio-focus audio_focus ;;
   persistence) run_test persistence persistence ;;
   export) run_test export export_data ;;
+  data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
