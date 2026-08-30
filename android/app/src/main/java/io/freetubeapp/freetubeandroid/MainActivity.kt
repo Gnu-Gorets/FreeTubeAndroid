@@ -130,15 +130,18 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        Log.i("FreeTubeLifecycle", "onPause")
         webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
     }
 
     override fun onResume() {
         super.onResume()
+        Log.i("FreeTubeLifecycle", "onResume")
         webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
     }
 
     override fun onDestroy() {
+        Log.i("FreeTubeLifecycle", "onDestroy finishing=$isFinishing changingConfigurations=$isChangingConfigurations")
         androidBridge.cancelMediaNotification()
         webView.destroy()
         super.onDestroy()
@@ -155,10 +158,10 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        androidBridge.cancelMediaNotification()
         if (webView.canGoBack()) {
             webView.goBack()
         } else {
+            androidBridge.cancelMediaNotification()
             super.onBackPressed()
         }
     }
