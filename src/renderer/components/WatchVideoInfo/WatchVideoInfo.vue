@@ -404,9 +404,6 @@ onMounted(() => {
       }]
     })
   }
-  if (process.env.IS_ANDROID && window.Android) {
-    window.Android.createMediaSession(props.title, props.channelName, Math.round(props.lengthSeconds * 1000))
-  }
 })
 
 const showPlaylists = computed(() => !store.getters.getHidePlaylists)

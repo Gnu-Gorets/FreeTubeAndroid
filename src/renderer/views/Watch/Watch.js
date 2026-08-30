@@ -80,9 +80,6 @@ export default defineComponent({
     'ft-age-restricted': FtAgeRestricted
   },
   beforeRouteLeave: async function (to, from, next) {
-    if (process.env.IS_ANDROID && window.Android) {
-      window.Android.cancelMediaSession()
-    }
     this.handleRouteChange()
     window.removeEventListener('beforeunload', this.handleWatchProgressAutoSave)
     document.removeEventListener('keydown', this.resetAutoplayInterruptionTimeout)
@@ -365,10 +362,6 @@ export default defineComponent({
       window.addEventListener('media-previous', this.handleSkipToPrev)
     }
     this.onMountedDependOnLocalStateLoading()
-  },
-  beforeRouteLeave(to, from, next) {
-    if (process.env.IS_ANDROID) android.cancelMediaNotification()
-    next()
   },
   beforeUnmount() {
     if (process.env.IS_ANDROID) {
