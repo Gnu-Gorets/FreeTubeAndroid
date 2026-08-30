@@ -19,5 +19,5 @@ services:
     network_mode: host
 
 volumes:
-  gradle-cache:
-  pnpm-store:
+  gradle-cache: {}
+  pnpm-store: {}
