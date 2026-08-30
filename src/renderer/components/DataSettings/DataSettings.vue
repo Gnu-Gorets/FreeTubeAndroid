@@ -7,8 +7,14 @@
         {{ $t('Settings.Data Settings.Data Directory') }}
       </h4>
       <FtFlexBox class="dataSettingsBox">
-        <FtButton :label="$t('Settings.Data Settings.Select Data Directory')" @click="selectDirectory" />
-        <FtButton :label="$t('Settings.Data Settings.Reset Data Directory')" @click="resetDirectory" />
+        <FtButton
+          :label="$t('Settings.Data Settings.Select Data Directory')"
+          @click="selectDirectory"
+        />
+        <FtButton
+          :label="$t('Settings.Data Settings.Reset Data Directory')"
+          @click="resetDirectory"
+        />
         <FtToggleSwitch
           :label="$t('Settings.Data Settings.Copy Data Files When Moving')"
           :compact="true"
@@ -18,8 +24,12 @@
         />
       </FtFlexBox>
       <FtFlexBox>
-        <p>{{ $t('Settings.Data Settings.Data Is Currently Stored In') }}</p>
-        <p class="data-directory">{{ dataDirectory }}</p>
+        <p>
+          {{ $t('Settings.Data Settings.Data Is Currently Stored In') }}
+        </p>
+        <p class="data-directory">
+          {{ dataDirectory }}
+        </p>
       </FtFlexBox>
     </template>
     <h4 class="groupTitle">
@@ -143,6 +153,7 @@ import store from '../../store/index'
 import { defaultUpdaterId, NON_TRANSFERABLE_SETTINGS } from '../../store/modules/settings'
 
 import { MAIN_PROFILE_ID } from '../../../constants'
+import { handleAmbigiousContent } from '../../helpers/android/utils'
 import { calculateColorLuminance, getRandomColor } from '../../helpers/colors'
 import {
   deepCopy,
@@ -293,12 +304,17 @@ async function importSubscriptions() {
     return
   }
 
-  const { filename, content } = response
+  let { filename, content } = response
+  if (usingAndroid) {
+    filename = handleAmbigiousContent(content, filename)
+  }
+  console.warn(`[Import] file=${filename} bytes=${content.length}`)
 
   if (filename.endsWith('.csv')) {
     importCsvYouTubeSubscriptions(content)
   } else if (filename.endsWith('.db')) {
-    importFreeTubeSubscriptions(content)
+    await importFreeTubeSubscriptions(content)
+    store.dispatch('updateActiveProfile', MAIN_PROFILE_ID)
   } else if (filename.endsWith('.opml') || filename.endsWith('.xml')) {
     importOpmlYouTubeSubscriptions(content)
   } else if (filename.endsWith('.json')) {
@@ -372,12 +388,15 @@ function convertOldFreeTubeFormatToNew(oldData) {
 /**
  * @param {string} textDecode
  */
-function importFreeTubeSubscriptions(textDecode) {
-  textDecode = textDecode.split('\n')
-  textDecode.pop()
-  textDecode = textDecode.map(data => JSON.parse(data))
+async function importFreeTubeSubscriptions(textDecode) {
+  textDecode = textDecode
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(data => JSON.parse(data))
 
   const firstEntry = textDecode[0]
+  if (!firstEntry) return
   if (firstEntry.channelId && firstEntry.channelName && firstEntry.channelThumbnail && firstEntry._id && firstEntry.profile) {
     // Old FreeTube subscriptions format detected, so convert it to the new one:
     textDecode = convertOldFreeTubeFormatToNew(textDecode)
@@ -391,7 +410,7 @@ function importFreeTubeSubscriptions(textDecode) {
     'subscriptions'
   ]
 
-  textDecode.forEach((profileData) => {
+  for (const profileData of textDecode) {
     // We would technically already be done by the time the data is parsed,
     // however we want to limit the possibility of malicious data being sent
     // to the app, so we'll only grab the data we need here.
@@ -419,7 +438,7 @@ function importFreeTubeSubscriptions(textDecode) {
 
           return profileIndex === index
         })
-        store.dispatch('updateProfile', primaryProfile.value)
+        await store.dispatch('updateProfile', primaryProfile.value)
       } else {
         const existingProfileIndex = profileList.value.findIndex((profile) => {
           return profile.name.includes(profileObject.name)
@@ -435,9 +454,9 @@ function importFreeTubeSubscriptions(textDecode) {
 
             return profileIndex === index
           })
-          store.dispatch('updateProfile', existingProfile)
+          await store.dispatch('updateProfile', existingProfile)
         } else {
-          store.dispatch('updateProfile', profileObject)
+          await store.dispatch('updateProfile', profileObject)
         }
 
         primaryProfile.value.subscriptions = primaryProfile.value.subscriptions.concat(profileObject.subscriptions)
@@ -448,11 +467,12 @@ function importFreeTubeSubscriptions(textDecode) {
 
           return profileIndex === index
         })
-        store.dispatch('updateProfile', primaryProfile.value)
+        await store.dispatch('updateProfile', primaryProfile.value)
       }
     }
-  })
+  }
 
+  await store.dispatch('grabAllProfiles')
   showToast(t('Settings.Data Settings.All subscriptions and profiles have been successfully imported'))
 }
 
@@ -1590,25 +1610,31 @@ async function importSettings() {
     return
   }
 
-  const textDecode = response.content.split('\n')
-  textDecode.pop()
+  const entries = response.content.split('\n').filter(Boolean).flatMap((rawEntry) => {
+    try {
+      return [JSON.parse(rawEntry)]
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+      return []
+    }
+  })
+
+  // Original Android exports store scale in separate Android-only settings.
+  const useAndroidScale = entries.find(({ _id }) => _id === 'useUiScale')?.value === true
+  const androidScale = entries.find(({ _id }) => _id === 'uiScaleAndroid')?.value
+  const importedEntries = entries.filter(({ _id }) => _id !== 'uiScaleAndroid' && _id !== 'useUiScale')
+  if (useAndroidScale && typeof androidScale === 'number') {
+    importedEntries.push({ _id: 'uiScale', value: androidScale })
+  }
 
   const currentSettings = store.state.settings
 
-  textDecode.forEach((rawEntry) => {
-    let entry
-    try {
-      entry = JSON.parse(rawEntry)
-    } catch (error) {
-      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
-      return
-    }
+  for (const entry of importedEntries) {
     if (typeof entry._id !== 'string' || !Object.hasOwn(entry, 'value')) {
       showToast(t('Settings.Data Settings.Setting object has insufficient data, skipping item'))
       console.error('Missing keys:', entry)
     } else if (!Object.hasOwn(currentSettings, entry._id)) {
-      const message = t('Settings.Data Settings.Unknown setting key', { key: entry._id })
-      showToast(message)
+      console.warn('Skipping unknown setting key:', entry._id)
     } else if (NON_TRANSFERABLE_SETTINGS.has(entry._id)) {
       const message = t('Settings.Data Settings.Non-transferable setting key', { key: entry._id })
       showToast(message)
@@ -1618,10 +1644,10 @@ async function importSettings() {
         (typeof entry.value === 'object' && JSON.stringify(currentValue) === JSON.stringify(entry.value))
       if (!areValuesEqual) {
         const updaterId = defaultUpdaterId(entry._id)
-        store.dispatch(updaterId, entry.value)
+        await store.dispatch(updaterId, entry.value)
       }
     }
-  })
+  }
 
   showToast(t('Settings.Data Settings.All settings have been successfully imported'))
 }
