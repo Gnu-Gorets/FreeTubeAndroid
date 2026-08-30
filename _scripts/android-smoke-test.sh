@@ -14,6 +14,9 @@ LOG_FILE=""
 PASS=0
 FAIL=0
 SKIP=0
+DISPLAY_SCALE_SAVED=0
+DISPLAY_OVERRIDE_DENSITY=""
+UI_SCALE_SET=0
 
 usage() {
   cat <<'EOF'
@@ -58,6 +61,27 @@ adb_cmd() {
 
 adb_shell() { adb_cmd shell "$@"; }
 screenshot() { adb_cmd exec-out screencap -p >"$ARTIFACT_DIR/$1.png"; }
+
+set_display_scale_100() {
+  (( DISPLAY_SCALE_SAVED == 1 )) && return 0
+  DISPLAY_OVERRIDE_DENSITY=$(adb_shell wm density | awk '/Override density:/ { print $3; exit }')
+  adb_shell wm density reset >/dev/null || return 1
+  DISPLAY_SCALE_SAVED=1
+  adb_shell am force-stop "$PACKAGE"
+  sleep 2
+  adb_shell wm density | grep -q 'Physical density:'
+}
+
+restore_display_scale() {
+  (( DISPLAY_SCALE_SAVED == 1 )) || return 0
+  if [[ -n "$DISPLAY_OVERRIDE_DENSITY" ]]; then
+    adb_shell wm density "$DISPLAY_OVERRIDE_DENSITY" >/dev/null
+  else
+    adb_shell wm density reset >/dev/null
+  fi
+}
+
+trap restore_display_scale EXIT
 
 if ! command -v adb >/dev/null 2>&1; then
   echo "SKIP: adb is not installed"; exit 77
@@ -117,10 +141,44 @@ require_unlocked() {
   fi
 }
 
-start_app() {
+ensure_ui_scale_100() {
+  (( UI_SCALE_SET == 1 )) && return 0
+  adb_shell am force-stop "$PACKAGE"
   adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
   wait_for "$PACKAGE" || return 1
+  sleep 5
+  # Open Settings through persistent mobile bottom navigation.
+  adb_shell input tap 615 1540
+  sleep 5
+  # Handle current 70% layout, then normalize after possible reload.
+  adb_shell input tap 18 98
+  sleep 1
+  adb_shell input tap 55 280
+  sleep 3
+  adb_shell input tap 18 98
   sleep 2
+  adb_shell input tap 80 234
+  sleep 2
+  adb_shell input tap 385 588
+  sleep 5
+  # At 100% Settings uses full-screen mobile section menu.
+  adb_shell input tap 63 245
+  sleep 2
+  adb_shell input tap 300 444
+  sleep 2
+  # Theme UI Scale slider: 50..300%, 100% is x=198 at 100% layout.
+  adb_shell input tap 198 934
+  sleep 5
+  screenshot ui-scale-100
+  UI_SCALE_SET=1
+}
+
+start_app() {
+  set_display_scale_100 || return 1
+  ensure_ui_scale_100 || return 1
+  adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
+  wait_for "$PACKAGE" || return 1
+  sleep 5
 }
 
 open_search_results() {
@@ -291,22 +349,17 @@ audio_focus() {
 
 open_data_settings() {
   start_app || return 1
-  adb_shell input tap 18 98
-  sleep 1
-  adb_shell input tap 55 280
+  # At UI scale 100% Settings uses full-screen mobile section menu.
+  adb_shell input tap 63 245
   sleep 2
-  # Close the app navigation drawer so Settings content is visible.
-  adb_shell input tap 18 98
-  sleep 2
-  # Open Data settings in the mobile settings menu.
-  adb_shell input tap 80 465
-  sleep 2
+  adb_shell input tap 300 1084
+  sleep 3
 }
 
 export_data() {
   open_data_settings || return 1
   # Export Playlists button in Data settings.
-  adb_shell input tap 515 758
+  adb_shell input tap 480 1400
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
@@ -318,7 +371,7 @@ data_directory_cancel() {
   open_data_settings || return 1
   local mapping_before mapping_after
   mapping_before=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
-  adb_shell input tap 310 524
+  adb_shell input tap 215 460
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   adb_shell input keyevent KEYCODE_BACK
