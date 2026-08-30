@@ -29,8 +29,8 @@ Options:
   --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        export, data-directory-cancel, locked-controls, locked-audio-focus,
-                        locked-cleanup, locked-force-stop
+                        export, data-directory-cancel, data-directory-move-reset,
+                        locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -349,6 +349,9 @@ audio_focus() {
 
 open_data_settings() {
   start_app || return 1
+  # Reopen Settings after cold start or Activity recreation.
+  adb_shell input tap 615 1540
+  sleep 3
   # At UI scale 100% Settings uses full-screen mobile section menu.
   adb_shell input tap 63 245
   sleep 2
@@ -378,6 +381,28 @@ data_directory_cancel() {
   wait_for "$PACKAGE" || return 1
   mapping_after=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
   [[ "$mapping_before" == "$mapping_after" ]]
+}
+
+data_directory_move_reset() {
+  open_data_settings || return 1
+  adb_shell input tap 215 460
+  sleep 3
+  wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
+  adb_shell input tap 360 1560
+  sleep 2
+  adb_shell input tap 590 940
+  sleep 8
+  local mapping
+  mapping=$(adb_shell cat "/data/user/0/$PACKAGE/files/data/data-location.json" 2>/dev/null || true)
+  grep -q 'primary%3ADocuments' <<<"$mapping" || return 1
+  adb_shell am force-stop "$PACKAGE"
+  start_app || return 1
+  open_data_settings || return 1
+  adb_shell input tap 630 460
+  sleep 8
+  mapping=$(adb_shell cat "/data/user/0/$PACKAGE/files/data/data-location.json" 2>/dev/null || true)
+  grep -q '"directory":"data://"' <<<"$mapping" || return 1
+  adb_shell rm -f /sdcard/Documents/profiles.db /sdcard/Documents/settings.db /sdcard/Documents/history.db /sdcard/Documents/playlists.db /sdcard/Documents/search-history.db /sdcard/Documents/subscription-cache.db
 }
 
 persistence() {
@@ -439,6 +464,7 @@ run_unlocked_suite() {
   run_test persistence persistence
   run_test export export_data
   run_test data-directory-cancel data_directory_cancel
+  run_test data-directory-move-reset data_directory_move_reset
   run_test cleanup cleanup
   run_test recovery recovery
   (( FAIL == 0 ))
@@ -496,6 +522,7 @@ case "$TEST" in
   persistence) run_test persistence persistence ;;
   export) run_test export export_data ;;
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
+  data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
