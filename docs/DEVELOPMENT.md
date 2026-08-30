@@ -60,16 +60,17 @@ The debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. The Androi
 
 ## Required physical test device
 
-Android work must use the connected physical test phone whenever available.
+Android work must use the connected physical test phone whenever available. All Android interaction through `adb` must use the main Android profile (`user 0`), never a work profile.
 
 Before Android work or validation, run:
 
 ```bash
 adb devices -l
 adb get-state
+adb shell am get-current-user
 ```
 
-A physical phone must be present with state `device`. If it is missing, unlock the phone, confirm the USB debugging authorization dialog, reconnect USB, and do not claim Android validation is complete until ADB is working.
+A physical phone must be present with state `device`, and `adb shell am get-current-user` must print `0`. If it is missing, unlock the phone, confirm the USB debugging authorization dialog, reconnect USB, and do not claim Android validation is complete until ADB is working. Switch to main profile before any `adb` install, launch, log collection, or test command.
 
 Install and launch on the connected phone:
 
@@ -87,13 +88,20 @@ adb logcat -v brief
 
 ## Android smoke test
 
-The repository includes a device-driven smoke test:
+The repository includes a device-driven smoke test. Run it only with the phone display zoom set manually to `100%`.
+
+Before every smoke test run:
+
+1. Open Android display settings and set display/screen zoom to `100%`.
+2. Keep the phone unlocked for the `unlocked` suite.
 
 ```bash
-_scripts/android-smoke-test.sh
+adb devices -l
+adb shell am get-current-user
+_scripts/android-smoke-test.sh --serial ZY32KFTHMV --suite unlocked
 ```
 
-It returns `77` when `adb` or a device is unavailable. Its artifacts are written under ignored `tmp/android-smoke/`.
+The smoke script also checks that active Android user is `0` and installs the APK for `user 0`. It returns `77` when `adb` or a device is unavailable. Its artifacts are written under ignored `tmp/android-smoke/`.
 
 The smoke test can run a smaller test or suite when debugging:
 

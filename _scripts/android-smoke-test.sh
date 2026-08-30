@@ -125,11 +125,9 @@ start_app() {
 
 open_search_results() {
   start_app || return 1
-  adb_shell input tap 40 165
-  sleep 2
-  adb_shell input tap 470 104
+  adb_shell input tap 350 104
   adb_shell input text linux
-  adb_shell input tap 588 104
+  adb_shell input tap 525 104
   adb_shell input keyevent KEYCODE_ENTER
   sleep 12
 }
@@ -146,8 +144,12 @@ no_runtime_errors() {
 }
 
 preflight() {
+  [[ "$(adb_shell am get-current-user 2>/dev/null)" == "0" ]] || {
+    echo "FAIL: Android main profile user 0 is required; work profile is not supported"
+    return 1
+  }
   [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
-  adb_cmd install -r "$APK" >/dev/null || return 1
+  adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
   local pkg
   pkg=$(adb_shell dumpsys package "$PACKAGE") || return 1
   grep -q 'targetSdk=36' <<<"$pkg" || { echo "targetSdk 36 not found"; return 1; }
@@ -175,7 +177,7 @@ search() {
 }
 
 open_video() {
-  adb_shell input tap 400 380
+  adb_shell am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=jNQXAC9IVRw' -n "$ACTIVITY" >/dev/null
   sleep 25
   adb_shell input tap 400 340
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
@@ -289,13 +291,17 @@ audio_focus() {
 
 export_data() {
   start_app || return 1
-  adb_shell input tap 40 445
-  sleep 1
-  adb_shell input tap 390 1020
-  sleep 1
-  adb_shell input tap 570 313
-  sleep 1
-  adb_shell input tap 150 840
+  sleep 3
+  adb_shell input tap 635 1540
+  sleep 2
+  adb_shell input tap 635 1540
+  sleep 4
+  adb_shell input tap 350 1085
+  sleep 2
+  adb_shell input tap 350 1085
+  sleep 4
+  adb_shell input tap 210 808
+  sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
   adb_shell input keyevent KEYCODE_BACK
