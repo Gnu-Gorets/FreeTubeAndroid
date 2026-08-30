@@ -1181,7 +1181,7 @@ async function importPlaylists() {
     return
   }
 
-  let data = response.content
+  const data = response.content
 
   let playlists
 
@@ -1196,13 +1196,22 @@ async function importPlaylists() {
     } else {
       // otherwise assume this is the correct database format,
       // which is also what we export now (used in 0.20.0 and later versions)
-      data = data.split('\n')
-      data.pop()
-
-      playlists = data.map(playlistJson => JSON.parse(playlistJson))
+      playlists = data.split('\n').map(line => line.trim()).filter(Boolean).flatMap((playlistJson) => {
+        try {
+          return [JSON.parse(playlistJson)]
+        } catch (error) {
+          showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+          return []
+        }
+      })
     }
   } catch (error) {
     showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+    return
+  }
+
+  if (!Array.isArray(playlists)) {
+    showToast(t('Settings.Data Settings.Unable to read file'))
     return
   }
 
@@ -1250,7 +1259,7 @@ async function importPlaylists() {
 
   const newPlaylists = []
 
-  playlists.forEach((playlistData) => {
+  for (const playlistData of playlists) {
     // We would technically already be done by the time the data is parsed,
     // however we want to limit the possibility of malicious data being sent
     // to the app, so we'll only grab the data we need here.
@@ -1360,17 +1369,17 @@ async function importPlaylists() {
       }
     })
     // Update playlist's `lastUpdatedAt` & other attributes
-    store.dispatch('updatePlaylist', {
+    await store.dispatch('updatePlaylist', {
       _id: existingPlaylist._id,
       // Only these attributes would be updated (besides videos)
       playlistName: playlistObject.playlistName,
       description: playlistObject.description,
       videos: playlistVideos
     })
-  })
+  }
 
   if (newPlaylists.length > 0) {
-    store.dispatch('addPlaylists', newPlaylists)
+    await store.dispatch('addPlaylists', newPlaylists)
   }
 
   showToast(t('Settings.Data Settings.All playlists has been successfully imported'))
