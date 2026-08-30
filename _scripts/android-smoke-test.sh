@@ -372,6 +372,7 @@ open_data_settings() {
   # At UI scale 100% Settings uses full-screen mobile section menu.
   adb_shell input tap 300 1084
   sleep 3
+}
 
 export_data() {
   open_data_settings || return 1
