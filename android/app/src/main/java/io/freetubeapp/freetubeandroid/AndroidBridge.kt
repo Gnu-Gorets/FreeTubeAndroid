@@ -491,6 +491,7 @@ class AndroidBridge(
             .setOngoing(state == PlaybackState.STATE_PLAYING).setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(mediaAction(android.R.drawable.ic_media_previous, "Previous", "previous"))
             .addAction(mediaAction(if (state == PlaybackState.STATE_PLAYING) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, if (state == PlaybackState.STATE_PLAYING) "Pause" else "Play", if (state == PlaybackState.STATE_PLAYING) "pause" else "play"))
+            .addAction(mediaAction(android.R.drawable.ic_popup_sync, "Reload", "reload"))
             .addAction(mediaAction(android.R.drawable.ic_media_next, "Next", "next"))
             .setStyle(Notification.MediaStyle().setMediaSession(mediaSession.sessionToken))
             .build()

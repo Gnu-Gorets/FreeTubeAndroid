@@ -360,6 +360,7 @@ export default defineComponent({
     if (process.env.IS_ANDROID) {
       window.addEventListener('media-next', this.handleSkipToNext)
       window.addEventListener('media-previous', this.handleSkipToPrev)
+      window.addEventListener('media-reload', this.reloadView)
     }
     this.onMountedDependOnLocalStateLoading()
   },
@@ -367,6 +368,7 @@ export default defineComponent({
     if (process.env.IS_ANDROID) {
       window.removeEventListener('media-next', this.handleSkipToNext)
       window.removeEventListener('media-previous', this.handleSkipToPrev)
+      window.removeEventListener('media-reload', this.reloadView)
       android.cancelMediaNotification()
     }
   },
