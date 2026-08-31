@@ -1014,6 +1014,58 @@ export default defineComponent({
       }
     }
 
+    let longPressTimer
+    let longPressPlaybackRate
+    let longPressVideoElement
+
+    function startLongPressPlayback(event) {
+      if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+
+      clearTimeout(longPressTimer)
+      longPressTimer = setTimeout(() => {
+        longPressPlaybackRate = video.value.playbackRate
+        video.value.playbackRate = Math.min(longPressPlaybackRate * 2, maxVideoPlaybackRate.value)
+        showValueChange(`${video.value.playbackRate.toFixed(2)}x`)
+      }, 500)
+    }
+
+    function stopLongPressPlayback() {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+      if (longPressPlaybackRate !== undefined) {
+        video.value.playbackRate = longPressPlaybackRate
+        longPressPlaybackRate = undefined
+      }
+    }
+
+    function preventLongPressContextMenu(event) {
+      if (process.env.IS_ANDROID) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+
+    function addLongPressPlaybackListeners(videoElement) {
+      if (!process.env.IS_ANDROID) return
+      longPressVideoElement = videoElement
+      videoElement.addEventListener('pointerdown', startLongPressPlayback)
+      videoElement.addEventListener('pointerup', stopLongPressPlayback)
+      videoElement.addEventListener('pointercancel', stopLongPressPlayback)
+      videoElement.addEventListener('pointerleave', stopLongPressPlayback)
+      videoElement.addEventListener('contextmenu', preventLongPressContextMenu)
+    }
+
+    function removeLongPressPlaybackListeners() {
+      if (!longPressVideoElement) return
+      longPressVideoElement.removeEventListener('pointerdown', startLongPressPlayback)
+      longPressVideoElement.removeEventListener('pointerup', stopLongPressPlayback)
+      longPressVideoElement.removeEventListener('pointercancel', stopLongPressPlayback)
+      longPressVideoElement.removeEventListener('pointerleave', stopLongPressPlayback)
+      longPressVideoElement.removeEventListener('contextmenu', preventLongPressContextMenu)
+      stopLongPressPlayback()
+      longPressVideoElement = null
+    }
+
     function addUICustomizations() {
       /** @type {HTMLDivElement} */
       const controlsContainer = ui.getControls().getControlsContainer()
@@ -2814,6 +2866,7 @@ export default defineComponent({
       }
 
       videoResizeObserver.observe(videoElement)
+      addLongPressPlaybackListeners(videoElement)
 
       registerScreenshotButton()
       registerAudioTrackSelection()
@@ -2881,6 +2934,7 @@ export default defineComponent({
       })
     })
     onUnmounted(() => {
+      removeLongPressPlaybackListeners()
       initLoadWaitTimeToastAC.abort()
     })
 
