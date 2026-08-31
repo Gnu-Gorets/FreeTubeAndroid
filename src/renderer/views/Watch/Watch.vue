@@ -152,9 +152,11 @@
         :in-user-playlist="!!selectedUserPlaylist"
         :is-unlisted="isUnlisted"
         :can-save-watched-progress="canSaveWatchProgress"
+        :legacy-formats="legacyFormats"
         class="watchVideo"
         :class="{ theatreWatchVideo: useTheatreMode }"
         @change-format="handleFormatChange"
+        @download="downloadVideo"
         @pause-player="pausePlayer"
         @save-watched-progress="handleWatchProgressManualSave"
       />

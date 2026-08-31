@@ -27,6 +27,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.util.Log
+import java.net.HttpURLConnection
+import java.net.URL
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -44,6 +46,7 @@ class AndroidBridge(
     private val dataDirectory: java.io.File
         get() = java.io.File(activity.filesDir, "data").also { it.mkdirs() }
     private val scripts = ConcurrentHashMap<String, String>()
+    private val downloadJobs = ConcurrentHashMap<String, HttpURLConnection>()
     private var sigWebView: WebView? = null
     private var sigReady = false
     private val notificationManager = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -308,6 +311,93 @@ class AndroidBridge(
             }
         } catch (error: Exception) {
             Log.e("FreeTubeWebView", "Unable to read imported file", error)
+        }
+    }
+
+    @JavascriptInterface
+    fun downloadUrl(url: String, targetUri: String, downloadId: String): Boolean {
+        if (!url.startsWith("https://")) return false
+        fileExecutor.execute {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 30_000
+                connection.instanceFollowRedirects = true
+                downloadJobs[downloadId] = connection
+                connection.connect()
+                val activeConnection = connection
+                if (activeConnection.responseCode !in 200..299) {
+                    throw IllegalStateException("HTTP ${activeConnection.responseCode}")
+                }
+                val total = activeConnection.contentLengthLong
+                var received = 0L
+                activity.contentResolver.openOutputStream(resolveUri(targetUri), "wt")?.use { output ->
+                    activeConnection.inputStream.use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        var count: Int
+                        while (input.read(buffer).also { count = it } != -1) {
+                            if (!downloadJobs.containsKey(downloadId)) throw InterruptedException("Download canceled")
+                            output.write(buffer, 0, count)
+                            received += count
+                            dispatchDownload(downloadId, "progress", received, total, null)
+                        }
+                    }
+                } ?: throw IllegalStateException("Unable to open download target")
+                dispatchDownload(downloadId, "completed", received, total, null)
+            } catch (error: Exception) {
+                val status = if (!downloadJobs.containsKey(downloadId) || error is InterruptedException) "canceled" else "failed"
+                dispatchDownload(downloadId, status, 0, 0, error.message)
+            } finally {
+                downloadJobs.remove(downloadId)
+                connection?.disconnect()
+            }
+        }
+        return true
+    }
+
+    @JavascriptInterface
+    fun cancelDownload(downloadId: String): Boolean {
+        return downloadJobs.remove(downloadId)?.let {
+            it.disconnect()
+            true
+        } ?: false
+    }
+
+    @JavascriptInterface
+    fun deleteFile(uri: String): Boolean {
+        return try {
+            if (uri.startsWith("data://")) java.io.File(dataDirectory, uri.removePrefix("data://")).delete()
+            else DocumentFile.fromSingleUri(activity, resolveUri(uri))?.delete() == true
+        } catch (error: Exception) {
+            Log.w("FreeTubeWebView", "Unable to delete file: $uri", error)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun renameFile(uri: String, fileName: String): Boolean {
+        return try {
+            DocumentFile.fromSingleUri(activity, resolveUri(uri))?.renameTo(fileName) == true
+        } catch (error: Exception) {
+            Log.w("FreeTubeWebView", "Unable to rename file: $uri", error)
+            false
+        }
+    }
+
+    private fun dispatchDownload(id: String, status: String, received: Long, total: Long, error: String?) {
+        val detail = JSONObject().apply {
+            put("id", id)
+            put("status", status)
+            put("received", received)
+            put("total", total)
+            if (error != null) put("error", error)
+        }.toString()
+        activity.runOnUiThread {
+            mainWebView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('android-download', {detail: $detail}))",
+                null
+            )
         }
     }
 

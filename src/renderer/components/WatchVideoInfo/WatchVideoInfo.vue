@@ -112,6 +112,13 @@
             @click="handleExternalPlayer"
           />
           <FtIconButton
+            v-if="process.env.IS_ANDROID && legacyFormats.length > 0 && !isUpcoming"
+            :title="t('Video.Download')"
+            theme="secondary"
+            :icon="['fas', 'download']"
+            @click="downloadVideo"
+          />
+          <FtIconButton
             v-if="!isUpcoming"
             :title="t('Change Format.Change Media Formats')"
             theme="secondary"
@@ -235,10 +242,15 @@ const props = defineProps({
     type: Boolean,
     required: true
   },
+  legacyFormats: {
+    type: Array,
+    default: () => []
+  },
 })
 
 const emit = defineEmits([
   'change-format',
+  'download',
   'pause-player',
   'save-watched-progress',
 ])
@@ -315,6 +327,10 @@ const formatTypeOptions = computed(() => [
  */
 function changeFormat(value) {
   emit('change-format', value)
+}
+
+function downloadVideo() {
+  emit('download')
 }
 
 const watchedProgressSavingInSemiAutoMode = computed(() => {

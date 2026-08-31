@@ -43,6 +43,7 @@ import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { createMediaSession } from '../../helpers/android/media-session'
+import { downloadProgressiveVideo, selectProgressiveFormat } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1282,6 +1283,27 @@ export default defineComponent({
       }
 
       this.updateHistory(videoData)
+    },
+
+    async downloadVideo() {
+      const format = selectProgressiveFormat(this.legacyFormats)
+      if (!format) {
+        showToast(this.t('Video.Download unavailable'))
+        return
+      }
+
+      try {
+        await downloadProgressiveVideo({
+          id: this.videoId,
+          title: this.videoTitle,
+          url: format.url,
+          sourceBackend: this.backendPreference
+        })
+        showToast(this.t('Video.Download complete'))
+      } catch (error) {
+        console.error('Progressive download failed', error)
+        showToast(this.t('Video.Download failed'))
+      }
     },
 
     handleWatchProgressManualSave() {
