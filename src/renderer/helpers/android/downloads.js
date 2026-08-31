@@ -40,11 +40,12 @@ export async function storeSabrDownload(download, onProgress) {
   const video = document.createElement('video')
   const player = new shaka.Player(video)
   const manifestRef = { value: null }
-  const storage = new shaka.offline.Storage(player)
+  let storage = null
   setupSabrScheme(download.sabrData, () => player, () => manifestRef.value, 640, 360)
   try {
     await player.load(download.manifestSrc, null, download.manifestMimeType)
     manifestRef.value = player.getManifest()
+    storage = new shaka.offline.Storage(player)
     storage.configure({
       offline: {
         progressCallback(content, progress) {
@@ -56,16 +57,22 @@ export async function storeSabrDownload(download, onProgress) {
     const operation = storage.store(download.manifestSrc, {}, download.manifestMimeType)
     sabrOperations.set(download.downloadId, operation)
     const content = await operation.promise
-    if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
-    return content.offlineUri
+    if (!content?.offlineUri) {
+      console.error(`[SABR] storage returned invalid content: ${JSON.stringify(content)}`)
+      throw new Error('Offline storage returned no URI')
+    }
+    return content
   } finally {
     sabrOperations.delete(download.downloadId)
-    await storage.destroy()
+    await storage?.destroy()
     await player.destroy()
   }
 }
 
-export const recoverSabrDownload = storeSabrDownload
+export async function recoverSabrDownload(download, onProgress) {
+  const content = await storeSabrDownload(download, onProgress)
+  return content.offlineUri
+}
 
 export function hasSabrDownload(downloadId) {
   return sabrOperations.has(downloadId)
