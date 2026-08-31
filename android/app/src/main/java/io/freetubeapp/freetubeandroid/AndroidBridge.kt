@@ -492,6 +492,15 @@ class AndroidBridge(
         activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
+    @JavascriptInterface
+    fun shareText(text: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        activity.startActivity(Intent.createChooser(sendIntent, null))
+    }
+
     private fun updateMediaState(state: Int, position: Long) {
         if (!mediaSession.isActive) return
         mediaSession.setMetadata(MediaMetadata.Builder()

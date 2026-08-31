@@ -272,6 +272,20 @@ export async function openExternalLink(url) {
 }
 
 /**
+ * Opens native Android sharesheet or copies sharing behavior to external link fallback.
+ * @param {string} text
+ */
+export function shareText(text) {
+  if (process.env.IS_ANDROID && typeof window.Android?.shareText === 'function') {
+    window.Android.shareText(text)
+  } else if (navigator.share) {
+    navigator.share({ text }).catch(() => {})
+  } else {
+    copyToClipboard(text)
+  }
+}
+
+/**
  * Opens an internal path in the same or a new window.
  * Optionally with query params and setting the contents of the search bar in the new window.
  * @param {object} params

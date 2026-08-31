@@ -33,6 +33,14 @@
 
       <div class="buttons">
         <FtButton
+          v-if="process.env.IS_ANDROID"
+          class="action"
+          aria-describedby="youtubeShareImage"
+          :icon="['fas', 'share-alt']"
+          :label="t('Share.Share via Android')"
+          @click="shareYoutube"
+        />
+        <FtButton
           class="action"
           aria-describedby="youtubeShareImage"
           :icon="['fas', 'copy']"
@@ -117,7 +125,7 @@
 
 <script setup>
 import { computed, ref, useTemplateRef } from 'vue'
-import { copyToClipboard, openExternalLink } from '../../helpers/utils'
+import { copyToClipboard, openExternalLink, shareText } from '../../helpers/utils'
 import { useI18n } from 'vue-i18n'
 
 import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
@@ -310,6 +318,11 @@ function openYoutube() {
 
 function copyYoutube() {
   copyToClipboard(getFinalUrl(youtubeShareURL.value), { messageOnSuccess: t('Share.YouTube URL copied to clipboard') })
+  iconButton.value.hideDropdown()
+}
+
+function shareYoutube() {
+  shareText(getFinalUrl(youtubeShareURL.value))
   iconButton.value.hideDropdown()
 }
 
