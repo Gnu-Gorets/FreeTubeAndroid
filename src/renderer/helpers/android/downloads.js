@@ -16,11 +16,27 @@ export function selectDownloadFormats(progressiveFormats, adaptiveFormats = []) 
   return video && audio ? { video, audio } : null
 }
 
+function readDownloadMetadata() {
+  try {
+    return JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
+  } catch {
+    return []
+  }
+}
+
 export function recordDownloadMetadata(metadata) {
-  const downloads = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
+  const downloads = readDownloadMetadata()
   downloads.push(metadata)
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
   return downloads
+}
+
+export function updateDownloadMetadata(downloadId, changes) {
+  const downloads = readDownloadMetadata()
+  const download = downloads.find(item => item.downloadId === downloadId)
+  if (!download) return
+  Object.assign(download, changes)
+  localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
 }
 
 function safeFileName(title, id) {
@@ -59,6 +75,11 @@ export async function downloadProgressiveVideo(video) {
   const result = new Promise((resolve, reject) => {
     const onEvent = (event) => {
       if (event.detail?.id !== downloadId) return
+      if (event.detail.status === 'progress') {
+        metadata.progress = event.detail.total > 0 ? event.detail.received / event.detail.total : null
+        localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+        return
+      }
       if (event.detail.status === 'completed') {
         window.removeEventListener(eventName, onEvent)
         if (!android.renameFile(dialog.uri, fileName)) {

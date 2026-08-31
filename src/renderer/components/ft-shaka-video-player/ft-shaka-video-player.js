@@ -3381,11 +3381,25 @@ export default defineComponent({
      *
      * @returns {Promise<{ startNextVideoInFullscreen: boolean, startNextVideoInFullwindow: boolean, startNextVideoInPip: boolean }>}
      */
-    async function storeOffline() {
+    async function storeOffline(downloadId) {
       if (!player || !props.manifestSrc || !shaka.offline?.Storage) {
         throw new Error('Offline storage is unavailable')
       }
       const storage = new shaka.offline.Storage(player)
+      storage.configure({
+        offline: {
+          progressCallback(content, progress) {
+            window.dispatchEvent(new CustomEvent('android-download', {
+              detail: {
+                id: downloadId,
+                status: 'downloading',
+                progress,
+                size: content.size
+              }
+            }))
+          }
+        }
+      })
       try {
         offlineStoreOperation = storage.store(props.manifestSrc, {}, props.manifestMimeType)
         return await offlineStoreOperation.promise
@@ -3395,8 +3409,12 @@ export default defineComponent({
       }
     }
 
-    async function destroyPlayer() {
+    function cancelOfflineStore() {
       offlineStoreOperation?.abort()
+    }
+
+    async function destroyPlayer() {
+      cancelOfflineStore()
       ignoreErrors = true
 
       let uiState = { startNextVideoInFullscreen: false, startNextVideoInFullwindow: false, startNextVideoInPip: false }
@@ -3447,6 +3465,7 @@ export default defineComponent({
       getCurrentTime,
       setCurrentTime,
       storeOffline,
+      cancelOfflineStore,
       destroyPlayer
     })
 

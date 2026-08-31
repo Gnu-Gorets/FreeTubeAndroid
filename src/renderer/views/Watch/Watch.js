@@ -43,7 +43,7 @@ import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, recordDownloadMetadata, selectDownloadFormats } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, recordDownloadMetadata, selectDownloadFormats, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1305,22 +1305,30 @@ export default defineComponent({
     async downloadVideo() {
       const formats = selectDownloadFormats(this.legacyFormats, this.downloadFormats)
       if (!formats) {
+        const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`
+        recordDownloadMetadata({
+          downloadId,
+          videoId: this.videoId,
+          title: this.videoTitle,
+          thumbnail: this.thumbnail,
+          sourceBackend: this.backendPreference,
+          selectedFormat: this.activeFormat,
+          status: 'downloading',
+          progress: 0,
+          createdAt: Date.now()
+        })
         try {
-          const content = await this.$refs.player?.storeOffline()
+          const content = await this.$refs.player?.storeOffline(downloadId)
           if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
-          recordDownloadMetadata({
-            videoId: this.videoId,
-            title: this.videoTitle,
-            thumbnail: this.thumbnail,
-            sourceBackend: this.backendPreference,
-            selectedFormat: this.activeFormat,
-            offlineUri: content.offlineUri,
+          updateDownloadMetadata(downloadId, {
             status: 'completed',
-            createdAt: Date.now(),
+            progress: 1,
+            offlineUri: content.offlineUri,
             completedAt: Date.now()
           })
           showToast(this.t('Video.Download complete'))
         } catch (error) {
+          updateDownloadMetadata(downloadId, { status: 'failed', error: error?.message || String(error) })
           console.error(`Offline download failed: code=${error?.code} category=${error?.category} message=${error?.message} data=${JSON.stringify(error?.data)}`)
           showToast(this.t('Video.Download unavailable'))
         }

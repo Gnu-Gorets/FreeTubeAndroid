@@ -41,6 +41,7 @@ Downloads:
   Empty: No downloaded videos
   Play: Play
   Delete: Delete
+  Progress: Download progress
 
 # Global
 # Anything shared among components / views should be put here

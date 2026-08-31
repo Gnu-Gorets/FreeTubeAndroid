@@ -8,7 +8,7 @@
     </p>
     <article
       v-for="download in downloads"
-      :key="download.localPath"
+      :key="download.offlineUri || download.localPath || download.downloadId"
       class="downloadItem"
     >
       <img
@@ -19,6 +19,12 @@
       <div class="downloadInfo">
         <h2>{{ download.title }}</h2>
         <p>{{ download.status }}</p>
+        <progress
+          v-if="download.status === 'downloading' && download.progress !== null"
+          max="1"
+          :value="download.progress"
+          :aria-label="t('Downloads.Progress')"
+        />
         <div class="downloadActions">
           <button
             v-if="download.status === 'completed'"
@@ -111,13 +117,22 @@ async function remove(download) {
   }
 }
 
+function handleDownloadEvent(event) {
+  const download = downloads.value.find(item => item.downloadId === event.detail?.id)
+  if (download && event.detail.status === 'downloading') {
+    download.progress = event.detail.progress ?? (event.detail.total > 0 ? event.detail.received / event.detail.total : null)
+    localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
+  }
+  load()
+}
+
 onMounted(() => {
   load()
-  window.addEventListener('android-download', load)
+  window.addEventListener('android-download', handleDownloadEvent)
 })
 
 onBeforeUnmount(async () => {
-  window.removeEventListener('android-download', load)
+  window.removeEventListener('android-download', handleDownloadEvent)
   await stopPlayer()
 })
 </script>
