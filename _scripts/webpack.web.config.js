@@ -172,6 +172,7 @@ const config = {
   resolve: {
     alias: {
       DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$: path.resolve(__dirname, '../src/datastores/handlers/web.js'),
+      android: path.resolve(__dirname, '../src/renderer/helpers/android/web.js'),
 
       // change to "shaka-player.ui-es2021.debug.js" to get debug logs (update jsconfig to get updated types)
       'shaka-player$': 'shaka-player/dist/shaka-player.ui-es2021.js',
