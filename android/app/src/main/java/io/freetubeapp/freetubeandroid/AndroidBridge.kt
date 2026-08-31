@@ -549,8 +549,10 @@ class AndroidBridge(
             if (sigReady) dispatchScript(id)
         }
         activity.window.decorView.postDelayed({
-            scripts.remove(id)
-            messages.remove(id)
+            if (scripts.remove(id) != null) {
+                messages[id] = "Decipher timed out after ${timeout}ms"
+                notifyMain(id, false)
+            }
         }, timeout)
         return id
     }
@@ -608,16 +610,16 @@ class AndroidBridge(
 
         @JavascriptInterface
         fun resolve(id: String, result: String) {
+            if (scripts.remove(id) == null) return
             Log.d("FreeTubeDecipher", "resolve $id: ${result.take(120)}")
-            scripts.remove(id)
             messages[id] = result
             notifyMain(id, true)
         }
 
         @JavascriptInterface
         fun reject(id: String, error: String) {
+            if (scripts.remove(id) == null) return
             Log.e("FreeTubeDecipher", "reject $id: $error")
-            scripts.remove(id)
             messages[id] = error
             notifyMain(id, false)
         }
