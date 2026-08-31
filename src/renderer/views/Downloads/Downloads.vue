@@ -41,6 +41,27 @@
             {{ t('Downloads.Retry') }}
           </button>
           <button
+            v-if="download.status === 'downloading'"
+            type="button"
+            @click="control(download, 'pause')"
+          >
+            {{ t('Downloads.Pause') }}
+          </button>
+          <button
+            v-if="download.status === 'paused'"
+            type="button"
+            @click="control(download, 'resume')"
+          >
+            {{ t('Downloads.Resume') }}
+          </button>
+          <button
+            v-if="['queued', 'downloading', 'paused'].includes(download.status)"
+            type="button"
+            @click="control(download, 'cancel')"
+          >
+            {{ t('Downloads.Cancel') }}
+          </button>
+          <button
             type="button"
             @click="remove(download)"
           >
@@ -76,10 +97,22 @@ const playingUrl = ref(null)
 const playingOffline = ref(null)
 const video = useTemplateRef('video')
 let player = null
+let queueTimer = null
+
+function nativeQueue() {
+  try {
+    return JSON.parse(window.Android?.getNativeDownloadQueue?.() || '[]')
+  } catch {
+    return []
+  }
+}
 
 function load() {
   try {
+    const queue = nativeQueue()
     downloads.value = JSON.parse(localStorage.getItem('freetube-downloads') || '[]').map(download => {
+      const native = queue.find(item => item.id === download.downloadId)
+      if (native) return { ...download, status: native.status, progress: native.progress, error: native.error }
       return download.status === 'downloading'
         ? { ...download, status: 'failed', error: 'Download interrupted' }
         : download
@@ -98,7 +131,16 @@ async function stopPlayer() {
 }
 
 async function retry(download) {
+  if (nativeQueue().some(item => item.id === download.downloadId)) {
+    control(download, 'retry')
+    return
+  }
   router.push(`/watch/${download.videoId}`)
+}
+
+function control(download, action) {
+  window.Android?.controlNativeDownload?.(action, download.downloadId)
+  setTimeout(load, 100)
 }
 
 async function play(download) {
@@ -124,6 +166,7 @@ async function remove(download) {
   } else {
     window.Android?.deleteFile(download.localPath)
   }
+  if (['queued', 'downloading', 'paused'].includes(download.status)) control(download, 'cancel')
   downloads.value = downloads.value.filter(item => download.offlineUri
     ? item.offlineUri !== download.offlineUri
     : item.localPath !== download.localPath)
@@ -146,11 +189,13 @@ function handleDownloadEvent(event) {
 
 onMounted(() => {
   load()
+  queueTimer = setInterval(load, 1000)
   window.addEventListener('android-download', handleDownloadEvent)
 })
 
 onBeforeUnmount(async () => {
   window.removeEventListener('android-download', handleDownloadEvent)
+  if (queueTimer) clearInterval(queueTimer)
   await stopPlayer()
 })
 </script>

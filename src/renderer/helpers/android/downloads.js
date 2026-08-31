@@ -62,6 +62,7 @@ export async function downloadProgressiveVideo(video) {
   const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`
   const eventName = 'android-download'
   const metadata = {
+    downloadId,
     videoId: video.id,
     title: video.title,
     thumbnail: video.thumbnail ?? '',
@@ -72,6 +73,38 @@ export async function downloadProgressiveVideo(video) {
     createdAt: Date.now()
   }
   const downloads = recordDownloadMetadata(metadata)
+  if (typeof android.enqueueNativeDownload === 'function') {
+    const queued = android.enqueueNativeDownload(JSON.stringify({
+      id: downloadId,
+      title: video.title,
+      videoUrl: video.videoUrl,
+      audioUrl: video.audioUrl || '',
+      targetUri: dialog.uri,
+      finalName: fileName
+    }))
+    if (!queued) throw new Error('Unable to queue download')
+    return new Promise((resolve, reject) => {
+      const timer = setInterval(() => {
+        try {
+          const item = JSON.parse(android.getNativeDownloadQueue?.() || '[]').find(entry => entry.id === downloadId)
+          if (!item) return
+          Object.assign(metadata, { status: item.status, progress: item.progress, error: item.error || null })
+          if (item.status === 'completed') {
+            metadata.fileName = fileName
+            metadata.completedAt = Date.now()
+          }
+          localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+          if (['completed', 'failed', 'canceled'].includes(item.status)) {
+            clearInterval(timer)
+            item.status === 'completed' ? resolve() : reject(new Error(item.error || 'Download failed'))
+          }
+        } catch (error) {
+          clearInterval(timer)
+          reject(error)
+        }
+      }, 500)
+    })
+  }
   const result = new Promise((resolve, reject) => {
     const onEvent = (event) => {
       if (event.detail?.id !== downloadId) return

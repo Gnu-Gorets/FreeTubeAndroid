@@ -318,6 +318,40 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun enqueueNativeDownload(itemJson: String): Boolean {
+        return try {
+            val item = JSONObject(itemJson)
+            val intent = Intent(activity, DownloadService::class.java)
+                .setAction(DownloadService.ACTION_ENQUEUE)
+                .putExtra(DownloadService.EXTRA_ITEM, item.toString())
+            DownloadService.start(activity, intent)
+            true
+        } catch (error: Exception) {
+            Log.w("FreeTubeDownload", "Unable to enqueue download", error)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun getNativeDownloadQueue(): String = activity.getSharedPreferences("downloads", Context.MODE_PRIVATE)
+        .getString("queue", "[]") ?: "[]"
+
+    @JavascriptInterface
+    fun controlNativeDownload(action: String, downloadId: String): Boolean {
+        val serviceAction = when (action) {
+            "pause" -> DownloadService.ACTION_PAUSE
+            "resume" -> DownloadService.ACTION_RESUME
+            "retry" -> DownloadService.ACTION_RETRY
+            "cancel" -> DownloadService.ACTION_CANCEL
+            else -> return false
+        }
+        DownloadService.start(activity, Intent(activity, DownloadService::class.java)
+            .setAction(serviceAction)
+            .putExtra(DownloadService.EXTRA_ID, downloadId))
+        return true
+    }
+
+    @JavascriptInterface
     fun downloadUrl(url: String, targetUri: String, downloadId: String): Boolean {
         if (!url.startsWith("https://")) return false
         fileExecutor.execute {

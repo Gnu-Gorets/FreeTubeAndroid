@@ -43,6 +43,9 @@ Downloads:
   Delete: Delete
   Progress: Download progress
   Retry: Retry
+  Pause: Pause
+  Resume: Resume
+  Cancel: Cancel
 
 # Global
 # Anything shared among components / views should be put here
