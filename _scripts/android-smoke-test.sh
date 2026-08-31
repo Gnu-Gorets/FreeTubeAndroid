@@ -14,8 +14,6 @@ LOG_FILE=""
 PASS=0
 FAIL=0
 SKIP=0
-DISPLAY_SCALE_SAVED=0
-DISPLAY_OVERRIDE_DENSITY=""
 UI_SCALE_SET=0
 
 usage() {
@@ -61,27 +59,6 @@ adb_cmd() {
 
 adb_shell() { adb_cmd shell "$@"; }
 screenshot() { adb_cmd exec-out screencap -p >"$ARTIFACT_DIR/$1.png"; }
-
-set_display_scale_100() {
-  (( DISPLAY_SCALE_SAVED == 1 )) && return 0
-  DISPLAY_OVERRIDE_DENSITY=$(adb_shell wm density | awk '/Override density:/ { print $3; exit }')
-  adb_shell wm density reset >/dev/null || return 1
-  DISPLAY_SCALE_SAVED=1
-  adb_shell am force-stop "$PACKAGE"
-  sleep 2
-  adb_shell wm density | grep -q 'Physical density:'
-}
-
-restore_display_scale() {
-  (( DISPLAY_SCALE_SAVED == 1 )) || return 0
-  if [[ -n "$DISPLAY_OVERRIDE_DENSITY" ]]; then
-    adb_shell wm density "$DISPLAY_OVERRIDE_DENSITY" >/dev/null
-  else
-    adb_shell wm density reset >/dev/null
-  fi
-}
-
-trap restore_display_scale EXIT
 
 if ! command -v adb >/dev/null 2>&1; then
   echo "SKIP: adb is not installed"; exit 77
@@ -190,7 +167,6 @@ ensure_ui_scale_100() {
 }
 
 start_app() {
-  set_display_scale_100 || return 1
   ensure_ui_scale_100 || return 1
   adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
   adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
@@ -220,7 +196,7 @@ no_runtime_errors() {
 
 preflight() {
   [[ "$(adb_shell am get-current-user 2>/dev/null)" == "0" ]] || {
-    echo "FAIL: Android main profile user 0 is required; work profile is not supported"
+    echo "FAIL: Android personal profile user 0 is required; work profile is not supported"
     return 1
   }
   [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }

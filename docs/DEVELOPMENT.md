@@ -64,7 +64,7 @@ Android builds are functionally reproducible with the documented Docker and tool
 
 ## Required physical test device
 
-Android work must use the connected physical test phone whenever available. All Android interaction through `adb` must use the main Android profile (`user 0`), never a work profile.
+Android work must use the connected physical test phone whenever available. Android has main personal and work profiles; all Android interaction through `adb` must use the personal profile (`user 0`), never the work profile.
 
 Before Android work or validation, run:
 
@@ -74,7 +74,7 @@ adb get-state
 adb shell am get-current-user
 ```
 
-A physical phone must be present with state `device`, and `adb shell am get-current-user` must print `0`. If it is missing, unlock the phone, confirm the USB debugging authorization dialog, reconnect USB, and do not claim Android validation is complete until ADB is working. Switch to main profile before any `adb` install, launch, log collection, or test command.
+A physical phone must be present with state `device`, and `adb shell am get-current-user` must print `0`. If it is missing, unlock the phone, confirm the USB debugging authorization dialog, reconnect USB, and do not claim Android validation is complete until ADB is working. Switch to the personal profile before any `adb` install, launch, log collection, or test command.
 
 Install and launch on the connected phone:
 
@@ -92,11 +92,11 @@ adb logcat -v brief
 
 ## Android smoke test
 
-The repository includes a device-driven smoke test. Run it only with the phone display zoom set manually to `100%`.
+The repository includes a device-driven smoke test. Do not change phone-level Android display scale. Set scale only inside the development app through its `UI Scale` setting, which the smoke test normalizes to `100%`.
 
 Before every smoke test run:
 
-1. Open Android display settings and set display/screen zoom to `100%`.
+1. Use the phone's existing Android display scale without changing it.
 2. Keep the phone unlocked for the `unlocked` suite.
 
 ```bash
@@ -105,7 +105,7 @@ adb shell am get-current-user
 _scripts/android-smoke-test.sh --serial ZY32KFTHMV --suite unlocked
 ```
 
-The smoke script also checks that active Android user is `0` and installs the APK for `user 0`. It returns `77` when `adb` or a device is unavailable. Its artifacts are written under ignored `tmp/android-smoke/`.
+The smoke script also checks that active Android user is the personal profile `0` and installs the APK for `user 0`. It does not change Android system display scale. It returns `77` when `adb` or a device is unavailable. Its artifacts are written under ignored `tmp/android-smoke/`.
 
 The smoke test can run a smaller test or suite when debugging:
 
