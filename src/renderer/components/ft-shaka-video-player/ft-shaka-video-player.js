@@ -1017,9 +1017,17 @@ export default defineComponent({
     let longPressTimer
     let longPressPlaybackRate
     let longPressVideoElement
+    let longPressControlsContainer
+
+    function isLongPressVideoSurface(event) {
+      if (event.target === video.value) return true
+      if (!(event.target instanceof Element)) return false
+      if (event.target.closest('button, input, select, textarea, .shaka-range-container')) return false
+      return true
+    }
 
     function startLongPressPlayback(event) {
-      if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+      if (!process.env.IS_ANDROID || (event.type === 'pointerdown' && event.pointerType === 'mouse') || !isLongPressVideoSurface(event) || video.value.paused) return
 
       clearTimeout(longPressTimer)
       longPressTimer = setTimeout(() => {
@@ -1045,25 +1053,37 @@ export default defineComponent({
       }
     }
 
-    function addLongPressPlaybackListeners(videoElement) {
+    function addLongPressPlaybackListeners(videoElement, controlsContainer) {
       if (!process.env.IS_ANDROID) return
       longPressVideoElement = videoElement
-      videoElement.addEventListener('pointerdown', startLongPressPlayback)
-      videoElement.addEventListener('pointerup', stopLongPressPlayback)
-      videoElement.addEventListener('pointercancel', stopLongPressPlayback)
-      videoElement.addEventListener('pointerleave', stopLongPressPlayback)
-      videoElement.addEventListener('contextmenu', preventLongPressContextMenu)
+      longPressControlsContainer = controlsContainer
+      for (const target of [videoElement, controlsContainer]) {
+        target.addEventListener('pointerdown', startLongPressPlayback)
+        target.addEventListener('pointerup', stopLongPressPlayback)
+        target.addEventListener('pointercancel', stopLongPressPlayback)
+        target.addEventListener('pointerleave', stopLongPressPlayback)
+        target.addEventListener('touchstart', startLongPressPlayback)
+        target.addEventListener('touchend', stopLongPressPlayback)
+        target.addEventListener('touchcancel', stopLongPressPlayback)
+        target.addEventListener('contextmenu', preventLongPressContextMenu, true)
+      }
     }
 
     function removeLongPressPlaybackListeners() {
-      if (!longPressVideoElement) return
-      longPressVideoElement.removeEventListener('pointerdown', startLongPressPlayback)
-      longPressVideoElement.removeEventListener('pointerup', stopLongPressPlayback)
-      longPressVideoElement.removeEventListener('pointercancel', stopLongPressPlayback)
-      longPressVideoElement.removeEventListener('pointerleave', stopLongPressPlayback)
-      longPressVideoElement.removeEventListener('contextmenu', preventLongPressContextMenu)
+      if (!longPressControlsContainer) return
+      for (const target of [longPressVideoElement, longPressControlsContainer]) {
+        target.removeEventListener('pointerdown', startLongPressPlayback)
+        target.removeEventListener('pointerup', stopLongPressPlayback)
+        target.removeEventListener('pointercancel', stopLongPressPlayback)
+        target.removeEventListener('pointerleave', stopLongPressPlayback)
+        target.removeEventListener('touchstart', startLongPressPlayback)
+        target.removeEventListener('touchend', stopLongPressPlayback)
+        target.removeEventListener('touchcancel', stopLongPressPlayback)
+        target.removeEventListener('contextmenu', preventLongPressContextMenu, true)
+      }
       stopLongPressPlayback()
       longPressVideoElement = null
+      longPressControlsContainer = null
     }
 
     function addUICustomizations() {
@@ -2843,6 +2863,7 @@ export default defineComponent({
 
       const controls = ui.getControls()
       player = controls.getPlayer()
+      addLongPressPlaybackListeners(videoElement, controls.getControlsContainer())
 
       player.addEventListener('buffering', event => {
         isBuffering.value = event.buffering
@@ -2866,7 +2887,6 @@ export default defineComponent({
       }
 
       videoResizeObserver.observe(videoElement)
-      addLongPressPlaybackListeners(videoElement)
 
       registerScreenshotButton()
       registerAudioTrackSelection()
