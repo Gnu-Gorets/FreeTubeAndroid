@@ -42,6 +42,7 @@ Downloads:
   Play: Play
   Delete: Delete
   Progress: Download progress
+  Retry: Retry
 
 # Global
 # Anything shared among components / views should be put here

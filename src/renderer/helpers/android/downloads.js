@@ -77,6 +77,7 @@ export async function downloadProgressiveVideo(video) {
       if (event.detail?.id !== downloadId) return
       if (event.detail.status === 'progress') {
         metadata.progress = event.detail.total > 0 ? event.detail.received / event.detail.total : null
+        android.updateDownloadNotification?.(video.title, Math.round((metadata.progress ?? 0) * 100))
         localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
         return
       }
@@ -88,6 +89,7 @@ export async function downloadProgressiveVideo(video) {
           return
         }
         metadata.status = 'completed'
+        android.finishDownloadNotification?.(video.title, true)
         metadata.fileName = fileName
         metadata.completedAt = Date.now()
         localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
@@ -96,6 +98,7 @@ export async function downloadProgressiveVideo(video) {
         window.removeEventListener(eventName, onEvent)
         android.deleteFile(dialog.uri)
         metadata.status = event.detail.status
+        android.finishDownloadNotification?.(video.title, false)
         metadata.error = event.detail.error || null
         localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
         reject(new Error(event.detail.error || 'Download failed'))

@@ -1326,9 +1326,11 @@ export default defineComponent({
             offlineUri: content.offlineUri,
             completedAt: Date.now()
           })
+          android.finishDownloadNotification?.(this.videoTitle, true)
           showToast(this.t('Video.Download complete'))
         } catch (error) {
           updateDownloadMetadata(downloadId, { status: 'failed', error: error?.message || String(error) })
+          android.finishDownloadNotification?.(this.videoTitle, false)
           console.error(`Offline download failed: code=${error?.code} category=${error?.category} message=${error?.message} data=${JSON.stringify(error?.data)}`)
           showToast(this.t('Video.Download unavailable'))
         }

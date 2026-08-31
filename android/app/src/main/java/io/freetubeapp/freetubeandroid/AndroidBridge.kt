@@ -458,6 +458,41 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun updateDownloadNotification(title: String, progress: Int): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notificationManager.createNotificationChannel(
+                NotificationChannel("downloads", "Downloads", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return false
+        val notification = Notification.Builder(activity, "downloads")
+            .setSmallIcon(R.drawable.ic_media_notification_icon)
+            .setContentTitle(title)
+            .setContentText("Downloading $progress%")
+            .setProgress(100, progress.coerceIn(0, 100), false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        notificationManager.notify(2001, notification)
+        return true
+    }
+
+    @JavascriptInterface
+    fun finishDownloadNotification(title: String, success: Boolean): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return false
+        val notification = Notification.Builder(activity, "downloads")
+            .setSmallIcon(R.drawable.ic_media_notification_icon)
+            .setContentTitle(title)
+            .setContentText(if (success) "Download complete" else "Download failed")
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(2001, notification)
+        return true
+    }
+
+    @JavascriptInterface
     fun cancelDownload(downloadId: String): Boolean {
         return downloadJobs.remove(downloadId)?.let {
             it.disconnect()

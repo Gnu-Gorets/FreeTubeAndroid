@@ -32,6 +32,7 @@ import {
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
 import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
+import android from 'android'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -3397,6 +3398,7 @@ export default defineComponent({
                 size: content.size
               }
             }))
+            android.updateDownloadNotification?.(props.title, Math.round(progress * 100))
           }
         }
       })

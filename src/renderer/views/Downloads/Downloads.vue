@@ -34,6 +34,13 @@
             {{ t('Downloads.Play') }}
           </button>
           <button
+            v-if="download.status === 'failed'"
+            type="button"
+            @click="retry(download)"
+          >
+            {{ t('Downloads.Retry') }}
+          </button>
+          <button
             type="button"
             @click="remove(download)"
           >
@@ -60,8 +67,10 @@
 import shaka from 'shaka-player'
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 
 const { t } = useI18n()
+const router = useRouter()
 const downloads = ref([])
 const playingUrl = ref(null)
 const playingOffline = ref(null)
@@ -70,7 +79,12 @@ let player = null
 
 function load() {
   try {
-    downloads.value = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
+    downloads.value = JSON.parse(localStorage.getItem('freetube-downloads') || '[]').map(download => {
+      return download.status === 'downloading'
+        ? { ...download, status: 'failed', error: 'Download interrupted' }
+        : download
+    })
+    localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
   } catch (error) {
     console.error('Unable to load downloads metadata', error)
     downloads.value = []
@@ -81,6 +95,10 @@ async function stopPlayer() {
   if (!player) return
   await player.destroy()
   player = null
+}
+
+async function retry(download) {
+  router.push(`/watch/${download.videoId}`)
 }
 
 async function play(download) {
