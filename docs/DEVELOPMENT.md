@@ -58,6 +58,10 @@ cd ..
 
 The debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. The Android application id is `io.freetubeapp.freetubeandroid`.
 
+### Build reproducibility
+
+Android builds are functionally reproducible with the documented Docker and toolchain workflow, but byte-for-byte APK reproducibility is not currently guaranteed. The generated `assets/web.js` output/source map can differ between equivalent builds. Do not commit generated build output; validate functional artifacts with `assembleDebug` and device smoke tests.
+
 ## Required physical test device
 
 Android work must use the connected physical test phone whenever available. All Android interaction through `adb` must use the main Android profile (`user 0`), never a work profile.
