@@ -16,6 +16,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
@@ -353,7 +354,25 @@ class AndroidBridge(
 
     init {
         MediaControlsReceiver.onAction = { dispatchMediaEvent(it) }
+        @Suppress("DEPRECATION")
+        mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
         mediaSession.setCallback(object : MediaSession.Callback() {
+            @Suppress("DEPRECATION")
+            override fun onMediaButtonEvent(intent: Intent): Boolean {
+                val keyEvent = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    ?: return super.onMediaButtonEvent(intent)
+                if (keyEvent.action != KeyEvent.ACTION_DOWN) return true
+                when (keyEvent.keyCode) {
+                    KeyEvent.KEYCODE_MEDIA_PLAY -> dispatchMediaEvent("play")
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> dispatchMediaEvent("pause")
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> dispatchMediaEvent(
+                        if (mediaSession.controller.playbackState?.state == PlaybackState.STATE_PLAYING) "pause" else "play"
+                    )
+                    else -> return super.onMediaButtonEvent(intent)
+                }
+                return true
+            }
+
             override fun onPlay() = dispatchMediaEvent("play")
             override fun onPause() = dispatchMediaEvent("pause")
             override fun onSkipToNext() = dispatchMediaEvent("next")
