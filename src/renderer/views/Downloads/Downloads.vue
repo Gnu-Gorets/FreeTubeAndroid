@@ -80,12 +80,14 @@
       playsinline
       :src="playingUrl"
       @error="playingUrl = null"
+      @ended="playNext"
     />
   </section>
 </template>
 
 <script setup>
 import shaka from 'shaka-player'
+import { recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -113,8 +115,8 @@ function load() {
     downloads.value = JSON.parse(localStorage.getItem('freetube-downloads') || '[]').map(download => {
       const native = queue.find(item => item.id === download.downloadId)
       if (native) return { ...download, status: native.status, progress: native.progress, error: native.error }
-      return download.status === 'downloading'
-        ? { ...download, status: 'failed', error: 'Download interrupted' }
+      return download.status === 'downloading' && !download.interrupted
+        ? { ...download, status: 'queued', interrupted: true, error: 'Download interrupted' }
         : download
     })
     localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
@@ -158,6 +160,13 @@ async function play(download) {
   playingUrl.value = window.Android.getLocalPlaybackUrl(download.localPath)
 }
 
+async function playNext() {
+  const current = playingOffline.value || downloads.value.find(download => playingUrl.value?.includes(encodeURIComponent(download.localPath)))
+  const index = downloads.value.indexOf(current)
+  const next = downloads.value.slice(index + 1).find(download => download.status === 'completed')
+  if (next) await play(next)
+}
+
 async function remove(download) {
   if (download.offlineUri) {
     const storage = new shaka.offline.Storage()
@@ -178,6 +187,34 @@ async function remove(download) {
   }
 }
 
+async function recoverSabrDownloads() {
+  const download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData)
+  if (!download) return
+  download.status = 'downloading'
+  download.progress = 0
+  updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0 })
+  try {
+    download.offlineUri = await recoverSabrDownload(download, (_, progress) => {
+      download.progress = progress
+      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress })
+    })
+    download.status = 'completed'
+    download.progress = 1
+    download.interrupted = false
+    updateDownloadMetadata(download.downloadId, {
+      status: 'completed',
+      progress: 1,
+      offlineUri: download.offlineUri,
+      completedAt: Date.now(),
+      interrupted: false
+    })
+  } catch (error) {
+    download.status = 'failed'
+    download.error = error.message || 'SABR recovery failed'
+    updateDownloadMetadata(download.downloadId, { status: 'failed', error: download.error })
+  }
+}
+
 function handleDownloadEvent(event) {
   const download = downloads.value.find(item => item.downloadId === event.detail?.id)
   if (download && event.detail.status === 'downloading') {
@@ -189,6 +226,7 @@ function handleDownloadEvent(event) {
 
 onMounted(() => {
   load()
+  recoverSabrDownloads()
   queueTimer = setInterval(load, 1000)
   window.addEventListener('android-download', handleDownloadEvent)
 })

@@ -82,6 +82,11 @@ class DownloadService : Service() {
                 item.put("status", "queued")
                 changed = true
             }
+            if (item.optString("status") in setOf("queued", "paused") &&
+                DocumentFile.fromSingleUri(this, Uri.parse(item.optString("targetUri")))?.exists() != true) {
+                item.put("status", "failed").put("error", "Download target is unavailable")
+                changed = true
+            }
         }
         if (changed) writeQueue(queue)
     }

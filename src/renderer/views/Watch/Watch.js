@@ -1313,6 +1313,9 @@ export default defineComponent({
           thumbnail: this.thumbnail,
           sourceBackend: this.backendPreference,
           selectedFormat: this.activeFormat,
+          manifestSrc: this.manifestSrc,
+          manifestMimeType: this.manifestMimeType,
+          sabrData: this.sabrData,
           status: 'downloading',
           progress: 0,
           createdAt: Date.now()

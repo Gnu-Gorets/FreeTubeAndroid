@@ -1,5 +1,7 @@
 import android from 'android'
+import shaka from 'shaka-player'
 import { requestSaveDialog } from './dialogs'
+import { setupSabrScheme } from '../player/SabrSchemePlugin'
 
 function bestFormat(formats, predicate) {
   return formats
@@ -29,6 +31,26 @@ export function recordDownloadMetadata(metadata) {
   downloads.push(metadata)
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
   return downloads
+}
+
+export async function recoverSabrDownload(download, onProgress) {
+  if (!download.manifestSrc || !download.sabrData || !shaka.offline?.Storage) throw new Error('SABR recovery data is unavailable')
+  const video = document.createElement('video')
+  const player = new shaka.Player(video)
+  const manifestRef = { value: null }
+  setupSabrScheme(download.sabrData, () => player, () => manifestRef.value, 640, 360)
+  await player.load(download.manifestSrc, null, download.manifestMimeType)
+  manifestRef.value = player.getManifest()
+  const storage = new shaka.offline.Storage(player)
+  storage.configure({ offline: { progressCallback(content, progress) { onProgress?.(content, progress) } } })
+  try {
+    const content = await storage.store(download.manifestSrc, {}, download.manifestMimeType).promise
+    if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
+    return content.offlineUri
+  } finally {
+    await storage.destroy()
+    await player.destroy()
+  }
 }
 
 export function updateDownloadMetadata(downloadId, changes) {
