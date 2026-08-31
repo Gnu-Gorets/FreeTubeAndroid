@@ -16,6 +16,13 @@ export function selectDownloadFormats(progressiveFormats, adaptiveFormats = []) 
   return video && audio ? { video, audio } : null
 }
 
+export function recordDownloadMetadata(metadata) {
+  const downloads = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
+  downloads.push(metadata)
+  localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+  return downloads
+}
+
 function safeFileName(title, id) {
   const name = title.replaceAll(/[\\/:*?"<>|]/g, '_').replaceAll(/\s+/g, ' ').trim()
   return `${(name || id).slice(0, 180)}.mp4`
@@ -48,9 +55,7 @@ export async function downloadProgressiveVideo(video) {
     status: 'downloading',
     createdAt: Date.now()
   }
-  const downloads = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
-  downloads.push(metadata)
-  localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+  const downloads = recordDownloadMetadata(metadata)
   const result = new Promise((resolve, reject) => {
     const onEvent = (event) => {
       if (event.detail?.id !== downloadId) return

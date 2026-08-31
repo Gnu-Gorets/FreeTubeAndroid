@@ -43,7 +43,7 @@ import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, selectDownloadFormats } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, recordDownloadMetadata, selectDownloadFormats } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1305,8 +1305,25 @@ export default defineComponent({
     async downloadVideo() {
       const formats = selectDownloadFormats(this.legacyFormats, this.downloadFormats)
       if (!formats) {
-        console.warn('No downloadable format')
-        showToast(this.t('Video.Download unavailable'))
+        try {
+          const content = await this.$refs.player?.storeOffline()
+          if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
+          recordDownloadMetadata({
+            videoId: this.videoId,
+            title: this.videoTitle,
+            thumbnail: this.thumbnail,
+            sourceBackend: this.backendPreference,
+            selectedFormat: this.activeFormat,
+            offlineUri: content.offlineUri,
+            status: 'completed',
+            createdAt: Date.now(),
+            completedAt: Date.now()
+          })
+          showToast(this.t('Video.Download complete'))
+        } catch (error) {
+          console.error(`Offline download failed: code=${error?.code} category=${error?.category} message=${error?.message} data=${JSON.stringify(error?.data)}`)
+          showToast(this.t('Video.Download unavailable'))
+        }
         return
       }
 

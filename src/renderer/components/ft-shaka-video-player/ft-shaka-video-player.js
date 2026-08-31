@@ -186,6 +186,7 @@ export default defineComponent({
 
     /** @type {shaka.Player|null} */
     let player = null
+    let offlineStoreOperation = null
 
     /** @type {shaka.ui.Overlay|null} */
     let ui = null
@@ -3380,7 +3381,22 @@ export default defineComponent({
      *
      * @returns {Promise<{ startNextVideoInFullscreen: boolean, startNextVideoInFullwindow: boolean, startNextVideoInPip: boolean }>}
      */
+    async function storeOffline() {
+      if (!player || !props.manifestSrc || !shaka.offline?.Storage) {
+        throw new Error('Offline storage is unavailable')
+      }
+      const storage = new shaka.offline.Storage(player)
+      try {
+        offlineStoreOperation = storage.store(props.manifestSrc, {}, props.manifestMimeType)
+        return await offlineStoreOperation.promise
+      } finally {
+        offlineStoreOperation = null
+        await storage.destroy()
+      }
+    }
+
     async function destroyPlayer() {
+      offlineStoreOperation?.abort()
       ignoreErrors = true
 
       let uiState = { startNextVideoInFullscreen: false, startNextVideoInFullwindow: false, startNextVideoInPip: false }
@@ -3430,6 +3446,7 @@ export default defineComponent({
       pause,
       getCurrentTime,
       setCurrentTime,
+      storeOffline,
       destroyPlayer
     })
 

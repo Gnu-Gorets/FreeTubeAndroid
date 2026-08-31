@@ -38,7 +38,7 @@
     </article>
     <!-- eslint-disable-next-line vuejs-accessibility/media-has-caption -->
     <video
-      v-if="playingUrl"
+      v-if="playingUrl || playingOffline"
       ref="video"
       class="downloadPlayer"
       controls
@@ -51,12 +51,16 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import shaka from 'shaka-player'
+import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const downloads = ref([])
 const playingUrl = ref(null)
+const playingOffline = ref(null)
+const video = useTemplateRef('video')
+let player = null
 
 function load() {
   try {
@@ -67,16 +71,44 @@ function load() {
   }
 }
 
-function play(download) {
+async function stopPlayer() {
+  if (!player) return
+  await player.destroy()
+  player = null
+}
+
+async function play(download) {
+  await stopPlayer()
+  if (download.offlineUri) {
+    playingUrl.value = null
+    playingOffline.value = download
+    await nextTick()
+    player = new shaka.Player(video.value)
+    await player.load(download.offlineUri)
+    return
+  }
   if (typeof window.Android?.getLocalPlaybackUrl !== 'function') return
+  playingOffline.value = null
   playingUrl.value = window.Android.getLocalPlaybackUrl(download.localPath)
 }
 
-function remove(download) {
-  window.Android?.deleteFile(download.localPath)
-  downloads.value = downloads.value.filter(item => item.localPath !== download.localPath)
+async function remove(download) {
+  if (download.offlineUri) {
+    const storage = new shaka.offline.Storage()
+    await storage.remove(download.offlineUri)
+    await storage.destroy()
+  } else {
+    window.Android?.deleteFile(download.localPath)
+  }
+  downloads.value = downloads.value.filter(item => download.offlineUri
+    ? item.offlineUri !== download.offlineUri
+    : item.localPath !== download.localPath)
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
-  if (playingUrl.value?.includes(encodeURIComponent(download.localPath))) playingUrl.value = null
+  if (playingOffline.value === download || playingUrl.value?.includes(encodeURIComponent(download.localPath))) {
+    await stopPlayer()
+    playingOffline.value = null
+    playingUrl.value = null
+  }
 }
 
 onMounted(() => {
@@ -84,7 +116,10 @@ onMounted(() => {
   window.addEventListener('android-download', load)
 })
 
-onBeforeUnmount(() => window.removeEventListener('android-download', load))
+onBeforeUnmount(async () => {
+  window.removeEventListener('android-download', load)
+  await stopPlayer()
+})
 </script>
 
 <style scoped>
