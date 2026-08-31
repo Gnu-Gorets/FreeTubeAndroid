@@ -32,7 +32,6 @@ import {
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
 import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
-import android from 'android'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -187,7 +186,6 @@ export default defineComponent({
 
     /** @type {shaka.Player|null} */
     let player = null
-    let offlineStoreOperation = null
 
     /** @type {shaka.ui.Overlay|null} */
     let ui = null
@@ -3375,48 +3373,7 @@ export default defineComponent({
       video.value.currentTime = time
     }
 
-    /**
-     * Vue's lifecycle hooks are synchonous, so if we destroy the player in {@linkcode onBeforeUnmount},
-     * it won't be finished in time, as the player destruction is asynchronous.
-     * To workaround that we destroy the player first and wait for it to finish before we unmount this component.
-     *
-     * @returns {Promise<{ startNextVideoInFullscreen: boolean, startNextVideoInFullwindow: boolean, startNextVideoInPip: boolean }>}
-     */
-    async function storeOffline(downloadId) {
-      if (!player || !props.manifestSrc || !shaka.offline?.Storage) {
-        throw new Error('Offline storage is unavailable')
-      }
-      const storage = new shaka.offline.Storage(player)
-      storage.configure({
-        offline: {
-          progressCallback(content, progress) {
-            window.dispatchEvent(new CustomEvent('android-download', {
-              detail: {
-                id: downloadId,
-                status: 'downloading',
-                progress,
-                size: content.size
-              }
-            }))
-            android.updateDownloadNotification?.(props.title, Math.round(progress * 100))
-          }
-        }
-      })
-      try {
-        offlineStoreOperation = storage.store(props.manifestSrc, {}, props.manifestMimeType)
-        return await offlineStoreOperation.promise
-      } finally {
-        offlineStoreOperation = null
-        await storage.destroy()
-      }
-    }
-
-    function cancelOfflineStore() {
-      offlineStoreOperation?.abort()
-    }
-
     async function destroyPlayer() {
-      cancelOfflineStore()
       ignoreErrors = true
 
       let uiState = { startNextVideoInFullscreen: false, startNextVideoInFullwindow: false, startNextVideoInPip: false }
@@ -3466,8 +3423,6 @@ export default defineComponent({
       pause,
       getCurrentTime,
       setCurrentTime,
-      storeOffline,
-      cancelOfflineStore,
       destroyPlayer
     })
 

@@ -43,7 +43,7 @@ import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, recordDownloadMetadata, selectDownloadFormats, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, recordDownloadMetadata, selectDownloadFormats, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1321,7 +1321,17 @@ export default defineComponent({
           createdAt: Date.now()
         })
         try {
-          const content = await this.$refs.player?.storeOffline(downloadId)
+          const content = await storeSabrDownload({
+            downloadId,
+            manifestSrc: this.manifestSrc,
+            manifestMimeType: this.manifestMimeType,
+            sabrData: this.sabrData
+          }, (_, progress) => {
+            updateDownloadMetadata(downloadId, { status: 'downloading', progress })
+            window.dispatchEvent(new CustomEvent('android-download', {
+              detail: { id: downloadId, status: 'downloading', progress }
+            }))
+          })
           if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
           updateDownloadMetadata(downloadId, {
             status: 'completed',

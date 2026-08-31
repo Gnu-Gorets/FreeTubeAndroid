@@ -18,6 +18,8 @@ export function selectDownloadFormats(progressiveFormats, adaptiveFormats = []) 
   return video && audio ? { video, audio } : null
 }
 
+const sabrOperations = new Map()
+
 function readDownloadMetadata() {
   try {
     return JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
@@ -33,24 +35,44 @@ export function recordDownloadMetadata(metadata) {
   return downloads
 }
 
-export async function recoverSabrDownload(download, onProgress) {
-  if (!download.manifestSrc || !download.sabrData || !shaka.offline?.Storage) throw new Error('SABR recovery data is unavailable')
+export async function storeSabrDownload(download, onProgress) {
+  if (!download.manifestSrc || !download.sabrData || !shaka.offline?.Storage) throw new Error('SABR download is unavailable')
   const video = document.createElement('video')
   const player = new shaka.Player(video)
   const manifestRef = { value: null }
-  setupSabrScheme(download.sabrData, () => player, () => manifestRef.value, 640, 360)
-  await player.load(download.manifestSrc, null, download.manifestMimeType)
-  manifestRef.value = player.getManifest()
   const storage = new shaka.offline.Storage(player)
-  storage.configure({ offline: { progressCallback(content, progress) { onProgress?.(content, progress) } } })
+  setupSabrScheme(download.sabrData, () => player, () => manifestRef.value, 640, 360)
   try {
-    const content = await storage.store(download.manifestSrc, {}, download.manifestMimeType).promise
+    await player.load(download.manifestSrc, null, download.manifestMimeType)
+    manifestRef.value = player.getManifest()
+    storage.configure({
+      offline: {
+        progressCallback(content, progress) {
+          onProgress?.(content, progress)
+          android.updateDownloadNotification?.(download.title || 'Download', Math.round(progress * 100))
+        }
+      }
+    })
+    const operation = storage.store(download.manifestSrc, {}, download.manifestMimeType)
+    sabrOperations.set(download.downloadId, operation)
+    const content = await operation.promise
     if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
     return content.offlineUri
   } finally {
+    sabrOperations.delete(download.downloadId)
     await storage.destroy()
     await player.destroy()
   }
+}
+
+export const recoverSabrDownload = storeSabrDownload
+
+export function hasSabrDownload(downloadId) {
+  return sabrOperations.has(downloadId)
+}
+
+export function cancelSabrDownload(downloadId) {
+  sabrOperations.get(downloadId)?.abort()
 }
 
 export function updateDownloadMetadata(downloadId, changes) {

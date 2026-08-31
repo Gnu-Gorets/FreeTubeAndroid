@@ -46,6 +46,8 @@ Downloads:
   Pause: Pause
   Resume: Resume
   Cancel: Cancel
+  Player: Offline player
+  Close player: Close player
 
 # Global
 # Anything shared among components / views should be put here

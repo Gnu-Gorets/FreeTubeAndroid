@@ -70,24 +70,41 @@
         </div>
       </div>
     </article>
-    <!-- eslint-disable-next-line vuejs-accessibility/media-has-caption -->
-    <video
+    <div
       v-if="playingUrl || playingOffline"
-      ref="video"
-      class="downloadPlayer"
-      controls
-      autoplay
-      playsinline
-      :src="playingUrl"
-      @error="playingUrl = null"
-      @ended="playNext"
-    />
+      class="downloadPlayerOverlay"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('Downloads.Player')"
+      @click.self="closePlayer"
+      @keydown.esc="closePlayer"
+    >
+      <button
+        type="button"
+        class="downloadPlayerClose"
+        :aria-label="t('Downloads.Close player')"
+        @click="closePlayer"
+      >
+        {{ t('Downloads.Close player') }}
+      </button>
+      <!-- eslint-disable-next-line vuejs-accessibility/media-has-caption -->
+      <video
+        ref="video"
+        class="downloadPlayer"
+        controls
+        autoplay
+        playsinline
+        :src="playingUrl"
+        @error="playingUrl = null"
+        @ended="playNext"
+      />
+    </div>
   </section>
 </template>
 
 <script setup>
 import shaka from 'shaka-player'
-import { recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { hasSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -115,7 +132,7 @@ function load() {
     downloads.value = JSON.parse(localStorage.getItem('freetube-downloads') || '[]').map(download => {
       const native = queue.find(item => item.id === download.downloadId)
       if (native) return { ...download, status: native.status, progress: native.progress, error: native.error }
-      return download.status === 'downloading' && !download.interrupted
+      return download.status === 'downloading' && !download.interrupted && !hasSabrDownload(download.downloadId)
         ? { ...download, status: 'queued', interrupted: true, error: 'Download interrupted' }
         : download
     })
@@ -158,6 +175,12 @@ async function play(download) {
   if (typeof window.Android?.getLocalPlaybackUrl !== 'function') return
   playingOffline.value = null
   playingUrl.value = window.Android.getLocalPlaybackUrl(download.localPath)
+}
+
+async function closePlayer() {
+  await stopPlayer()
+  playingOffline.value = null
+  playingUrl.value = null
 }
 
 async function playNext() {
@@ -224,15 +247,21 @@ function handleDownloadEvent(event) {
   load()
 }
 
+function handleEscape(event) {
+  if (event.key === 'Escape') closePlayer()
+}
+
 onMounted(() => {
   load()
   recoverSabrDownloads()
+  window.addEventListener('keydown', handleEscape)
   queueTimer = setInterval(load, 1000)
   window.addEventListener('android-download', handleDownloadEvent)
 })
 
 onBeforeUnmount(async () => {
   window.removeEventListener('android-download', handleDownloadEvent)
+  window.removeEventListener('keydown', handleEscape)
   if (queueTimer) clearInterval(queueTimer)
   await stopPlayer()
 })
@@ -274,8 +303,56 @@ onBeforeUnmount(async () => {
   gap: 8px;
 }
 
+.downloadPlayerOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 80%);
+}
+
+.downloadPlayerClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: rgb(0 0 0 / 70%);
+  font-size: 0;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.downloadPlayerClose::before,
+.downloadPlayerClose::after {
+  position: absolute;
+  top: 21px;
+  left: 11px;
+  width: 22px;
+  height: 2px;
+  background: currentColor;
+  content: '';
+  font-size: 32px;
+}
+
+.downloadPlayerClose::before {
+  transform: rotate(45deg);
+}
+
+.downloadPlayerClose::after {
+  transform: rotate(-45deg);
+}
+
 .downloadPlayer {
-  width: 100%;
-  margin-top: 24px;
+  width: min(100%, 1100px);
+  max-height: calc(100vh - 48px);
+  aspect-ratio: 16 / 9;
+  background: #000;
 }
 </style>
