@@ -112,7 +112,7 @@
             @click="handleExternalPlayer"
           />
           <FtIconButton
-            v-if="process.env.IS_ANDROID && legacyFormats.length > 0 && !isUpcoming"
+            v-if="USING_ANDROID && !isUpcoming"
             :title="t('Video.Download')"
             theme="secondary"
             :icon="['fas', 'download']"
@@ -256,6 +256,7 @@ const emit = defineEmits([
 ])
 
 const USING_ELECTRON = process.env.IS_ELECTRON
+const USING_ANDROID = process.env.IS_ANDROID
 
 const { locale, t } = useI18n()
 

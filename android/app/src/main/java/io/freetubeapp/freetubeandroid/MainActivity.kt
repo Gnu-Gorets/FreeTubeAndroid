@@ -12,6 +12,9 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceResponse
+import android.webkit.WebResourceRequest
+import java.io.InputStream
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -51,6 +54,12 @@ class MainActivity : Activity() {
         }
         pendingDeepLink = intent
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val requestUrl = request?.url ?: return null
+                if (requestUrl.scheme != "freetube-download") return null
+                return openDownloadedFile(requestUrl, request.requestHeaders["Range"])
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 pendingDeepLink?.let {
@@ -107,6 +116,60 @@ class MainActivity : Activity() {
         androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
         webView.addJavascriptInterface(androidBridge, "Android")
         webView.loadUrl("file:///android_asset/index.html")
+    }
+
+    private fun openDownloadedFile(uri: android.net.Uri, range: String?): WebResourceResponse? {
+        return try {
+            val sourceUri = android.net.Uri.parse(uri.getQueryParameter("uri") ?: return null)
+            val descriptor = contentResolver.openAssetFileDescriptor(sourceUri, "r") ?: return null
+            val length = descriptor.use { it.length }
+            val input = contentResolver.openInputStream(sourceUri) ?: return null
+            val headers = mutableMapOf(
+                "Accept-Ranges" to "bytes",
+                "Access-Control-Allow-Origin" to "*",
+                "Content-Type" to (contentResolver.getType(sourceUri) ?: "video/mp4")
+            )
+            if (range == null || length < 0) {
+                if (length >= 0) headers["Content-Length"] = length.toString()
+                WebResourceResponse(contentResolver.getType(sourceUri) ?: "video/mp4", null, 200, "OK", headers, input)
+            } else {
+                val match = Regex("bytes=(\\d+)-(\\d*)").find(range) ?: return null
+                val start = match.groupValues[1].toLong()
+                val requestedEnd = match.groupValues[2].takeIf { it.isNotEmpty() }?.toLong()
+                val end = if (requestedEnd == null || requestedEnd >= length) length - 1 else requestedEnd
+                if (start >= length || end < start) return null
+                var skipped = 0L
+                while (skipped < start) {
+                    val count = input.skip(start - skipped)
+                    if (count <= 0) break
+                    skipped += count
+                }
+                if (skipped != start) return null
+                headers["Content-Range"] = "bytes $start-$end/$length"
+                headers["Content-Length"] = (end - start + 1).toString()
+                WebResourceResponse(contentResolver.getType(sourceUri) ?: "video/mp4", null, 206, "Partial Content", headers, input.limit(end - start + 1))
+            }
+        } catch (error: Exception) {
+            Log.w("FreeTubePlayback", "Unable to serve downloaded file", error)
+            null
+        }
+    }
+
+    private fun InputStream.limit(bytes: Long): InputStream = object : InputStream() {
+        var remaining = bytes
+        override fun read(): Int {
+            if (remaining <= 0) return -1
+            val value = this@limit.read()
+            if (value >= 0) remaining--
+            return value
+        }
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (remaining <= 0) return -1
+            val count = this@limit.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
+            if (count > 0) remaining -= count
+            return count
+        }
+        override fun close() = this@limit.close()
     }
 
     private fun dispatchDeepLink(intent: Intent?) {

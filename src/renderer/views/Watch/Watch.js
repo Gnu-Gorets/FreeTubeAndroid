@@ -43,7 +43,7 @@ import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, selectProgressiveFormat } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, selectDownloadFormats } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -145,6 +145,7 @@ export default defineComponent({
       /** @type {SabrData | null} */
       sabrData: null,
       legacyFormats: [],
+      downloadFormats: [],
       captions: [],
       /** @type {'EQUIRECTANGULAR' | 'EQUIRECTANGULAR_THREED_TOP_BOTTOM' | 'MESH'| null} */
       vrProjection: null,
@@ -437,6 +438,7 @@ export default defineComponent({
       this.manifestMimeType = MANIFEST_TYPE_DASH
       this.sabrData = null
       this.legacyFormats = []
+      this.downloadFormats = []
       this.captions = []
       this.vrProjection = null
       this.recommendedVideos = []
@@ -848,6 +850,13 @@ export default defineComponent({
             if (result.streaming_data.formats.length > 0) {
               this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
             }
+            this.downloadFormats = result.streaming_data.adaptive_formats.map(format => ({
+              url: format.freeTubeUrl ?? format.url,
+              mimeType: format.mime_type,
+              width: format.width,
+              height: format.height,
+              bitrate: format.bitrate
+            }))
 
             if (result.captions) {
               const captionTracks = result.captions?.caption_tracks?.map((caption) => {
@@ -1128,6 +1137,7 @@ export default defineComponent({
             // }
 
             this.legacyFormats = []
+            this.downloadFormats = []
 
             if (this.activeFormat === 'legacy') {
               this.activeFormat = 'dash'
@@ -1138,6 +1148,13 @@ export default defineComponent({
             this.streamingDataExpiryDate = this.extractExpiryDateFromStreamingUrl(result.adaptiveFormats[0].url)
 
             this.legacyFormats = result.formatStreams.map(mapInvidiousLegacyFormat)
+            this.downloadFormats = result.adaptiveFormats.map(format => ({
+              url: format.url,
+              mimeType: format.type,
+              width: format.width,
+              height: format.height,
+              bitrate: parseInt(format.bitrate)
+            }))
 
             if (!process.env.SUPPORTS_LOCAL_API || this.proxyVideos) {
               this.legacyFormats.forEach(format => {
@@ -1286,8 +1303,9 @@ export default defineComponent({
     },
 
     async downloadVideo() {
-      const format = selectProgressiveFormat(this.legacyFormats)
-      if (!format) {
+      const formats = selectDownloadFormats(this.legacyFormats, this.downloadFormats)
+      if (!formats) {
+        console.warn('No downloadable format')
         showToast(this.t('Video.Download unavailable'))
         return
       }
@@ -1296,7 +1314,9 @@ export default defineComponent({
         await downloadProgressiveVideo({
           id: this.videoId,
           title: this.videoTitle,
-          url: format.url,
+          thumbnail: this.thumbnail,
+          videoUrl: formats.video.url,
+          audioUrl: formats.audio?.url ?? null,
           sourceBackend: this.backendPreference
         })
         showToast(this.t('Video.Download complete'))

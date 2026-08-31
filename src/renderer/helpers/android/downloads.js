@@ -1,10 +1,19 @@
 import android from 'android'
 import { requestSaveDialog } from './dialogs'
 
-export function selectProgressiveFormat(formats) {
+function bestFormat(formats, predicate) {
   return formats
-    .filter(format => format.url && format.mimeType?.startsWith('video/'))
+    .filter(format => format.url && predicate(format))
     .sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || (b.bitrate ?? 0) - (a.bitrate ?? 0))[0] ?? null
+}
+
+export function selectDownloadFormats(progressiveFormats, adaptiveFormats = []) {
+  const progressive = bestFormat(progressiveFormats, format => !format.mimeType || format.mimeType.startsWith('video/'))
+  if (progressive) return { video: progressive, audio: null }
+
+  const video = bestFormat(adaptiveFormats, format => format.mimeType?.startsWith('video/mp4'))
+  const audio = bestFormat(adaptiveFormats, format => format.mimeType?.startsWith('audio/mp4'))
+  return video && audio ? { video, audio } : null
 }
 
 function safeFileName(title, id) {
@@ -13,13 +22,14 @@ function safeFileName(title, id) {
 }
 
 /**
- * Downloads one progressive format through Android native storage.
- * @param {{id: string, title: string, url: string, sourceBackend?: string}} video
+ * Downloads one video through Android native storage.
+ * @param {{id: string, title: string, videoUrl: string, audioUrl?: string|null, thumbnail?: string, sourceBackend?: string}} video
  * @returns {Promise<void>}
  */
 export async function downloadProgressiveVideo(video) {
-  if (!process.env.IS_ANDROID || typeof android.downloadUrl !== 'function') {
-    throw new Error('Downloads are only available on Android')
+  if (!process.env.IS_ANDROID || typeof android.downloadUrl !== 'function' ||
+    (video.audioUrl && typeof android.muxDownload !== 'function')) {
+    throw new Error('Downloads are only available on Android with native MP4 muxing')
   }
 
   const fileName = safeFileName(video.title, video.id)
@@ -31,8 +41,9 @@ export async function downloadProgressiveVideo(video) {
   const metadata = {
     videoId: video.id,
     title: video.title,
+    thumbnail: video.thumbnail ?? '',
     sourceBackend: video.sourceBackend ?? 'unknown',
-    selectedFormat: 'progressive',
+    selectedFormat: video.audioUrl ? 'adaptive-mp4' : 'progressive',
     localPath: dialog.uri,
     status: 'downloading',
     createdAt: Date.now()
@@ -67,7 +78,10 @@ export async function downloadProgressiveVideo(video) {
     window.addEventListener(eventName, onEvent)
   })
 
-  if (!android.downloadUrl(video.url, dialog.uri, downloadId)) {
+  const startDownload = video.audioUrl && typeof android.muxDownload === 'function'
+    ? android.muxDownload(video.videoUrl, video.audioUrl, dialog.uri, downloadId)
+    : android.downloadUrl(video.videoUrl, dialog.uri, downloadId)
+  if (!startDownload) {
     window.dispatchEvent(new CustomEvent(eventName, { detail: { id: downloadId, status: 'failed', error: 'Unable to start download' } }))
   }
 

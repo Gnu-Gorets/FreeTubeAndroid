@@ -13,6 +13,9 @@ import android.provider.OpenableColumns
 import android.app.PendingIntent
 import android.graphics.BitmapFactory
 import android.media.MediaMetadata
+import android.media.MediaExtractor
+import android.media.MediaMuxer
+import android.media.MediaCodec
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
@@ -354,6 +357,104 @@ class AndroidBridge(
             }
         }
         return true
+    }
+
+    @JavascriptInterface
+    fun muxDownload(videoUrl: String, audioUrl: String, targetUri: String, downloadId: String): Boolean {
+        if (!videoUrl.startsWith("https://") || !audioUrl.startsWith("https://")) return false
+        fileExecutor.execute {
+            val videoFile = java.io.File(activity.cacheDir, "$downloadId-video.mp4")
+            val audioFile = java.io.File(activity.cacheDir, "$downloadId-audio.mp4")
+            val outputFile = java.io.File(activity.cacheDir, "$downloadId-output.mp4")
+            try {
+                downloadToFile(videoUrl, videoFile, downloadId)
+                downloadToFile(audioUrl, audioFile, downloadId)
+                muxMp4(videoFile, audioFile, outputFile)
+                activity.contentResolver.openOutputStream(resolveUri(targetUri), "wt")?.use { output ->
+                    outputFile.inputStream().use { it.copyTo(output) }
+                } ?: throw IllegalStateException("Unable to open download target")
+                dispatchDownload(downloadId, "completed", outputFile.length(), outputFile.length(), null)
+            } catch (error: Exception) {
+                val status = if (!downloadJobs.containsKey(downloadId) || error is InterruptedException) "canceled" else "failed"
+                dispatchDownload(downloadId, status, 0, 0, error.message)
+            } finally {
+                downloadJobs.remove(downloadId)
+                videoFile.delete()
+                audioFile.delete()
+                outputFile.delete()
+            }
+        }
+        return true
+    }
+
+    private fun downloadToFile(url: String, target: java.io.File, downloadId: String) {
+        var connection: HttpURLConnection? = null
+        try {
+            connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 30_000
+            connection.instanceFollowRedirects = true
+            downloadJobs[downloadId] = connection
+            connection.connect()
+            val activeConnection = connection
+            if (activeConnection.responseCode !in 200..299) throw IllegalStateException("HTTP ${activeConnection.responseCode}")
+            activeConnection.inputStream.use { input ->
+                target.outputStream().use { output ->
+                    input.copyTo(output, 64 * 1024)
+                }
+            }
+            if (!downloadJobs.containsKey(downloadId)) throw InterruptedException("Download canceled")
+        } finally {
+            downloadJobs.remove(downloadId)
+            connection?.disconnect()
+        }
+    }
+
+    private fun muxMp4(videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
+        val videoExtractor = MediaExtractor()
+        val audioExtractor = MediaExtractor()
+        val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        try {
+            videoExtractor.setDataSource(videoFile.absolutePath)
+            audioExtractor.setDataSource(audioFile.absolutePath)
+            val videoTrack = (0 until videoExtractor.trackCount).firstOrNull {
+                videoExtractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            } ?: throw IllegalStateException("Video track not found")
+            val audioTrack = (0 until audioExtractor.trackCount).firstOrNull {
+                audioExtractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: throw IllegalStateException("Audio track not found")
+            val muxVideoTrack = muxer.addTrack(videoExtractor.getTrackFormat(videoTrack))
+            val muxAudioTrack = muxer.addTrack(audioExtractor.getTrackFormat(audioTrack))
+            muxer.start()
+            copyExtractorSamples(videoExtractor, videoTrack, muxer, muxVideoTrack)
+            copyExtractorSamples(audioExtractor, audioTrack, muxer, muxAudioTrack)
+            muxer.stop()
+        } finally {
+            videoExtractor.release()
+            audioExtractor.release()
+            muxer.release()
+        }
+    }
+
+    private fun copyExtractorSamples(extractor: MediaExtractor, sourceTrack: Int, muxer: MediaMuxer, track: Int) {
+        extractor.selectTrack(sourceTrack)
+        val buffer = java.nio.ByteBuffer.allocate(1024 * 1024)
+        val info = MediaCodec.BufferInfo()
+        while (true) {
+            val size = extractor.readSampleData(buffer, 0)
+            if (size < 0) break
+            info.offset = 0
+            info.size = size
+            info.presentationTimeUs = extractor.sampleTime
+            info.flags = extractor.sampleFlags
+            muxer.writeSampleData(track, buffer, info)
+            extractor.advance()
+        }
+    }
+
+    @JavascriptInterface
+    fun getLocalPlaybackUrl(uri: String): String {
+        return "freetube-download://file?uri=${Uri.encode(uri)}"
     }
 
     @JavascriptInterface

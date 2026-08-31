@@ -765,7 +765,11 @@ export async function getLocalVideoInfo(id) {
   }
 
   if (info.streaming_data) {
-    await decipherFormats(info.streaming_data.formats, player)
+    await decipherFormats(
+      [...info.streaming_data.formats, ...info.streaming_data.adaptive_formats]
+        .filter(format => format.url || format.signature_cipher || format.cipher),
+      player
+    )
 
     if (info.streaming_data.server_abr_streaming_url) {
       info.streaming_data.server_abr_streaming_url = await player.decipher(info.streaming_data.server_abr_streaming_url)
@@ -2296,7 +2300,7 @@ export function mapLocalLegacyFormat(format) {
     mimeType: format.mime_type,
     height: format.height,
     width: format.width,
-    url: format.freeTubeUrl
+    url: format.freeTubeUrl ?? format.url
   }
 }
 

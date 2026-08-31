@@ -138,6 +138,24 @@
           {{ $t("History.History") }}
         </p>
       </router-link>
+      <router-link
+        v-if="IS_ANDROID"
+        class="navOption mobileShow"
+        role="button"
+        to="/downloads"
+        :title="$t('Downloads.Title')"
+      >
+        <div class="thumbnailContainer">
+          <FontAwesomeIcon
+            :icon="['fas', 'download']"
+            class="navIcon"
+            :class="applyNavIconExpand"
+          />
+        </div>
+        <p class="navLabel">
+          {{ $t('Downloads.Title') }}
+        </p>
+      </router-link>
       <hr>
       <router-link
         class="navOption mobileShow smallMobileOnlyHidden"
@@ -244,6 +262,7 @@ import { KeyboardShortcuts } from '../../../constants'
 const { locale, t } = useI18n()
 
 const SUPPORTS_LOCAL_API = process.env.SUPPORTS_LOCAL_API
+const IS_ANDROID = process.env.IS_ANDROID
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const isOpen = computed(() => {
