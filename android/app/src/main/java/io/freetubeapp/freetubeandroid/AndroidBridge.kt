@@ -6,10 +6,12 @@ import android.graphics.drawable.Icon
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import android.app.PendingIntent
 import android.graphics.BitmapFactory
 import android.media.MediaMetadata
@@ -19,6 +21,7 @@ import android.media.MediaCodec
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.Environment
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -198,7 +201,16 @@ class AndroidBridge(
     @JavascriptInterface
     fun createDownloadFile(directory: String, fileName: String): String {
         return try {
-            if (directory.startsWith("data://")) {
+            if (directory == "data://downloads/FreeTube" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/FreeTube")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                activity.contentResolver.insert(MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)?.toString()
+                    ?: throw IllegalStateException("Unable to create public download target")
+            } else if (directory.startsWith("data://")) {
                 val relative = directory.removePrefix("data://").trim('/').let { if (it.isBlank()) fileName else "$it/$fileName" }
                 val file = java.io.File(dataDirectory, relative)
                 file.parentFile?.mkdirs()

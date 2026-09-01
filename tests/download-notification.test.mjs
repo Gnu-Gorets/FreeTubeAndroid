@@ -37,6 +37,12 @@ test('Android notification defines separate action intents', () => {
   assert.ok(source.includes('downloadNotificationId("$downloadId:$action")'))
 })
 
+test('Android default downloads use public Freetube folder', () => {
+  const source = readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
+  assert.match(source, /RELATIVE_PATH, "\$\{Environment\.DIRECTORY_DOWNLOADS\}\/FreeTube"/)
+  assert.match(source, /IS_PENDING, 1/)
+})
+
 test('paused and failed notifications expose recovery actions', () => {
   assert.deepEqual(getDownloadNotificationPayload({ downloadId: '1', title: '480p', status: 'paused', progress: 0.25 }), {
     downloadId: '1', title: '480p', text: 'Downloading 25%', progress: 25, actions: ['resume', 'cancel']

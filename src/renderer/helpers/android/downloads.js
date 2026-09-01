@@ -120,6 +120,7 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
   let storage = null
   let lastLoggedPercent = -1
   let transportBytes = 0
+  let stableTotal = 0
   setupSabrScheme(download.sabrData, () => player, () => manifestRef.value, 640, 360, scheme, bytes => {
     transportBytes += bytes
   })
@@ -143,8 +144,9 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
             lastLoggedPercent = percent
             log('SABR store progress', { id: download.downloadId, percent })
           }
-          const snapshot = getProgressSnapshot(content, transportBytes, progress)
-          onProgress?.({ ...content, size: snapshot.received }, progress, snapshot.total)
+          const snapshot = getStableProgressSnapshot(content, transportBytes, progress, stableTotal)
+          stableTotal = snapshot.total
+          onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total)
         }
       }
     })
@@ -211,11 +213,19 @@ export function mergeNativeDownload(download, native) {
   }
 }
 
-export function getProgressSnapshot(content, transportBytes, progress) {
+export function getProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
   const received = Math.max(content?.size || 0, transportBytes || 0)
   return {
     received,
-    total: progress > 0 ? Math.round(received / progress) : 0
+    total: knownTotal > 0 ? knownTotal : progress > 0 ? Math.round(received / progress) : 0
+  }
+}
+
+export function getStableProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
+  const snapshot = getProgressSnapshot(content, transportBytes, progress, knownTotal)
+  return {
+    ...snapshot,
+    progress: snapshot.total > 0 ? Math.min(snapshot.received / snapshot.total, 1) : progress
   }
 }
 
@@ -260,7 +270,10 @@ export async function downloadProgressiveVideo(video) {
   }
 
   const fileName = safeFileName(video.title, video.id)
-  const directory = localStorage.getItem('freetube-download-directory') || 'data://downloads/FreetTube'
+  const storedDirectory = localStorage.getItem('freetube-download-directory')
+  const directory = !storedDirectory || ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube'].includes(storedDirectory)
+    ? 'data://downloads/FreeTube'
+    : storedDirectory
   android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 5))
   const defaultUri = android.createDownloadFile?.(directory, `${fileName}.part`) || ''
   const dialog = defaultUri

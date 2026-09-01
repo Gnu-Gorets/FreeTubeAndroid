@@ -7,9 +7,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.graphics.drawable.Icon
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
+import android.provider.MediaStore
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaMuxer
@@ -162,6 +164,7 @@ class DownloadService : Service() {
                     download(item)
                     item.put("status", "completed").put("progress", 1)
                     rename(item.optString("targetUri"), item.optString("finalName"))
+                    publish(item.optString("targetUri"))
                     notify(item.optString("id"), item.optString("title"), "Download complete", null, false)
                 } catch (error: Exception) {
                     val currentState = readQueue().let { q ->
@@ -187,6 +190,14 @@ class DownloadService : Service() {
 
     private fun targetFile(uri: String): java.io.File? = uri.takeIf { it.startsWith("data://") }
         ?.let { java.io.File(filesDir, "data/${it.removePrefix("data://")}") }
+
+    private fun publish(uri: String) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q && uri.startsWith("content://")) {
+            contentResolver.update(Uri.parse(uri), ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }, null, null)
+        }
+    }
 
     private fun openTarget(uri: String, mode: String): OutputStream = targetFile(uri)?.let {
         it.parentFile?.mkdirs()

@@ -23,7 +23,7 @@ const context = vm.createContext({
 })
 vm.runInContext(source, context)
 
-const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, recordDownloadMetadata, updateDownloadMetadata } = context
+const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, recordDownloadMetadata, updateDownloadMetadata } = context
 
 test('SABR qualities deduplicate variants and use quality labels', () => {
   const manifest = `data:application/sabr+json,${encodeURIComponent(JSON.stringify({
@@ -84,6 +84,15 @@ test('native queue progress replaces stale UI progress fields', () => {
 test('SABR progress snapshot uses transport bytes before storage catches up', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 0 }, 200, 0.1))), { received: 200, total: 2000 })
   assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 200, 0.5))), { received: 500, total: 1000 })
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 700 }, 900, 0.6, 2000))), { received: 900, total: 2000 })
+})
+
+test('SABR total stays fixed after first estimate', () => {
+  const first = getStableProgressSnapshot({ size: 100 }, 100, 0.1)
+  const second = getStableProgressSnapshot({ size: 500 }, 500, 0.5, first.total)
+  assert.equal(first.total, 1000)
+  assert.equal(second.total, 1000)
+  assert.equal(second.progress, 0.5)
 })
 
 test('SABR progress event updates bytes, speed and percent immediately', () => {

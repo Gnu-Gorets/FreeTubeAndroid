@@ -12,7 +12,7 @@
       >
     </label>
     <p>
-      {{ t('Downloads.Settings.Download folder', { directory }) }}
+      {{ t('Downloads.Settings.Download folder', { directory: directory === DEFAULT_DIRECTORY ? 'Downloads/FreeTube' : directory }) }}
     </p>
     <button
       type="button"
@@ -38,9 +38,12 @@ import { awaitAsyncResult } from '../helpers/android/jsinterface'
 import { digitsOnly } from '../helpers/android/download-settings.mjs'
 
 const { t } = useI18n()
-const DEFAULT_DIRECTORY = 'data://downloads/FreetTube'
+const DEFAULT_DIRECTORY = 'data://downloads/FreeTube'
+const LEGACY_DEFAULT_DIRECTORIES = ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube']
 const concurrency = ref(localStorage.getItem('freetube-download-concurrency') || '5')
-const directory = ref(localStorage.getItem('freetube-download-directory') || DEFAULT_DIRECTORY)
+const savedDirectory = localStorage.getItem('freetube-download-directory')
+const directory = ref(!savedDirectory || LEGACY_DEFAULT_DIRECTORIES.includes(savedDirectory) ? DEFAULT_DIRECTORY : savedDirectory)
+if (directory.value !== savedDirectory) localStorage.setItem('freetube-download-directory', directory.value)
 
 function saveConcurrency() {
   concurrency.value = digitsOnly(concurrency.value)
