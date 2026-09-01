@@ -7,6 +7,7 @@ APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/debug/app-d
 SERIAL=""
 TEST="all"
 SUITE="all"
+DOWNLOAD_VIDEO_URL="https://youtu.be/6gFpmmLbs2U"
 KEEP_DATA=1
 TIMEOUT=45
 ARTIFACT_DIR="$(cd "$(dirname "$0")/.." && pwd)/tmp/android-smoke/$(date +%Y%m%d-%H%M%S)"
@@ -23,7 +24,7 @@ Usage: _scripts/android-smoke-test.sh [options]
 Options:
   --serial SERIAL       adb device serial
   --apk PATH            debug APK path
-  --suite NAME          unlocked, locked, all (default: all)
+  --suite NAME          unlocked, locked, downloads, all (default: all)
   --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
@@ -70,6 +71,23 @@ tap_ui_text() {
   [[ "$bounds" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
   x1="${BASH_REMATCH[1]}"; y1="${BASH_REMATCH[2]}"; x2="${BASH_REMATCH[3]}"; y2="${BASH_REMATCH[4]}"
   adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
+}
+
+tap_delete_after_last_completed() {
+  local completed delete x1 y1 x2 y2 completed_y2
+  completed=$(adb_shell cat /sdcard/window.xml | grep -o 'text="completed"[^>]*bounds="\\[[0-9]*,[0-9]*\\]\\[[0-9]*,[0-9]*\\]"' | grep -v 'bounds="\\[0,0\\]\\[0,0\\]"' | head -1)
+  [[ "$completed" =~ bounds=\"\[[0-9]+,[0-9]+\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
+  completed_y2="${BASH_REMATCH[2]}"
+  while read -r delete; do
+    [[ "$delete" =~ bounds=\"\[[0-9]+,([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]] || continue
+    y1="${BASH_REMATCH[1]}"; x2="${BASH_REMATCH[2]}"; y2="${BASH_REMATCH[3]}"
+    if (( y1 > completed_y2 )); then
+      x1=357
+      adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
+      return 0
+    fi
+  done < <(adb_shell cat /sdcard/window.xml | grep -o 'text="Delete"[^>]*bounds="\\[[0-9]*,[0-9]*\\]\\[[0-9]*,[0-9]*\\]"')
+  return 1
 }
 
 if ! command -v adb >/dev/null 2>&1; then
@@ -246,6 +264,15 @@ open_video() {
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
   sleep 3
   screenshot video
+}
+
+open_download_video() {
+  adb_shell am start -a android.intent.action.VIEW -d "$DOWNLOAD_VIDEO_URL" -n "$ACTIVITY" >/dev/null
+  sleep 30
+  adb_shell input tap 400 340
+  adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
+  sleep 3
+  screenshot download-video
 }
 
 playback() {
@@ -460,33 +487,38 @@ downloads_page() {
   adb_shell input tap 535 1540
   sleep 3
   screenshot downloads-page
-  dump_ui downloads-page || return 1
+  dump_ui downloads-page || { sleep 1; dump_ui downloads-page || return 1; }
   [[ -s "$ARTIFACT_DIR/downloads-page.png" ]] || return 1
   no_runtime_errors
 }
 
 download_quality() {
   clean_logs
-  open_video || return 1
-  # Download action in Watch view at normalized 100% UI scale.
-  adb_shell input tap 185 860
+  open_download_video || return 1
+  adb_shell input tap 185 830
   sleep 3
   screenshot download-quality
-  dump_ui download-quality || return 1
-  # A multi-format video must expose quality choices instead of silently starting one.
-  grep -Eq '([0-9]{3,4}p|adaptive|SABR)' "$ARTIFACT_DIR/download-quality.xml" || return 1
+  # WebView text is not exposed reliably to UIAutomator. Check renderer log instead.
+  adb_cmd logcat -d -v brief >"$ARTIFACT_DIR/download-quality-logcat.txt"
+  grep -q 'picker options' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
+  grep -Eq '2160p|1440p|1080p|720p|480p|360p|240p|144p' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   adb_shell input keyevent KEYCODE_BACK
   no_runtime_errors
 }
 
 download_notification() {
   clean_logs
-  open_video || return 1
-  adb_shell input tap 185 860
+  open_download_video || return 1
+  adb_shell input tap 185 830
   sleep 2
+  # Select 720p from quality picker.
+  adb_shell input tap 160 875
+  sleep 5
   adb_shell dumpsys notification --noredact >"$ARTIFACT_DIR/download-notification-during.txt"
-  grep -q "$PACKAGE" "$ARTIFACT_DIR/download-notification-during.txt" || return 1
-  grep -Eq 'Downloads|Downloading|Download complete|Me at the zoo' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
+  grep -q 'channel=downloads' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
+  grep -q '"Pause"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
+  grep -q '"Cancel"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
+  grep -q 'android.progress=Integer' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
   adb_shell input swipe 360 100 360 1000 500
   sleep 2
   screenshot download-notification-shade
@@ -516,17 +548,23 @@ download_delete() {
     SKIP=$((SKIP + 1))
     return 0
   fi
-  # Delete first completed entry and verify metadata no longer renders it.
-  tap_ui_text Delete || return 1
+  # Delete last completed entry and verify completed count decreases.
+  local before_count after_count
+  before_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
+  tap_delete_after_last_completed || return 1
   sleep 2
   dump_ui download-delete-after || return 1
-  ! grep -q 'completed' "$ARTIFACT_DIR/download-delete-after.xml"
+  after_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
+  (( after_count < before_count ))
 }
 
 download_cancel() {
   clean_logs
-  open_video || return 1
-  adb_shell input tap 185 860
+  open_download_video || return 1
+  adb_shell input tap 185 830
+  sleep 2
+  # Select 720p from quality picker before opening Downloads.
+  adb_shell input tap 160 875
   sleep 1
   adb_shell input tap 535 1540
   sleep 2
@@ -572,6 +610,24 @@ run_unlocked_suite() {
   (( FAIL == 0 ))
 }
 
+run_downloads_suite() {
+  require_unlocked
+  if ! preflight; then
+    echo "FAIL preflight"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  echo "PASS preflight"
+  PASS=$((PASS + 1))
+  run_test downloads-page downloads_page
+  run_test download-quality download_quality
+  run_test download-notification download_notification
+  run_test download-storage download_storage
+  run_test download-cancel download_cancel
+  run_test download-delete download_delete
+  (( FAIL == 0 ))
+}
+
 run_locked_suite() {
   if device_is_unlocked; then
     require_unlocked
@@ -604,6 +660,7 @@ case "$TEST" in
       all) run_unlocked_suite && run_locked_suite ;;
       unlocked) run_unlocked_suite ;;
       locked) run_locked_suite ;;
+      downloads) run_downloads_suite ;;
       *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;
     esac
     ;;

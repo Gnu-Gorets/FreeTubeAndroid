@@ -176,6 +176,7 @@ async function retry(download) {
 function control(download, action) {
   if (download.manifestSrc) {
     if (action === 'cancel' || action === 'pause') {
+      if (!hasSabrDownload(download.downloadId)) return
       if (action === 'pause') pauseSabrDownload(download.downloadId)
       else cancelSabrDownload(download.downloadId)
       download.status = action === 'pause' ? 'paused' : 'canceled'
@@ -228,11 +229,17 @@ async function recoverSabrDownloads() {
   if (!download) return
   download.status = 'downloading'
   download.progress = 0
-  updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0 })
+  download.received = 0
+  download.total = 0
+  download.speedBps = 0
+  download.etaSeconds = 0
+  updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
   try {
-    download.offlineUri = await recoverSabrDownload(download, (_, progress) => {
+    download.offlineUri = await recoverSabrDownload(download, (content, progress, total) => {
       download.progress = progress
-      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress })
+      download.received = content?.size || 0
+      download.total = total || 0
+      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total })
     })
     download.status = 'completed'
     download.progress = 1
