@@ -1,13 +1,28 @@
 <template>
   <section class="downloadsView">
-    <h1>{{ t('Downloads.Title') }}</h1>
+    <div class="downloadsHeader">
+      <h1>{{ t('Downloads.Title') }}</h1>
+      <label class="downloadsSearch">
+        <span class="visuallyHidden">{{ t('Downloads.Search') }}</span>
+        <input
+          v-model="searchQuery"
+          type="search"
+          :placeholder="t('Downloads.Search')"
+        >
+      </label>
+    </div>
     <p
       v-if="downloads.length === 0"
     >
       {{ t('Downloads.Empty') }}
     </p>
+    <p
+      v-else-if="filteredDownloads.length === 0"
+    >
+      {{ t('Downloads.No matches') }}
+    </p>
     <article
-      v-for="download in downloads"
+      v-for="download in filteredDownloads"
       :key="download.offlineUri || download.localPath || download.downloadId"
       class="downloadItem"
     >
@@ -19,7 +34,11 @@
       <div class="downloadInfo">
         <h2>{{ download.title }}</h2>
         <p>{{ download.status }}</p>
-        <p v-if="download.selectedFormat">{{ download.selectedFormat }}</p>
+        <p
+          v-if="download.selectedFormat"
+        >
+          {{ download.selectedFormat }}
+        </p>
         <p
           v-if="download.status === 'downloading'"
         >
@@ -83,13 +102,16 @@
 import shaka from 'shaka-player'
 import android from 'android'
 import { cancelSabrDownload, hasSabrDownload, isSabrDownloadCanceled, isSabrDownloadPaused, mergeDownloadProgress, mergeNativeDownload, pauseSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { filterDownloads } from '../../helpers/android/download-search.mjs'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 const { t } = useI18n()
 const router = useRouter()
 const downloads = ref([])
+const searchQuery = ref('')
+const filteredDownloads = computed(() => filterDownloads(downloads.value, searchQuery.value))
 let queueTimer = null
 
 function formatBytes(value) {
@@ -284,7 +306,40 @@ onBeforeUnmount(async () => {
 .downloadsView {
   max-width: 900px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 12px 24px 24px;
+}
+
+.downloadsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-block-end: 16px;
+}
+
+.downloadsHeader h1 {
+  margin: 0;
+}
+
+.downloadsSearch input {
+  width: min(360px, 45vw);
+  padding: 10px 12px;
+  color: var(--primary-text-color);
+  background: var(--card-background-color);
+  border: 1px solid var(--secondary-text-color);
+  border-radius: 4px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .downloadItem {
@@ -314,6 +369,22 @@ onBeforeUnmount(async () => {
 .downloadActions {
   display: flex;
   gap: 8px;
+}
+
+@media only screen and (width <= 680px) {
+  .downloadsView {
+    padding: 8px;
+  }
+
+  .downloadsHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .downloadsSearch input {
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
 
 </style>

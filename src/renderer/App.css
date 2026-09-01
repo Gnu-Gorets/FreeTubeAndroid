@@ -80,3 +80,14 @@
     block-size: 65vh;
   }
 }
+
+.app.isDownloads .routerView,
+.app.isDownloads .flexBox {
+  margin-block-start: 0;
+}
+
+@media only screen and (width <= 680px) {
+  .app.isDownloads .routerView {
+    margin-block-start: 60px;
+  }
+}

@@ -2,10 +2,21 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { getDownloadNotificationId, getDownloadNotificationPayload } from '../src/renderer/helpers/android/download-notification.mjs'
+import { filterDownloads } from '../src/renderer/helpers/android/download-search.mjs'
 
 test('notification IDs are stable and distinct', () => {
   assert.equal(getDownloadNotificationId('download-1'), getDownloadNotificationId('download-1'))
   assert.notEqual(getDownloadNotificationId('download-1'), getDownloadNotificationId('download-2'))
+})
+
+test('download search matches metadata and file path', () => {
+  const downloads = [
+    { title: 'Alpha video', localPath: 'data://alpha.mp4', status: 'completed' },
+    { title: 'Beta video', localPath: 'data://beta.mp4', status: 'paused' }
+  ]
+  assert.deepEqual(filterDownloads(downloads, 'BETA'), [downloads[1]])
+  assert.deepEqual(filterDownloads(downloads, 'alpha.mp4'), [downloads[0]])
+  assert.equal(filterDownloads(downloads, '').length, 2)
 })
 
 test('downloading notification has pause and cancel actions', () => {
