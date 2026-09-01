@@ -278,7 +278,7 @@ export async function downloadProgressiveVideo(video) {
   const defaultUri = android.createDownloadFile?.(directory, `${fileName}.part`) || ''
   const dialog = defaultUri
     ? { canceled: false, uri: defaultUri }
-    : await requestSaveDialog(`${fileName}.part`, 'video/mp4')
+    : await requestSaveDialog(fileName, 'video/mp4')
   if (dialog.canceled) return
 
   const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`

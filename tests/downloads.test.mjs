@@ -9,6 +9,8 @@ const source = fs.readFileSync(new URL('../src/renderer/helpers/android/download
   .replace(/const log = .*$/m, 'const log = () => {}')
   .replace(/const requestSaveDialog = .*$/m, 'const requestSaveDialog = () => {}')
   .replace(/const setupSabrScheme = .*$/m, 'const setupSabrScheme = () => {}')
+const downloadServiceSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
+const androidBridgeSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
 
 const storage = new Map()
 const context = vm.createContext({
@@ -70,6 +72,23 @@ test('download metadata preserves channel and playback details', () => {
     chapters: [{ title: 'Intro' }],
     status: 'downloading'
   })
+})
+
+test('fallback save dialog requests final mp4 name', () => {
+  assert.ok(source.includes("requestSaveDialog(fileName, 'video/mp4')"))
+  assert.ok(!source.includes('requestSaveDialog(`${fileName}.part`'))
+})
+
+test('public downloads use MediaStore Downloads collection', () => {
+  assert.ok(androidBridgeSource.includes('MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)'))
+  assert.ok(!androidBridgeSource.includes('MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)'))
+})
+
+test('native finalization separates MediaStore publish from SAF targets', () => {
+  assert.match(downloadServiceSource, /Uri\.parse\(uri\)\.authority == MediaStore\.AUTHORITY/)
+  assert.ok(downloadServiceSource.includes('!targetExists(item.optString("targetUri"))'))
+  assert.match(downloadServiceSource, /Unable to rename download target/)
+  assert.ok(downloadServiceSource.includes('MediaStore.MediaColumns.DISPLAY_NAME'))
 })
 
 test('native queue progress replaces stale UI progress fields', () => {

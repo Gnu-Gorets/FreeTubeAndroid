@@ -208,7 +208,7 @@ class AndroidBridge(
                     put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/FreeTube")
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
-                activity.contentResolver.insert(MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)?.toString()
+                activity.contentResolver.insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)?.toString()
                     ?: throw IllegalStateException("Unable to create public download target")
             } else if (directory.startsWith("data://")) {
                 val relative = directory.removePrefix("data://").trim('/').let { if (it.isBlank()) fileName else "$it/$fileName" }

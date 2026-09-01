@@ -89,7 +89,7 @@ class DownloadService : Service() {
                 changed = true
             }
             if (item.optString("status") in setOf("queued", "paused") &&
-                DocumentFile.fromSingleUri(this, Uri.parse(item.optString("targetUri")))?.exists() != true) {
+                !targetExists(item.optString("targetUri"))) {
                 item.put("status", "failed").put("error", "Download target is unavailable")
                 changed = true
             }
@@ -191,8 +191,12 @@ class DownloadService : Service() {
     private fun targetFile(uri: String): java.io.File? = uri.takeIf { it.startsWith("data://") }
         ?.let { java.io.File(filesDir, "data/${it.removePrefix("data://")}") }
 
+    private fun targetExists(uriString: String): Boolean = targetFile(uriString)?.exists()
+        ?: DocumentFile.fromSingleUri(this, Uri.parse(uriString))?.exists() == true
+
     private fun publish(uri: String) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q && uri.startsWith("content://")) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+            Uri.parse(uri).authority == MediaStore.AUTHORITY) {
             contentResolver.update(Uri.parse(uri), ContentValues().apply {
                 put(MediaStore.MediaColumns.IS_PENDING, 0)
             }, null, null)
@@ -401,8 +405,23 @@ class DownloadService : Service() {
 
     private fun rename(uriString: String, finalName: String) {
         if (finalName.isBlank()) return
-        targetFile(uriString)?.let { it.renameTo(java.io.File(it.parentFile, finalName)); return }
-        DocumentFile.fromSingleUri(this, Uri.parse(uriString))?.renameTo(finalName)
+        targetFile(uriString)?.let {
+            if (!it.renameTo(java.io.File(it.parentFile, finalName)) && it.name != finalName) {
+                throw IOException("Unable to rename download target")
+            }
+            return
+        }
+        val uri = Uri.parse(uriString)
+        if (uri.authority == MediaStore.AUTHORITY) {
+            if (contentResolver.update(uri, ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, finalName)
+                }, null, null) == 0) throw IOException("Unable to rename download target")
+            return
+        }
+        val target = DocumentFile.fromSingleUri(this, uri)
+        if (target?.name != finalName && target?.renameTo(finalName) != true) {
+            throw IOException("Unable to rename download target")
+        }
     }
 
     private fun delete(uriString: String) {
