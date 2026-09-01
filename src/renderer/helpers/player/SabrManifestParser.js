@@ -132,8 +132,10 @@ class SabrManifestParser {
     // "data:" (5) + mime type length + "," (1)
     const uriPrefixLength = 5 + MANIFEST_TYPE_SABR.length + 1
 
+    const [manifestUri] = uri.split('#')
     /** @type {SabrManifest} */
-    const manifestData = JSON.parse(decodeURIComponent(uri.slice(uriPrefixLength)))
+    this._scheme = uri.includes('#') ? `sabr-${uri.slice(uri.indexOf('#') + 1)}` : 'sabr'
+    const manifestData = JSON.parse(decodeURIComponent(manifestUri.slice(uriPrefixLength)))
 
     const presentationTimeline = new shaka.media.PresentationTimeline(0, 0, true)
     presentationTimeline.setStatic(true)
@@ -186,12 +188,13 @@ class SabrManifestParser {
             hasVoiceBoostAudio,
             presentationTimeline,
             networkingEngine,
-            fakeVideoFormatId
+            fakeVideoFormatId,
+            this._scheme
           )
         )
       } else if (!this._config.disableVideo) {
         videoStreams.push(
-          /** @__NOINLINE__ */ createVideoStream(format, currentId++, presentationTimeline, networkingEngine)
+          /** @__NOINLINE__ */ createVideoStream(format, currentId++, presentationTimeline, networkingEngine, this._scheme)
         )
       }
     }
@@ -300,6 +303,7 @@ function buildFormatId(format) {
  * @param {shaka.media.PresentationTimeline} presentationTimeline
  * @param {shaka.net.NetworkingEngine} networkingEngine
  * @param {string | undefined} fakeVideoFormatId
+ * @param {string} scheme
  */
 function createAudioStream(
   format,
@@ -308,7 +312,8 @@ function createAudioStream(
   hasVoiceBoostAudio,
   presentationTimeline,
   networkingEngine,
-  fakeVideoFormatId
+  fakeVideoFormatId,
+  scheme
 ) {
   const roles = []
 
@@ -375,7 +380,8 @@ function createAudioStream(
         stream,
         presentationTimeline,
         networkingEngine,
-        fakeVideoFormatId
+        fakeVideoFormatId,
+        scheme
       )
     },
     closeSegmentIndex: () => {
@@ -407,8 +413,9 @@ function createAudioStream(
  * @param {number} id
  * @param {shaka.media.PresentationTimeline} presentationTimeline
  * @param {shaka.net.NetworkingEngine} networkingEngine
+ * @param {string} scheme
  */
-function createVideoStream(format, id, presentationTimeline, networkingEngine) {
+function createVideoStream(format, id, presentationTimeline, networkingEngine, scheme) {
   const colorGamut = format.colorPrimaries === 'BT2020' ? 'rec2020' : 'srgb'
 
   let hdr = 'SDR'
@@ -439,7 +446,7 @@ function createVideoStream(format, id, presentationTimeline, networkingEngine) {
       // shaka-player sometimes calls the create function even when the segment index already exists
       if (stream.segmentIndex) { return }
 
-      stream.segmentIndex = await createMediaSegmentIndex(format, stream, presentationTimeline, networkingEngine)
+      stream.segmentIndex = await createMediaSegmentIndex(format, stream, presentationTimeline, networkingEngine, undefined, scheme)
     },
     closeSegmentIndex: () => {
       if (stream.segmentIndex) {
@@ -709,15 +716,17 @@ function createChapterStreams(chapters, currentId) {
  * @param {shaka.media.PresentationTimeline} presentationTimeline
  * @param {shaka.net.NetworkingEngine} networkingEngine
  * @param {string | undefined} fakeVideoFormatId
+ * @param {string} scheme
  */
 async function createMediaSegmentIndex(
   format,
   stream,
   presentationTimeline,
   networkingEngine,
-  fakeVideoFormatId = undefined
+  fakeVideoFormatId = undefined,
+  scheme = 'sabr'
 ) {
-  let url = `sabr:${stream.type}?formatId=${encodeURIComponent(stream.originalId)}`
+  let url = `${scheme}:${stream.type}?formatId=${encodeURIComponent(stream.originalId)}`
 
   if (fakeVideoFormatId) {
     url += `&videoFormatId=${encodeURIComponent(fakeVideoFormatId)}`

@@ -18,7 +18,7 @@
       <div class="datePublishedAndViewCount">
         {{ publishedString }} {{ dateString }}
         <template
-          v-if="!hideVideoViews"
+          v-if="!hideVideoViews && parsedViewCount !== null"
         >
           <span class="seperator">• </span><span class="videoViews">{{ parsedViewCount }}</span>
         </template>
@@ -39,7 +39,7 @@
         class="profileRow"
       >
         <div
-          v-if="!hideUploader"
+          v-if="!hideUploader && channelName"
         >
           <component
             :is="enableChannelLinks ? 'RouterLink' : 'div'"
@@ -55,7 +55,7 @@
         </div>
         <div>
           <div
-            v-if="!hideUploader"
+            v-if="!hideUploader && channelName"
           >
             <component
               :is="enableChannelLinks ? 'RouterLink' : 'span'"
@@ -68,7 +68,7 @@
             </component>
           </div>
           <FtSubscribeButton
-            v-if="!hideUnsubscribeButton"
+            v-if="!hideUnsubscribeButton && channelName"
             :channel-id="channelId"
             :channel-name="channelName"
             :channel-thumbnail="channelThumbnail"
@@ -112,7 +112,7 @@
             @click="handleExternalPlayer"
           />
           <FtIconButton
-            v-if="USING_ANDROID && !isUpcoming"
+            v-if="USING_ANDROID && !isUpcoming && !isOffline"
             :title="t('Video.Download')"
             theme="secondary"
             :icon="['fas', 'download']"
@@ -213,6 +213,10 @@ const props = defineProps({
     type: Boolean,
     required: true
   },
+  isOffline: {
+    type: Boolean,
+    default: false
+  },
   playlistId: {
     type: String,
     default: null
@@ -292,6 +296,8 @@ const parsedViewCount = computed(() => {
 })
 
 const dateString = computed(() => {
+  if (!Number.isFinite(props.published) || props.published <= 0) return ''
+
   const formatter = new Intl.DateTimeFormat([locale.value, 'en'], { dateStyle: 'medium' })
   const localeDateString = formatter.format(props.published)
   // replace spaces with no break spaces to make the date act as a single entity while wrapping
@@ -299,6 +305,7 @@ const dateString = computed(() => {
 })
 
 const publishedString = computed(() => {
+  if (!Number.isFinite(props.published) || props.published <= 0) return ''
   if (props.isLive) {
     return t('Video.Started streaming on')
   } else if (props.isLiveContent && !props.isLive) {

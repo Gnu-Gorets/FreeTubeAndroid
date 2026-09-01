@@ -13,6 +13,7 @@ import WatchVideoLiveChat from '../../components/WatchVideoLiveChat/WatchVideoLi
 import WatchVideoPlaylist from '../../components/WatchVideoPlaylist/WatchVideoPlaylist.vue'
 import WatchVideoRecommendations from '../../components/WatchVideoRecommendations/WatchVideoRecommendations.vue'
 import FtAgeRestricted from '../../components/FtAgeRestricted/FtAgeRestricted.vue'
+import FtPrompt from '../../components/FtPrompt/FtPrompt.vue'
 import { calculateColorLuminance } from '../../helpers/colors'
 import {
   buildChaptersVttFile,
@@ -39,11 +40,13 @@ import {
   youtubeImageUrlToInvidious
 } from '../../helpers/api/invidious'
 import { sortCaptions } from '../../helpers/player/utils'
+import { getOfflinePlaybackState } from '../../helpers/player/playback-source.mjs'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
+import { getDownloadNotificationPayload } from '../../helpers/android/download-notification.mjs'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, recordDownloadMetadata, selectDownloadFormats, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, getDownloadFormats, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -78,16 +81,18 @@ export default defineComponent({
     'watch-video-live-chat': WatchVideoLiveChat,
     'watch-video-playlist': WatchVideoPlaylist,
     'watch-video-recommendations': WatchVideoRecommendations,
-    'ft-age-restricted': FtAgeRestricted
+    'ft-age-restricted': FtAgeRestricted,
+    FtPrompt
   },
-  beforeRouteLeave: async function (to, from, next) {
+  beforeRouteLeave: function (to, from, next) {
+    console.warn('[Downloads] Watch route leave', { to: to.path, activeSabrDownload: Boolean(this.sabrData) })
     this.handleRouteChange()
     window.removeEventListener('beforeunload', this.handleWatchProgressAutoSave)
     document.removeEventListener('keydown', this.resetAutoplayInterruptionTimeout)
     document.removeEventListener('click', this.resetAutoplayInterruptionTimeout)
 
     if (this.$refs.player) {
-      await this.destroyPlayer()
+      this.destroyPlayer().catch(error => console.error('[Downloads] Watch player destroy failed', error))
     }
 
     next()
@@ -104,6 +109,7 @@ export default defineComponent({
       startNextVideoInPip: false,
       isLoading: true,
       firstLoad: true,
+      offlinePlayback: false,
       useTheatreMode: false,
       videoPlayerLoaded: false,
       isFamilyFriendly: false,
@@ -140,12 +146,15 @@ export default defineComponent({
       videoStoryboardSrc: '',
       /** @type {string|null} */
       manifestSrc: null,
+      offlineUri: null,
+      localVideoUrl: null,
       /** @type {(MANIFEST_TYPE_DASH|MANIFEST_TYPE_HLS|MANIFEST_TYPE_SABR)} */
       manifestMimeType: MANIFEST_TYPE_DASH,
       /** @type {SabrData | null} */
       sabrData: null,
       legacyFormats: [],
       downloadFormats: [],
+      downloadOptions: [],
       captions: [],
       /** @type {'EQUIRECTANGULAR' | 'EQUIRECTANGULAR_THREED_TOP_BOTTOM' | 'MESH'| null} */
       vrProjection: null,
@@ -416,6 +425,7 @@ export default defineComponent({
       this.upcomingTimestamp = null
       this.upcomingTimeLeft = null
       this.thumbnail = ''
+      this.offlinePlayback = false
       this.videoTitle = ''
       this.videoDescription = ''
       this.videoDescriptionHtml = ''
@@ -436,6 +446,8 @@ export default defineComponent({
       this.videoStoryboardSrc = ''
       this.manifestSrc = null
       this.manifestMimeType = MANIFEST_TYPE_DASH
+      this.offlineUri = null
+      this.localVideoUrl = null
       this.sabrData = null
       this.legacyFormats = []
       this.downloadFormats = []
@@ -459,6 +471,8 @@ export default defineComponent({
 
       this.onMountedRun = true
 
+      if (this.loadOfflineDownload()) return
+
       this.checkIfPlaylist()
 
       // this has to be below checkIfPlaylist() as theatrePossible needs to know if there is a playlist or not
@@ -477,6 +491,50 @@ export default defineComponent({
 
       window.addEventListener('beforeunload', this.handleWatchProgressAutoSave)
       this.resetAutoplayInterruptionTimeout()
+    },
+
+    loadOfflineDownload: function () {
+      const downloadId = this.$route.query.offline
+      if (!downloadId) return false
+
+      let download = null
+      try {
+        const stored = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
+        download = Array.isArray(stored) ? stored.find(item => item.downloadId === downloadId && item.status === 'completed') : null
+      } catch (error) {
+        console.error('[Downloads] unable to load offline playback metadata', error)
+      }
+
+      const state = download && getOfflinePlaybackState(download, window.Android?.getLocalPlaybackUrl)
+      this.videoId = state?.videoId || this.$route.params.id
+      this.offlinePlayback = true
+      this.videoTitle = state?.title || ''
+      this.thumbnail = state?.thumbnail || ''
+      this.videoLengthSeconds = state?.duration || 0
+      this.channelId = state?.channelId || ''
+      this.channelName = state?.channelName || ''
+      this.channelThumbnail = state?.channelThumbnail || ''
+      this.videoPublished = state?.published || 0
+      this.videoDescription = state?.description || ''
+      this.videoDescriptionHtml = state?.descriptionHtml || ''
+      this.license = state?.license || ''
+      this.videoViewCount = state?.viewCount ?? null
+      this.videoLikeCount = state?.likeCount || 0
+      this.videoDislikeCount = state?.dislikeCount || 0
+      this.isLive = state?.isLive || false
+      this.videoGenreIsMusic = state?.videoGenreIsMusic || false
+      this.videoChapters = state?.chapters || []
+      this.captions = state?.captions || []
+      this.activeFormat = 'offline'
+      this.manifestSrc = null
+      this.sabrData = null
+      this.manifestMimeType = state?.manifestMimeType || ''
+      this.offlineUri = state?.offlineUri || null
+      this.localVideoUrl = state?.localVideoUrl || null
+      this.errorMessage = state?.offlineUri || state?.localVideoUrl ? null : this.$t('Downloads.Player source unavailable')
+      this.isLoading = false
+      this.firstLoad = false
+      return true
     },
 
     setViewingModeOnFirstLoad: function () {
@@ -1303,53 +1361,125 @@ export default defineComponent({
     },
 
     async downloadVideo() {
-      const formats = selectDownloadFormats(this.legacyFormats, this.downloadFormats)
-      if (!formats) {
-        const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`
-        recordDownloadMetadata({
-          downloadId,
-          videoId: this.videoId,
-          title: this.videoTitle,
-          thumbnail: this.thumbnail,
-          sourceBackend: this.backendPreference,
-          selectedFormat: this.activeFormat,
-          manifestSrc: this.manifestSrc,
-          manifestMimeType: this.manifestMimeType,
-          sabrData: this.sabrData,
-          status: 'downloading',
-          progress: 0,
-          createdAt: Date.now()
-        })
-        try {
-          const content = await storeSabrDownload({
-            downloadId,
-            manifestSrc: this.manifestSrc,
-            manifestMimeType: this.manifestMimeType,
-            sabrData: this.sabrData
-          }, (_, progress) => {
-            updateDownloadMetadata(downloadId, { status: 'downloading', progress })
-            window.dispatchEvent(new CustomEvent('android-download', {
-              detail: { id: downloadId, status: 'downloading', progress }
-            }))
-          })
-          if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
-          updateDownloadMetadata(downloadId, {
-            status: 'completed',
-            progress: 1,
-            offlineUri: content.offlineUri,
-            completedAt: Date.now()
-          })
-          android.finishDownloadNotification?.(this.videoTitle, true)
-          showToast(this.t('Video.Download complete'))
-        } catch (error) {
-          updateDownloadMetadata(downloadId, { status: 'failed', error: error?.message || String(error) })
-          android.finishDownloadNotification?.(this.videoTitle, false)
-          console.error(`Offline download failed: code=${error?.code} category=${error?.category} message=${error?.message} data=${JSON.stringify(error?.data)}`)
-          showToast(this.t('Video.Download unavailable'))
-        }
+      const directOptions = getDownloadFormats(this.legacyFormats, this.downloadFormats)
+      const options = directOptions.length > 0 ? directOptions : getSabrDownloadFormats(this.manifestSrc)
+      console.warn('[Downloads] picker options', options.map(option => option.label))
+      if (options.length > 1) {
+        this.downloadOptions = options
         return
       }
+      const formats = options[0] ?? null
+      if (!formats) return this.downloadSabr()
+      if (formats.sabr) return this.downloadSabr(formats.height, formats.label)
+      this.downloadSelected(formats)
+    },
 
+    getDownloadMetadata() {
+      return {
+        channelId: this.channelId,
+        channelName: this.channelName,
+        channelThumbnail: this.channelThumbnail,
+        published: this.videoPublished,
+        description: this.videoDescription,
+        descriptionHtml: this.videoDescriptionHtml,
+        license: this.license,
+        viewCount: this.videoViewCount,
+        likeCount: this.videoLikeCount,
+        dislikeCount: this.videoDislikeCount,
+        lengthSeconds: this.videoLengthSeconds,
+        captions: this.captions,
+        chapters: this.videoChapters,
+        isLive: this.isLive,
+        videoGenreIsMusic: this.videoGenreIsMusic
+      }
+    },
+
+    async downloadSabr(maxHeight, selectedFormat) {
+      const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`
+      console.warn('[Downloads] SABR download selected', { id: downloadId, height: maxHeight, videoId: this.videoId })
+      recordDownloadMetadata({
+        downloadId,
+        videoId: this.videoId,
+        title: this.videoTitle,
+        thumbnail: this.thumbnail,
+        ...this.getDownloadMetadata(),
+        sourceBackend: this.backendPreference,
+        selectedFormat: selectedFormat || (maxHeight ? `${maxHeight}p` : this.activeFormat),
+        manifestSrc: this.manifestSrc,
+        manifestMimeType: this.manifestMimeType,
+        sabrData: this.sabrData,
+        status: 'downloading',
+        progress: 0,
+        createdAt: Date.now()
+      })
+      let lastProgress = 0
+      let lastReceived = 0
+      let lastTotal = 0
+      let lastSpeedBps = 0
+      try {
+        let lastProgressAt = Date.now()
+        let lastBytes = 0
+        const content = await storeSabrDownload({
+          downloadId,
+          manifestSrc: this.manifestSrc,
+          manifestMimeType: this.manifestMimeType,
+          sabrData: this.sabrData
+        }, (storedContent, progress) => {
+          const now = Date.now()
+          const received = storedContent?.size || 0
+          const elapsed = (now - lastProgressAt) / 1000
+          const speedBps = elapsed > 0 ? Math.max(0, Math.round((received - lastBytes) / elapsed)) : 0
+          const total = progress > 0 ? Math.round(received / progress) : 0
+          lastProgress = progress
+          lastReceived = received
+          lastTotal = total
+          lastSpeedBps = speedBps
+          lastProgressAt = now
+          lastBytes = received
+          updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, speedBps })
+          const notification = getDownloadNotificationPayload({ downloadId, title: selectedFormat || this.videoTitle, status: 'downloading', progress, speedBps, received, total })
+          android.updateDownloadNotification?.(notification.downloadId, notification.title, 'downloading', notification.progress, speedBps, received, total)
+          window.dispatchEvent(new CustomEvent('android-download', {
+            detail: { id: downloadId, status: 'downloading', progress, received, total, speedBps }
+          }))
+        }, maxHeight)
+        if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
+        console.warn('[Downloads] SABR download completed', { id: downloadId, height: maxHeight })
+        updateDownloadMetadata(downloadId, {
+          status: 'completed',
+          progress: 1,
+          offlineUri: content.offlineUri,
+          received: content.size || 0,
+          total: content.size || 0,
+          completedAt: Date.now()
+        })
+        android.finishDownloadNotification?.(downloadId, this.videoTitle, true)
+        showToast(this.t('Video.Download complete'))
+      } catch (error) {
+        if (isSabrDownloadPaused(downloadId)) {
+          updateDownloadMetadata(downloadId, { status: 'paused', interrupted: true, error: null })
+          android.updateDownloadNotification?.(downloadId, this.videoTitle, 'paused', Math.round(lastProgress * 100), lastSpeedBps, lastReceived, lastTotal)
+          return
+        }
+        if (isSabrDownloadCanceled(downloadId)) {
+          updateDownloadMetadata(downloadId, { status: 'canceled', error: null })
+          return
+        }
+        updateDownloadMetadata(downloadId, { status: 'failed', error: error?.message || String(error) })
+        android.finishDownloadNotification?.(downloadId, this.videoTitle, false)
+        console.error(`[Downloads] SABR download failed: id=${downloadId} code=${error?.code} category=${error?.category} message=${error?.message}`)
+        showToast(this.t('Video.Download unavailable'))
+      }
+    },
+
+    handleDownloadQuality(formats) {
+      this.downloadOptions = []
+      if (formats?.sabr) this.downloadSabr(formats.height, formats.label)
+      else if (formats) this.downloadSelected(formats)
+    },
+
+    async downloadSelected(formats) {
+      console.warn('[Downloads] direct download selected', formats.label)
       try {
         await downloadProgressiveVideo({
           id: this.videoId,
@@ -1357,7 +1487,8 @@ export default defineComponent({
           thumbnail: this.thumbnail,
           videoUrl: formats.video.url,
           audioUrl: formats.audio?.url ?? null,
-          sourceBackend: this.backendPreference
+          sourceBackend: this.backendPreference,
+          metadata: this.getDownloadMetadata()
         })
         showToast(this.t('Video.Download complete'))
       } catch (error) {

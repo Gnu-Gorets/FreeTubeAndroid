@@ -76,6 +76,7 @@ import ProxySettings from '../../components/ProxySettings/ProxySettings.vue'
 import SponsorBlockSettings from '../../components/SponsorBlockSettings.vue'
 import ParentalControlSettings from '../../components/ParentalControlSettings.vue'
 import ExperimentalSettings from '../../components/ExperimentalSettings/ExperimentalSettings.vue'
+import DownloadsSettings from '../../components/DownloadsSettings.vue'
 import PasswordSettings from '../../components/PasswordSettings/PasswordSettings.vue'
 import PasswordDialog from '../../components/PasswordDialog/PasswordDialog.vue'
 import FtToggleSwitch from '../../components/FtToggleSwitch/FtToggleSwitch.vue'
@@ -123,6 +124,12 @@ const settingsComponentsData = computed(() => {
       title: t('Settings.Subscription Settings.Subscription Settings'),
       icon: ['fas', 'play'],
       component: SubscriptionSettings
+    },
+    {
+      type: 'downloads',
+      title: 'Downloads',
+      icon: ['fas', 'download'],
+      component: DownloadsSettings
     },
     {
       type: 'distraction',

@@ -196,6 +196,28 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun createDownloadFile(directory: String, fileName: String): String {
+        return try {
+            if (directory.startsWith("data://")) {
+                val relative = directory.removePrefix("data://").trim('/').let { if (it.isBlank()) fileName else "$it/$fileName" }
+                val file = java.io.File(dataDirectory, relative)
+                file.parentFile?.mkdirs()
+                if (!file.createNewFile() && !file.exists()) throw IllegalStateException("Unable to create download target")
+                "data://${file.relativeTo(dataDirectory).path}"
+            } else {
+                val tree = DocumentFile.fromTreeUri(activity, Uri.parse(directory))
+                    ?: throw IllegalStateException("Unable to open download directory")
+                if (!tree.canWrite()) throw SecurityException("Download directory is not writable")
+                tree.createFile("video/mp4", fileName)?.uri?.toString()
+                    ?: throw IllegalStateException("Unable to create download target")
+            }
+        } catch (error: Exception) {
+            Log.w("FreeTubeDownload", "Unable to create download target", error)
+            ""
+        }
+    }
+
+    @JavascriptInterface
     fun requestDirectoryAccessDialog(): String {
         val id = UUID.randomUUID().toString()
         pendingDirectoryRequest = id
@@ -315,6 +337,13 @@ class AndroidBridge(
         } catch (error: Exception) {
             Log.e("FreeTubeWebView", "Unable to read imported file", error)
         }
+    }
+
+    @JavascriptInterface
+    fun setDownloadConcurrency(value: Int): Boolean {
+        activity.getSharedPreferences("downloads", Context.MODE_PRIVATE).edit()
+            .putInt("maxConcurrent", value.coerceIn(1, 5)).apply()
+        return true
     }
 
     @JavascriptInterface
@@ -492,7 +521,7 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun updateDownloadNotification(title: String, progress: Int): Boolean {
+    fun updateDownloadNotification(downloadId: String, title: String, status: String, progress: Int, speedBps: Long, received: Long, total: Long): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notificationManager.createNotificationChannel(
                 NotificationChannel("downloads", "Downloads", NotificationManager.IMPORTANCE_LOW)
@@ -503,17 +532,62 @@ class AndroidBridge(
         val notification = Notification.Builder(activity, "downloads")
             .setSmallIcon(R.drawable.ic_media_notification_icon)
             .setContentTitle(title)
-            .setContentText("Downloading $progress%")
+            .setContentText("Downloading $progress%${if (total > 0) " · ${formatDownloadSize(received)} / ${formatDownloadSize(total)}" else ""}${if (speedBps > 0) " · ${formatDownloadRate(speedBps)}/s" else ""}")
             .setProgress(100, progress.coerceIn(0, 100), false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .also { builder ->
+                when (status) {
+                    "downloading" -> {
+                        builder.addAction(downloadAction(downloadId, "Pause", "pause"))
+                        builder.addAction(downloadAction(downloadId, "Cancel", "cancel"))
+                    }
+                    "paused" -> {
+                        builder.addAction(downloadAction(downloadId, "Resume", "resume"))
+                        builder.addAction(downloadAction(downloadId, "Cancel", "cancel"))
+                    }
+                    "failed" -> builder.addAction(downloadAction(downloadId, "Retry", "retry"))
+                }
+            }
             .build()
-        notificationManager.notify(2001, notification)
+        notificationManager.notify(downloadNotificationId(downloadId), notification)
         return true
     }
 
+    private fun downloadNotificationId(downloadId: String): Int = 3000 + (downloadId.hashCode() and 0x7fffffff) % 100000
+
+    private fun downloadAction(downloadId: String, label: String, action: String): Notification.Action {
+        val intent = Intent(activity, MainActivity::class.java)
+            .setAction("DOWNLOAD_CONTROL")
+            .putExtra("downloadId", downloadId)
+            .putExtra("downloadAction", action)
+        val pending = PendingIntent.getActivity(
+            activity,
+            downloadNotificationId("$downloadId:$action"),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Action.Builder(
+            Icon.createWithResource(activity, R.drawable.ic_media_notification_icon),
+            label,
+            pending
+        ).build()
+    }
+
+    private fun formatDownloadSize(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> "${bytes / (1024 * 1024)} MB"
+    }
+
+    private fun formatDownloadRate(bytesPerSecond: Long): String = when {
+        bytesPerSecond < 1024 -> "$bytesPerSecond B"
+        bytesPerSecond < 1024 * 1024 -> "${bytesPerSecond / 1024} KB"
+        else -> "${bytesPerSecond / (1024 * 1024)} MB"
+    }
+
     @JavascriptInterface
-    fun finishDownloadNotification(title: String, success: Boolean): Boolean {
+    fun finishDownloadNotification(downloadId: String, title: String, success: Boolean): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return false
         val notification = Notification.Builder(activity, "downloads")
@@ -522,7 +596,7 @@ class AndroidBridge(
             .setContentText(if (success) "Download complete" else "Download failed")
             .setAutoCancel(true)
             .build()
-        notificationManager.notify(2001, notification)
+        notificationManager.notify(downloadNotificationId(downloadId), notification)
         return true
     }
 

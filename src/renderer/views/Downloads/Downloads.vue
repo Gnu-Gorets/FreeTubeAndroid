@@ -19,6 +19,12 @@
       <div class="downloadInfo">
         <h2>{{ download.title }}</h2>
         <p>{{ download.status }}</p>
+        <p v-if="download.selectedFormat">{{ download.selectedFormat }}</p>
+        <p
+          v-if="download.status === 'downloading'"
+        >
+          {{ formatProgress(download) }}
+        </p>
         <progress
           v-if="download.status === 'downloading' && download.progress !== null"
           max="1"
@@ -70,53 +76,35 @@
         </div>
       </div>
     </article>
-    <div
-      v-if="playingUrl || playingOffline"
-      class="downloadPlayerOverlay"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="t('Downloads.Player')"
-      @click.self="closePlayer"
-      @keydown.esc="closePlayer"
-    >
-      <button
-        type="button"
-        class="downloadPlayerClose"
-        :aria-label="t('Downloads.Close player')"
-        @click="closePlayer"
-      >
-        {{ t('Downloads.Close player') }}
-      </button>
-      <!-- eslint-disable-next-line vuejs-accessibility/media-has-caption -->
-      <video
-        ref="video"
-        class="downloadPlayer"
-        controls
-        autoplay
-        playsinline
-        :src="playingUrl"
-        @error="playingUrl = null"
-        @ended="playNext"
-      />
-    </div>
   </section>
 </template>
 
 <script setup>
 import shaka from 'shaka-player'
-import { hasSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
-import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import android from 'android'
+import { cancelSabrDownload, hasSabrDownload, isSabrDownloadCanceled, isSabrDownloadPaused, mergeDownloadProgress, mergeNativeDownload, pauseSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 const { t } = useI18n()
 const router = useRouter()
 const downloads = ref([])
-const playingUrl = ref(null)
-const playingOffline = ref(null)
-const video = useTemplateRef('video')
-let player = null
 let queueTimer = null
+
+function formatBytes(value) {
+  if (!Number.isFinite(value) || value <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
+  return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`
+}
+
+function formatProgress(download) {
+  const percent = Number.isFinite(download.progress) ? `${Math.round(download.progress * 100)}%` : '…'
+  const bytes = download.total > 0 ? `${formatBytes(download.received || 0)} / ${formatBytes(download.total)}` : formatBytes(download.received)
+  const speed = download.speedBps > 0 ? `${formatBytes(download.speedBps)}/s` : '—'
+  return `${percent} · ${bytes} · ${speed}`
+}
 
 function nativeQueue() {
   try {
@@ -129,24 +117,21 @@ function nativeQueue() {
 function load() {
   try {
     const queue = nativeQueue()
-    downloads.value = JSON.parse(localStorage.getItem('freetube-downloads') || '[]').map(download => {
+    const stored = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
+    if (!Array.isArray(stored)) throw new Error('Downloads metadata is not an array')
+    downloads.value = stored.map(download => {
       const native = queue.find(item => item.id === download.downloadId)
-      if (native) return { ...download, status: native.status, progress: native.progress, error: native.error }
+      if (native) return mergeNativeDownload(download, native)
       return download.status === 'downloading' && !download.interrupted && !hasSabrDownload(download.downloadId)
         ? { ...download, status: 'queued', interrupted: true, error: 'Download interrupted' }
         : download
     })
     localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
+    console.warn('[Downloads] list loaded', downloads.value.map(download => ({ id: download.downloadId, status: download.status, selectedFormat: download.selectedFormat, hasThumbnail: Boolean(download.thumbnail), hasOfflineUri: Boolean(download.offlineUri) })))
   } catch (error) {
-    console.error('Unable to load downloads metadata', error)
+    console.error('[Downloads] unable to load metadata', error)
     downloads.value = []
   }
-}
-
-async function stopPlayer() {
-  if (!player) return
-  await player.destroy()
-  player = null
 }
 
 async function retry(download) {
@@ -154,60 +139,66 @@ async function retry(download) {
     control(download, 'retry')
     return
   }
+  if (download.manifestSrc && download.sabrData) {
+    download.status = 'queued'
+    download.interrupted = true
+    download.error = null
+    updateDownloadMetadata(download.downloadId, { status: 'queued', interrupted: true, error: null })
+    console.warn('[Downloads] SABR retry requested', { id: download.downloadId, selectedFormat: download.selectedFormat })
+    recoverSabrDownloads()
+    return
+  }
   router.push(`/watch/${download.videoId}`)
 }
 
 function control(download, action) {
+  if (download.manifestSrc) {
+    if (action === 'cancel' || action === 'pause') {
+      if (action === 'pause') pauseSabrDownload(download.downloadId)
+      else cancelSabrDownload(download.downloadId)
+      download.status = action === 'pause' ? 'paused' : 'canceled'
+      updateDownloadMetadata(download.downloadId, { status: download.status, interrupted: action === 'pause', error: null })
+      if (action === 'pause') {
+        android.updateDownloadNotification?.(download.downloadId, download.title, 'paused', Math.round((download.progress || 0) * 100), download.speedBps || 0, download.received || 0, download.total || 0)
+      } else {
+        android.finishDownloadNotification?.(download.downloadId, download.title, false)
+      }
+    } else if (action === 'resume' || action === 'retry') {
+      download.status = 'queued'
+      download.interrupted = true
+      updateDownloadMetadata(download.downloadId, { status: 'queued', interrupted: true, error: null })
+      recoverSabrDownloads()
+    }
+    load()
+    return
+  }
   window.Android?.controlNativeDownload?.(action, download.downloadId)
   setTimeout(load, 100)
 }
 
-async function play(download) {
-  await stopPlayer()
-  if (download.offlineUri) {
-    playingUrl.value = null
-    playingOffline.value = download
-    await nextTick()
-    player = new shaka.Player(video.value)
-    await player.load(download.offlineUri)
-    return
-  }
-  if (typeof window.Android?.getLocalPlaybackUrl !== 'function') return
-  playingOffline.value = null
-  playingUrl.value = window.Android.getLocalPlaybackUrl(download.localPath)
-}
-
-async function closePlayer() {
-  await stopPlayer()
-  playingOffline.value = null
-  playingUrl.value = null
-}
-
-async function playNext() {
-  const current = playingOffline.value || downloads.value.find(download => playingUrl.value?.includes(encodeURIComponent(download.localPath)))
-  const index = downloads.value.indexOf(current)
-  const next = downloads.value.slice(index + 1).find(download => download.status === 'completed')
-  if (next) await play(next)
+function play(download) {
+  console.warn('[Downloads] playback start', { id: download.downloadId, status: download.status, hasOfflineUri: Boolean(download.offlineUri), hasThumbnail: Boolean(download.thumbnail) })
+  router.push({ path: `/watch/${download.videoId}`, query: { offline: download.downloadId } })
 }
 
 async function remove(download) {
+  console.warn('[Downloads] remove start', { id: download.downloadId, hasOfflineUri: Boolean(download.offlineUri), status: download.status })
   if (download.offlineUri) {
-    const storage = new shaka.offline.Storage()
-    await storage.remove(download.offlineUri)
-    await storage.destroy()
+    const player = new shaka.Player(document.createElement('video'))
+    const storage = new shaka.offline.Storage(player)
+    try {
+      await storage.remove(download.offlineUri)
+    } finally {
+      await storage.destroy()
+      await player.destroy()
+    }
   } else {
     window.Android?.deleteFile(download.localPath)
   }
   if (['queued', 'downloading', 'paused'].includes(download.status)) control(download, 'cancel')
-  downloads.value = downloads.value.filter(item => download.offlineUri
-    ? item.offlineUri !== download.offlineUri
-    : item.localPath !== download.localPath)
+  downloads.value = downloads.value.filter(item => item.downloadId !== download.downloadId)
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
-  if (playingOffline.value === download || playingUrl.value?.includes(encodeURIComponent(download.localPath))) {
-    await stopPlayer()
-    playingOffline.value = null
-    playingUrl.value = null
-  }
+  console.warn('[Downloads] remove complete', { id: download.downloadId, remaining: downloads.value.length })
 }
 
 async function recoverSabrDownloads() {
@@ -232,38 +223,60 @@ async function recoverSabrDownloads() {
       interrupted: false
     })
   } catch (error) {
+    if (isSabrDownloadPaused(download.downloadId)) {
+      download.status = 'paused'
+      download.error = null
+      updateDownloadMetadata(download.downloadId, { status: 'paused', interrupted: true, error: null })
+      return
+    }
+    if (isSabrDownloadCanceled(download.downloadId)) {
+      download.status = 'canceled'
+      download.error = null
+      updateDownloadMetadata(download.downloadId, { status: 'canceled', error: null })
+      return
+    }
     download.status = 'failed'
     download.error = error.message || 'SABR recovery failed'
     updateDownloadMetadata(download.downloadId, { status: 'failed', error: download.error })
   }
 }
 
-function handleDownloadEvent(event) {
-  const download = downloads.value.find(item => item.downloadId === event.detail?.id)
-  if (download && event.detail.status === 'downloading') {
-    download.progress = event.detail.progress ?? (event.detail.total > 0 ? event.detail.received / event.detail.total : null)
-    localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
-  }
-  load()
+function handleDownloadControl(event) {
+  const { id, action } = event.detail || {}
+  const download = downloads.value.find(item => item.downloadId === id)
+  if (download) control(download, action)
 }
 
-function handleEscape(event) {
-  if (event.key === 'Escape') closePlayer()
+function handleDownloadEvent(event) {
+  const detail = event.detail
+  const download = downloads.value.find(item => item.downloadId === detail?.id)
+  if (!download) return
+
+  const native = nativeQueue().find(item => item.id === detail.id)
+  Object.assign(download, mergeDownloadProgress(download, detail, native))
+  localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
 }
 
 onMounted(() => {
+  console.warn('[Downloads] view mounted')
   load()
   recoverSabrDownloads()
-  window.addEventListener('keydown', handleEscape)
+  try {
+    const pending = JSON.parse(sessionStorage.getItem('pending-download-control') || 'null')
+    if (pending) {
+      sessionStorage.removeItem('pending-download-control')
+      setTimeout(() => handleDownloadControl({ detail: pending }), 0)
+    }
+  } catch {}
   queueTimer = setInterval(load, 1000)
   window.addEventListener('android-download', handleDownloadEvent)
+  window.addEventListener('android-download-control', handleDownloadControl)
 })
 
 onBeforeUnmount(async () => {
   window.removeEventListener('android-download', handleDownloadEvent)
-  window.removeEventListener('keydown', handleEscape)
+  window.removeEventListener('android-download-control', handleDownloadControl)
   if (queueTimer) clearInterval(queueTimer)
-  await stopPlayer()
 })
 </script>
 
@@ -303,56 +316,4 @@ onBeforeUnmount(async () => {
   gap: 8px;
 }
 
-.downloadPlayerOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgb(0 0 0 / 80%);
-}
-
-.downloadPlayerClose {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 1;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: 50%;
-  color: #fff;
-  background: rgb(0 0 0 / 70%);
-  font-size: 0;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.downloadPlayerClose::before,
-.downloadPlayerClose::after {
-  position: absolute;
-  top: 21px;
-  left: 11px;
-  width: 22px;
-  height: 2px;
-  background: currentColor;
-  content: '';
-  font-size: 32px;
-}
-
-.downloadPlayerClose::before {
-  transform: rotate(45deg);
-}
-
-.downloadPlayerClose::after {
-  transform: rotate(-45deg);
-}
-
-.downloadPlayer {
-  width: min(100%, 1100px);
-  max-height: calc(100vh - 48px);
-  aspect-ratio: 16 / 9;
-  background: #000;
-}
 </style>

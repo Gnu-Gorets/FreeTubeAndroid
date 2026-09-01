@@ -48,6 +48,13 @@ Downloads:
   Cancel: Cancel
   Player: Offline player
   Close player: Close player
+  Player source unavailable: Downloaded file is unavailable
+  Settings:
+    Title: Downloads
+    Concurrent downloads: Concurrent downloads
+    Download folder: 'Download folder: {directory}'
+    Choose folder: Choose folder
+    Use default folder: Use default folder
 
 # Global
 # Anything shared among components / views should be put here

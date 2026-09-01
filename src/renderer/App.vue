@@ -37,7 +37,6 @@
         class="routerView"
       >
         <Transition
-          mode="out-in"
           name="fade"
         >
           <component :is="Component" />
@@ -167,8 +166,17 @@ const defaultInvidiousInstance = computed(() => store.getters.getDefaultInvidiou
 
 const dataReady = ref(false)
 
+function handleDownloadControl({ detail }) {
+  if (!detail?.id || !detail.action) return
+  if (route.path !== '/downloads') {
+    sessionStorage.setItem('pending-download-control', JSON.stringify(detail))
+    router.push('/downloads')
+  }
+}
+
 onMounted(async () => {
   if (process.env.IS_ANDROID) {
+    window.addEventListener('android-download-control', handleDownloadControl)
     window.addEventListener('youtube-link', ({ detail }) => {
       if (detail?.link) handleYoutubeLink(detail.link)
     })
@@ -226,6 +234,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleMouseDown)
   document.removeEventListener('dragstart', handleDragStart)
   document.removeEventListener('click', handleClick)
+  window.removeEventListener('android-download-control', handleDownloadControl)
   document.removeEventListener('auxclick', handleAuxClick)
 })
 

@@ -14,6 +14,8 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaMuxer
 import androidx.documentfile.provider.DocumentFile
+import java.io.IOException
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -34,21 +36,23 @@ class DownloadService : Service() {
         private const val NOTIFICATION_ID = 2001
         private const val PREFS = "downloads"
         private const val QUEUE = "queue"
+        private const val MAX_RETRIES = 4
 
         fun start(context: Context, intent: Intent) {
             androidx.core.content.ContextCompat.startForegroundService(context, intent.setClass(context, DownloadService::class.java))
         }
     }
 
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newFixedThreadPool(5)
     private val stopped = AtomicBoolean(false)
-    private var connection: HttpURLConnection? = null
+    private val activeDownloads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val connections = java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection>()
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
         recoverInterruptedDownloads()
-        startForeground(NOTIFICATION_ID, notification("Downloads", "Preparing queue", null, false))
+        startForeground(NOTIFICATION_ID, notification(null, "Downloads", "Preparing queue", null, false))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -64,7 +68,7 @@ class DownloadService : Service() {
 
     override fun onDestroy() {
         stopped.set(true)
-        connection?.disconnect()
+        connections.values.forEach { it.disconnect() }
         executor.shutdownNow()
         super.onDestroy()
     }
@@ -118,13 +122,13 @@ class DownloadService : Service() {
             if (item.optString("id") == id) item.put("status", status).put("error", JSONObject.NULL)
         }
         writeQueue(queue)
-        if (status == "paused") connection?.disconnect()
+        if (status == "paused") connections[id]?.disconnect()
         executor.execute { process() }
     }
 
     private fun cancel(id: String?) {
         if (id == null) return
-        connection?.disconnect()
+        connections[id]?.disconnect()
         val queue = readQueue()
         for (index in 0 until queue.length()) {
             val item = queue.getJSONObject(index)
@@ -138,37 +142,57 @@ class DownloadService : Service() {
     }
 
     private fun process() {
+        val items = mutableListOf<JSONObject>()
         synchronized(this) {
             val queue = readQueue()
-            val item = (0 until queue.length()).map { queue.getJSONObject(it) }
-                .firstOrNull { it.optString("status") == "queued" } ?: run {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                    return
+            for (index in 0 until queue.length()) {
+                if (activeDownloads.size + items.size >= prefs().getInt("maxConcurrent", 5).coerceIn(1, 5)) break
+                val item = queue.getJSONObject(index)
+                val id = item.optString("id")
+                if (item.optString("status") == "queued" && activeDownloads.add(id)) {
+                    item.put("status", "downloading")
+                    items += item
                 }
-            item.put("status", "downloading")
-            writeQueue(queue)
-            try {
-                download(item)
-                item.put("status", "completed").put("progress", 1)
-                rename(item.optString("targetUri"), item.optString("finalName"))
-                notify(item.optString("title"), "Download complete", null, false)
-            } catch (error: Exception) {
-                val currentState = readQueue().let { q ->
-                    (0 until q.length()).map { q.getJSONObject(it) }
-                        .firstOrNull { it.optString("id") == item.optString("id") }?.optString("status")
-                }
-                val status = if (currentState == "paused" || currentState == "canceled") currentState else "failed"
-                item.put("status", status).put("error", error.message ?: "Download failed")
-                notify(item.optString("title"), item.optString("error"), null, false)
-            } finally {
-                connection?.disconnect()
-                connection = null
-                writeQueue(queue)
             }
-            process()
+            if (items.isNotEmpty()) writeQueue(queue)
+        }
+        items.forEach { item ->
+            executor.execute {
+                try {
+                    download(item)
+                    item.put("status", "completed").put("progress", 1)
+                    rename(item.optString("targetUri"), item.optString("finalName"))
+                    notify(item.optString("id"), item.optString("title"), "Download complete", null, false)
+                } catch (error: Exception) {
+                    val currentState = readQueue().let { q ->
+                        (0 until q.length()).map { q.getJSONObject(it) }
+                            .firstOrNull { it.optString("id") == item.optString("id") }?.optString("status")
+                    }
+                    val status = if (currentState == "paused" || currentState == "canceled") currentState else "failed"
+                    item.put("status", status).put("error", error.message ?: "Download failed")
+                    notify(item.optString("id"), item.optString("title"), item.optString("error"), null, false)
+                } finally {
+                    connections.remove(item.optString("id"))?.disconnect()
+                    activeDownloads.remove(item.optString("id"))
+                    saveItem(item)
+                    process()
+                }
+            }
+        }
+        if (items.isEmpty() && activeDownloads.isEmpty() && readQueue().let { q -> (0 until q.length()).none { q.getJSONObject(it).optString("status") == "queued" } }) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
     }
+
+    private fun targetFile(uri: String): java.io.File? = uri.takeIf { it.startsWith("data://") }
+        ?.let { java.io.File(filesDir, "data/${it.removePrefix("data://")}") }
+
+    private fun openTarget(uri: String, mode: String): OutputStream = targetFile(uri)?.let {
+        it.parentFile?.mkdirs()
+        java.io.FileOutputStream(it, mode == "wa")
+    } ?: contentResolver.openOutputStream(Uri.parse(uri), mode)
+        ?: throw IllegalStateException("Unable to open download target")
 
     private fun download(item: JSONObject) {
         val url = item.getString("videoUrl")
@@ -179,14 +203,10 @@ class DownloadService : Service() {
             val audioFile = java.io.File(cacheDir, "${item.optString("id")}-audio.mp4")
             val outputFile = java.io.File(cacheDir, "${item.optString("id")}-output.mp4")
             try {
-                downloadToFile(url, videoFile, item, 0.0, 0.5)
-                downloadToFile(audioUrl, audioFile, item, 0.5, 0.5)
+                withRetries { downloadToFile(url, videoFile, item, 0.0, 0.5) }
+                withRetries { downloadToFile(audioUrl, audioFile, item, 0.5, 0.5) }
                 muxMp4(videoFile, audioFile, outputFile)
-                val output = contentResolver.openOutputStream(Uri.parse(item.getString("targetUri")), "wt")
-                    ?: throw IllegalStateException("Unable to open download target")
-                output.use { stream ->
-                    outputFile.inputStream().use { input -> input.copyTo(stream) }
-                }
+                openTarget(item.getString("targetUri"), "wt").use { stream -> outputFile.inputStream().use { input -> input.copyTo(stream) } }
             } finally {
                 videoFile.delete()
                 audioFile.delete()
@@ -194,73 +214,134 @@ class DownloadService : Service() {
             }
             return
         }
-        val target = Uri.parse(item.getString("targetUri"))
-        val existing = length(target)
-        connection = URL(url).openConnection() as HttpURLConnection
-        connection!!.apply {
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            instanceFollowRedirects = true
-            if (existing > 0) setRequestProperty("Range", "bytes=$existing-")
-            connect()
+        withRetries { downloadSingleFile(url, Uri.parse(item.getString("targetUri")), item) }
+    }
+
+    private fun <T> withRetries(action: () -> T): T {
+        var attempt = 0
+        while (true) {
+            try {
+                return action()
+            } catch (error: Exception) {
+                if (error is InterruptedException || !isRetryable(error) || attempt++ >= MAX_RETRIES) throw error
+                Thread.sleep(1000L shl (attempt - 1))
+            }
         }
-        val response = connection!!.responseCode
-        val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
-        if (response !in 200..299) throw IllegalStateException("HTTP $response")
-        val receivedStart = if (append) existing else 0L
-        val total = if (connection!!.contentLengthLong > 0) receivedStart + connection!!.contentLengthLong else -1L
-        contentResolver.openOutputStream(target, if (append) "wa" else "wt")?.use { output ->
-            connection!!.inputStream.use { input ->
-                val buffer = ByteArray(64 * 1024)
-                var received = receivedStart
-                while (true) {
-                    if (stopped.get()) throw InterruptedException("Download stopped")
-                    val state = readQueue().let { q -> (0 until q.length()).map { q.getJSONObject(it) }.firstOrNull { it.optString("id") == item.optString("id") }?.optString("status") }
-                    if (state == "paused") throw InterruptedException("Download paused")
-                    if (state == "canceled") throw InterruptedException("Download canceled")
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    output.write(buffer, 0, count)
-                    received += count
-                    val progress = if (total > 0) received.toDouble() / total else 0.0
-                    item.put("progress", progress).put("received", received).put("total", total)
-                    val queue = readQueue()
-                    for (index in 0 until queue.length()) if (queue.getJSONObject(index).optString("id") == item.optString("id")) queue.put(index, item)
-                    writeQueue(queue)
-                    notify(item.optString("title"), "Downloading ${"%.0f".format(progress * 100)}%", progress, true)
+    }
+
+    private fun isRetryable(error: Exception): Boolean = when (error) {
+        is IOException -> true
+        else -> error.message?.matches(Regex("HTTP (408|429|5\\d{2})")) == true
+    }
+
+    private fun downloadSingleFile(url: String, target: Uri, item: JSONObject) {
+        val existing = length(target)
+        val request = URL(url).openConnection() as HttpURLConnection
+        connections[item.optString("id")] = request
+        try {
+            request.connectTimeout = 15_000
+            request.readTimeout = 30_000
+            request.instanceFollowRedirects = true
+            if (existing > 0) request.setRequestProperty("Range", "bytes=$existing-")
+            request.connect()
+            val response = request.responseCode
+            if (response !in 200..299) throw IllegalStateException("HTTP $response")
+            val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
+            val receivedStart = if (append) existing else 0L
+            val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
+            openTarget(target.toString(), if (append) "wa" else "wt").use { output ->
+                request.inputStream.use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    var received = receivedStart
+                    var lastBytes = received
+                    var lastTime = System.nanoTime()
+                    while (true) {
+                        checkDownloadState(item)
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        received += count
+                        val now = System.nanoTime()
+                        val elapsed = (now - lastTime) / 1_000_000_000.0
+                        val speed = if (elapsed > 0) ((received - lastBytes) / elapsed).toLong() else 0L
+                        val progress = if (total > 0) received.toDouble() / total else 0.0
+                        item.put("progress", progress).put("received", received).put("total", total).put("speedBps", speed)
+                        if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
+                        lastBytes = received
+                        lastTime = now
+                        saveItem(item)
+                        notify(item.optString("id"), item.optString("title"), "Downloading ${"%.0f".format(progress * 100)}%", progress, true)
+                    }
+                    if (total > 0 && received != total) throw IOException("Incomplete download: $received/$total")
                 }
             }
-        } ?: throw IllegalStateException("Unable to open download target")
+        } finally {
+            request.disconnect()
+            connections.remove(item.optString("id"))
+        }
     }
 
     private fun downloadToFile(url: String, target: java.io.File, item: JSONObject, base: Double, weight: Double) {
-        connection = URL(url).openConnection() as HttpURLConnection
-        connection!!.apply {
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            instanceFollowRedirects = true
-            connect()
-        }
-        if (connection!!.responseCode !in 200..299) throw IllegalStateException("HTTP ${connection!!.responseCode}")
-        val total = connection!!.contentLengthLong
-        var received = 0L
-        target.outputStream().use { output ->
-            connection!!.inputStream.use { input ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val state = readQueue().let { q -> (0 until q.length()).map { q.getJSONObject(it) }.firstOrNull { it.optString("id") == item.optString("id") }?.optString("status") }
-                    if (state == "paused" || state == "canceled") throw InterruptedException("Download $state")
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    output.write(buffer, 0, count)
-                    received += count
-                    val progress = if (total > 0) received.toDouble() / total else 0.0
-                    item.put("progress", base + progress * weight)
-                    writeQueue(readQueue().also { queue -> for (index in 0 until queue.length()) if (queue.getJSONObject(index).optString("id") == item.optString("id")) queue.put(index, item) })
-                    notify(item.optString("title"), "Downloading ${"%.0f".format(item.optDouble("progress") * 100)}%", item.optDouble("progress"), true)
+        val existing = target.length()
+        val request = URL(url).openConnection() as HttpURLConnection
+        connections[item.optString("id")] = request
+        try {
+            request.connectTimeout = 15_000
+            request.readTimeout = 30_000
+            request.instanceFollowRedirects = true
+            if (existing > 0) request.setRequestProperty("Range", "bytes=$existing-")
+            request.connect()
+            val response = request.responseCode
+            if (response !in 200..299) throw IllegalStateException("HTTP $response")
+            val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
+            val receivedStart = if (append) existing else 0L
+            val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
+            java.io.FileOutputStream(target, append).use { output ->
+                request.inputStream.use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    var received = receivedStart
+                    var lastBytes = received
+                    var lastTime = System.nanoTime()
+                    while (true) {
+                        checkDownloadState(item)
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        received += count
+                        val now = System.nanoTime()
+                        val elapsed = (now - lastTime) / 1_000_000_000.0
+                        val speed = if (elapsed > 0) ((received - lastBytes) / elapsed).toLong() else 0L
+                        val progress = if (total > 0) received.toDouble() / total else 0.0
+                        item.put("progress", base + progress * weight).put("received", received).put("total", total).put("speedBps", speed)
+                        if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
+                        lastBytes = received
+                        lastTime = now
+                        saveItem(item)
+                        notify(item.optString("id"), item.optString("title"), "Downloading ${"%.0f".format(item.optDouble("progress") * 100)}%", item.optDouble("progress"), true)
+                    }
+                    if (total > 0 && received != total) throw IOException("Incomplete download: $received/$total")
                 }
             }
+        } finally {
+            request.disconnect()
+            connections.remove(item.optString("id"))
         }
+    }
+
+    private fun checkDownloadState(item: JSONObject) {
+        if (stopped.get()) throw InterruptedException("Download stopped")
+        val state = readQueue().let { queue ->
+            (0 until queue.length()).map { queue.getJSONObject(it) }
+                .firstOrNull { it.optString("id") == item.optString("id") }?.optString("status")
+        }
+        if (state == "paused" || state == "canceled") throw InterruptedException("Download $state")
+    }
+
+    @Synchronized
+    private fun saveItem(item: JSONObject) {
+        val queue = readQueue()
+        for (index in 0 until queue.length()) if (queue.getJSONObject(index).optString("id") == item.optString("id")) queue.put(index, item)
+        writeQueue(queue)
     }
 
     private fun muxMp4(videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
@@ -304,18 +385,17 @@ class DownloadService : Service() {
     }
 
     private fun length(uri: Uri): Long = try {
-        contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.coerceAtLeast(0) } ?: 0
+        targetFile(uri.toString())?.length() ?: contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.coerceAtLeast(0) } ?: 0
     } catch (_: Exception) { 0 }
 
     private fun rename(uriString: String, finalName: String) {
         if (finalName.isBlank()) return
-        val uri = Uri.parse(uriString)
-        val file = DocumentFile.fromSingleUri(this, uri) ?: return
-        file.renameTo(finalName)
+        targetFile(uriString)?.let { it.renameTo(java.io.File(it.parentFile, finalName)); return }
+        DocumentFile.fromSingleUri(this, Uri.parse(uriString))?.renameTo(finalName)
     }
 
     private fun delete(uriString: String) {
-        runCatching { DocumentFile.fromSingleUri(this, Uri.parse(uriString))?.delete() }
+        runCatching { targetFile(uriString)?.delete() ?: DocumentFile.fromSingleUri(this, Uri.parse(uriString))?.delete() }
     }
 
     private fun createChannel() {
@@ -324,15 +404,26 @@ class DownloadService : Service() {
         )
     }
 
-    private fun notification(title: String, text: String, progress: Double?, ongoing: Boolean): Notification {
+    private fun notification(id: String?, title: String, text: String, progress: Double?, ongoing: Boolean): Notification {
+        val current = currentItem(id)
+        val activeCount = readQueue().let { queue -> (0 until queue.length()).count { queue.getJSONObject(it).optString("status") == "downloading" } }
+        val speed = current?.optLong("speedBps", 0) ?: 0
+        val received = current?.optLong("received", 0) ?: 0
+        val total = current?.optLong("total", 0) ?: 0
+        val details = buildString {
+            append(text)
+            if (total > 0) append(" · ${formatSize(received)} / ${formatSize(total)}")
+            if (speed > 0) append(" · ${formatRate(speed)}/s")
+            if (activeCount > 1) append(" · $activeCount active")
+        }
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_media_notification_icon)
             .setContentTitle(title)
-            .setContentText(text)
+            .setContentText(details)
             .setOnlyAlertOnce(true)
             .setOngoing(ongoing)
         if (progress != null) builder.setProgress(100, (progress * 100).toInt().coerceIn(0, 100), false)
-        val current = currentItem() ?: return builder.build()
+        if (current == null) return builder.build()
         if (current.optString("status") == "downloading") builder.addAction(action("Pause", ACTION_PAUSE, current.optString("id")))
         if (current.optString("status") == "paused") builder.addAction(action("Resume", ACTION_RESUME, current.optString("id")))
         builder.addAction(action("Cancel", ACTION_CANCEL, current.optString("id")))
@@ -345,12 +436,29 @@ class DownloadService : Service() {
         return Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_media_notification_icon), label, pending).build()
     }
 
-    private fun currentItem(): JSONObject? = readQueue().let { queue ->
-        (0 until queue.length()).map { queue.getJSONObject(it) }
-            .firstOrNull { it.optString("status") == "downloading" || it.optString("status") == "paused" }
+    private fun formatSize(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> "${bytes / (1024 * 1024)} MB"
     }
 
-    private fun notify(title: String, text: String, progress: Double?, ongoing: Boolean) {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(title, text, progress, ongoing))
+    private fun formatRate(bytesPerSecond: Long): String {
+        if (bytesPerSecond < 1024) return "$bytesPerSecond B"
+        if (bytesPerSecond < 1024 * 1024) return "${bytesPerSecond / 1024} KB"
+        return "${bytesPerSecond / (1024 * 1024)} MB"
+    }
+
+    private fun currentItem(id: String?): JSONObject? = readQueue().let { queue ->
+        (0 until queue.length()).map { queue.getJSONObject(it) }
+            .firstOrNull { item ->
+                if (id != null) item.optString("id") == id
+                else item.optString("status") == "downloading" || item.optString("status") == "paused"
+            }
+    }
+
+    private fun notificationId(id: String): Int = 3000 + (id.hashCode() and 0x7fffffff) % 100000
+
+    private fun notify(id: String, title: String, text: String, progress: Double?, ongoing: Boolean) {
+        getSystemService(NotificationManager::class.java).notify(notificationId(id), notification(id, title, text, progress, ongoing))
     }
 }

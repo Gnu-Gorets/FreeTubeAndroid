@@ -215,8 +215,18 @@ class MainActivity : Activity() {
         when (intent?.action) {
             "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
             "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
+            "DOWNLOAD_CONTROL" -> dispatchDownloadControl(intent)
             Intent.ACTION_VIEW -> dispatchDeepLink(intent)
         }
+    }
+
+    private fun dispatchDownloadControl(intent: Intent?) {
+        val id = JSONObject.quote(intent?.getStringExtra("downloadId") ?: return)
+        val action = JSONObject.quote(intent.getStringExtra("downloadAction") ?: return)
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('android-download-control', { detail: { id: $id, action: $action } }))",
+            null
+        )
     }
 
     @Suppress("DEPRECATION")

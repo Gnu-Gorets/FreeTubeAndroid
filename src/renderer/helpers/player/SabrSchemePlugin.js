@@ -166,8 +166,10 @@ function fillBufferedRanges(player, manifest, audioFormatsActive, streamIsVideo,
     if (streamIsVideo) {
       bufferedRanges.push(createFullBufferRange(audioFormatId))
     } else {
-      for (const buffered of bufferedInfo.audio) {
-        bufferedRanges.push(createBufferedRange(audioFormatId, buffered, audioSegmentIndex))
+      if (audioSegmentIndex) {
+        for (const buffered of bufferedInfo.audio) {
+          bufferedRanges.push(createBufferedRange(audioFormatId, buffered, audioSegmentIndex))
+        }
       }
     }
 
@@ -188,7 +190,9 @@ function fillBufferedRanges(player, manifest, audioFormatsActive, streamIsVideo,
           videoSegmentIndex = activeManifestVariant.video.segmentIndex
         }
 
-        bufferedRanges.push(createBufferedRange(videoFormatId, buffered, videoSegmentIndex))
+        if (videoSegmentIndex) {
+          bufferedRanges.push(createBufferedRange(videoFormatId, buffered, videoSegmentIndex))
+        }
       }
     }
   }
@@ -285,6 +289,7 @@ function createTimeoutController(callback, timeoutMs) {
 async function doRequest(
   operationInputs,
   currentState,
+  onSegmentBytes = null,
 ) {
   let response
   /** @type {CompositeBuffer | null} */
@@ -523,6 +528,7 @@ async function doRequest(
 
   if (responseDataChunks.length > 0 && segmentComplete) {
     const data = /** @__NOINLINE__ */ concatenateChunks(responseDataChunks)
+    onSegmentBytes?.(data.byteLength)
 
     if (operationInputs.isInit) {
       currentState.initDataCache.set(operationInputs.formatIdString, data)
@@ -571,7 +577,7 @@ async function doRequest(
     currentState.abortStatus.timedOut = false
 
     currentState.abortStatus.finished = false
-    return doRequest(operationInputs, currentState)
+    return doRequest(operationInputs, currentState, onSegmentBytes)
   } else if (invalidPoToken) {
     throw new ShakaError(
       ShakaError.Severity.CRITICAL,
@@ -627,9 +633,12 @@ async function doRequest(
  * @param {() => shaka.extern.Manifest} getManifest
  * @param {import('vue').ComputedRef<number>} playerWidth
  * @param {import('vue').ComputedRef<number>} playerHeight
+ * @param {string} scheme
+ * @param {(bytes: number) => void} onSegmentBytes
  * @return SabrStream
  */
-export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, playerHeight) {
+export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, playerHeight, scheme = 'sabr', onSegmentBytes = null) {
+  console.warn('[SABR] scheme setup', { url: Boolean(sabrData?.url), hasPoToken: Boolean(sabrData?.poToken) })
   const eventEmitter = new EventEmitterLike()
 
   /**
@@ -654,7 +663,7 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
     requestNumber: 0,
   }
 
-  shaka.net.NetworkingEngine.registerScheme('sabr', (uri, request, requestType, _progressUpdated, headersReceived, _config) => {
+  shaka.net.NetworkingEngine.registerScheme(scheme, (uri, request, requestType, _progressUpdated, headersReceived, _config) => {
     // lazily fetch it as the variable is only set after setupSabrScheme is called
     // but it will definitely exist when we receive a request here.
     const player = getPlayer()
@@ -673,8 +682,10 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
       return /** @__NOINLINE__ */ createCacheResponse(uri, request, initDataCache.get(formatIdString))
     }
 
-    const variantTracks = player.getVariantTracks()
+    const variantTracks = player.getVariantTracks() ?? []
     const activeVariant = variantTracks.find(track => track.active)
+    const manifestVariants = getManifest()?.variants ?? []
+    const manifestAudioTracks = manifestVariants.map(variant => variant.audio).filter(audio => audio?.originalId != null)
 
     const streamIsAudio = url.pathname === 'audio'
     const streamIsVideo = url.pathname === 'video'
@@ -689,7 +700,12 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
         // We need to specify a video format even for audio only otherwise we get an error response
         videoFormatId = formatIdFromString(url.searchParams.get('videoFormatId'))
       } else {
-        videoFormatId = formatIdFromString((activeVariant ?? variantTracks[0]).originalVideoId)
+        const fallbackVariant = manifestVariants.find(variant => variant.video?.originalId != null)
+        const videoFormat = activeVariant?.originalVideoId ??
+          variantTracks[0]?.originalVideoId ??
+          fallbackVariant?.video?.originalId
+        if (!videoFormat) throw new Error('SABR manifest has no video format')
+        videoFormatId = formatIdFromString(videoFormat)
       }
     } else if (streamIsVideo) {
       videoFormatId = formatIdFromString(formatIdString)
@@ -697,15 +713,23 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
       // for the first fetching of the initial data there won't be an active variant
       // (shaka-player only sets it to active after it has fetched the init/segment data)
       if (activeVariant) {
-        audioFormatId = formatIdFromString(activeVariant.originalAudioId)
+        const activeManifestVariant = manifestVariants.find(variant => variant.video?.originalId === activeVariant.originalVideoId)
+        const audioFormat = activeVariant.originalAudioId ??
+          activeManifestVariant?.audio?.originalId ??
+          manifestAudioTracks[0]?.originalId
+        if (!audioFormat) throw new Error('SABR manifest has no audio format')
+        audioFormatId = formatIdFromString(audioFormat)
       } else {
-        const candidates = variantTracks.filter((track) => track.audioRoles.includes('main'))
+        const candidates = variantTracks.filter(track => track.audioRoles?.includes('main') && track.originalAudioId != null)
+        const audioCandidates = candidates.length > 0
+          ? candidates
+          : variantTracks.filter(track => track.originalAudioId != null)
+        const probableAudioFormat = [...audioCandidates, ...manifestAudioTracks].reduce((previous, current) => {
+          return current.audioBandwidth >= (previous.audioBandwidth ?? previous.bandwidth) ? current : previous
+        }, audioCandidates[0] ?? manifestAudioTracks[0])
 
-        const probableAudioFormat = candidates.reduce((previous, current) => {
-          return current.audioBandwidth >= previous.audioBandwidth ? current : previous
-        }, candidates[0])
-
-        audioFormatId = formatIdFromString(probableAudioFormat.originalAudioId)
+        if (!probableAudioFormat) throw new Error('SABR manifest has no audio format')
+        audioFormatId = formatIdFromString(probableAudioFormat.originalAudioId ?? probableAudioFormat.originalId)
       }
     }
 
@@ -726,13 +750,18 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
     const enableVoiceBoost = url.searchParams.has('vb') || !!(activeVariant && activeVariant.audioRoles.includes('vb'))
 
     const resolution = streamIsVideo ? parseInt(url.searchParams.get('resolution')) : undefined
+    if (sabrStreamState.requestNumber % 25 === 0) {
+      console.warn('[SABR] request', { type: requestType, stream: url.pathname, formatId: formatIdString, resolution })
+    }
 
     const { sabrContexts, unsentSabrContexts } = prepareSabrContexts(sabrStreamState)
+
+    const estimatedBandwidth = player.getStats().estimatedBandwidth
 
     /** @type {VideoPlaybackAbrRequest} */
     const requestData = {
       clientAbrState: {
-        bandwidthEstimate: String(Math.round(player.getStats().estimatedBandwidth)),
+        bandwidthEstimate: Number.isFinite(estimatedBandwidth) ? String(Math.round(estimatedBandwidth)) : '0',
         timeSinceLastManualFormatSelectionMs: streamIsVideo ? '0' : undefined,
         stickyResolution: resolution,
         lastManualSelectedResolution: resolution,
@@ -838,7 +867,7 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
       cumulativeRetryDueToNextRequestPolicy: 0,
     }
 
-    const pendingRequest = doRequest(opInputs, currentState)
+    const pendingRequest = doRequest(opInputs, currentState, onSegmentBytes)
 
     const op = new AbortableOperation(pendingRequest, () => {
       abortStatus.cancelled = true
@@ -856,7 +885,7 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
   })
 
   const cleanup = () => {
-    shaka.net.NetworkingEngine.unregisterScheme('sabr')
+    // Keep scheme registered while another SABR storage operation may still use it after component unmount.
     initDataCache.clear()
   }
 

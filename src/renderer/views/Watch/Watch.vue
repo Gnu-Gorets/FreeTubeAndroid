@@ -21,6 +21,8 @@
           ref="player"
           :manifest-src="manifestSrc"
           :manifest-mime-type="manifestMimeType"
+          :offline-uri="offlineUri"
+          :local-video-url="localVideoUrl"
           :sabr-data="sabrData"
           :legacy-formats="legacyFormats"
           :start-time="startTimeSeconds"
@@ -145,6 +147,7 @@
         :is-live-content="isLiveContent"
         :is-live="isLive"
         :is-upcoming="isUpcoming"
+        :is-offline="offlinePlayback"
         :playlist-id="playlistId"
         :get-playlist-state="getPlaylistState"
         :length-seconds="videoLengthSeconds"
@@ -179,7 +182,7 @@
         @timestamp-event="changeTimestamp"
       />
       <CommentSection
-        v-if="!isLoading && !isLive && !hideComments"
+        v-if="!isLoading && !isLive && !hideComments && !offlinePlayback"
         :id="videoId"
         class="watchVideo"
         :class="{ theatreWatchVideo: useTheatreMode }"
@@ -215,7 +218,7 @@
         @pause-player="pausePlayer"
       />
       <watch-video-recommendations
-        v-if="!isLoading && !hideRecommendedVideos"
+        v-if="!isLoading && !hideRecommendedVideos && !offlinePlayback"
         :data="recommendedVideos"
         class="watchVideoSideBar watchVideoRecommendations"
         :class="{
@@ -227,6 +230,13 @@
       />
     </div>
   </div>
+  <FtPrompt
+    v-if="downloadOptions.length > 1"
+    :label="t('Video.Download')"
+    :option-names="downloadOptions.map(option => option.label)"
+    :option-values="downloadOptions"
+    @click="handleDownloadQuality"
+  />
 </template>
 
 <script src="./Watch.js" />

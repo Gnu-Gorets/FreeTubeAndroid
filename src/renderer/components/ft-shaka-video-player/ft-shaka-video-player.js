@@ -78,7 +78,15 @@ export default defineComponent({
     },
     manifestMimeType: {
       type: String,
-      required: true
+      default: ''
+    },
+    offlineUri: {
+      type: String,
+      default: null
+    },
+    localVideoUrl: {
+      type: String,
+      default: null
     },
     sabrData: {
       type: Object,
@@ -590,7 +598,7 @@ export default defineComponent({
         return true
       }
 
-      const match = props.manifestSrc.match(/\/(?:manifest|playlist)_duration\/(\d+)\//)
+      const match = props.manifestSrc?.match(/\/(?:manifest|playlist)_duration\/(\d+)\//)
 
       // Check how many seconds we are allowed to seek, 30 is too short, 3600 is an hour which is great
       return match != null && parseInt(match[1] || '0') > 30
@@ -2959,6 +2967,22 @@ export default defineComponent({
     })
 
     async function performFirstLoad() {
+      if (props.localVideoUrl) {
+        video.value.src = props.localVideoUrl
+        video.value.load()
+        emit('loaded')
+        return
+      }
+
+      if (props.offlineUri) {
+        try {
+          await player.load(props.offlineUri, props.startTime, props.manifestMimeType || undefined)
+        } catch (error) {
+          handleError(error, 'loading offline manifest')
+        }
+        return
+      }
+
       if (process.env.SUPPORTS_LOCAL_API && sabrStream) {
         // Longer timeout for receiving larger responses
         player.configure({
@@ -3375,6 +3399,11 @@ export default defineComponent({
 
     async function destroyPlayer() {
       ignoreErrors = true
+      if (process.env.SUPPORTS_LOCAL_API && sabrStream) {
+        console.warn('[SABR] aborting Watch player before destroy')
+        sabrAbortController?.abort()
+        sabrStream.cleanup()
+      }
 
       let uiState = { startNextVideoInFullscreen: false, startNextVideoInFullwindow: false, startNextVideoInPip: false }
 
@@ -3396,11 +3425,6 @@ export default defineComponent({
       } else if (player) {
         await player.destroy()
         player = null
-      }
-
-      if (process.env.SUPPORTS_LOCAL_API && sabrStream) {
-        sabrStream.cleanup()
-        sabrAbortController?.abort()
       }
 
       // shaka-player doesn't clear these itself, which prevents shaka.ui.Overlay from being garbage collected
