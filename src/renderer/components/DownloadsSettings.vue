@@ -3,18 +3,13 @@
     <h2>{{ t('Downloads.Settings.Title') }}</h2>
     <label>
       {{ t('Downloads.Settings.Concurrent downloads') }}
-      <select
-        v-model.number="concurrency"
-        @change="saveConcurrency"
+      <input
+        v-model="concurrency"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        :aria-label="t('Downloads.Settings.Concurrent downloads')"
+        @input="saveConcurrency"
       >
-        <option
-          v-for="value in [1, 2, 3, 4, 5]"
-          :key="value"
-          :value="value"
-        >
-          {{ value }}
-        </option>
-      </select>
     </label>
     <p>
       {{ t('Downloads.Settings.Download folder', { directory }) }}
@@ -40,14 +35,16 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { awaitAsyncResult } from '../helpers/android/jsinterface'
+import { digitsOnly } from '../helpers/android/download-settings.mjs'
 
 const { t } = useI18n()
-const DEFAULT_DIRECTORY = 'data://downloads'
-const concurrency = ref(Number(localStorage.getItem('freetube-download-concurrency') || 5))
+const DEFAULT_DIRECTORY = 'data://downloads/FreetTube'
+const concurrency = ref(localStorage.getItem('freetube-download-concurrency') || '5')
 const directory = ref(localStorage.getItem('freetube-download-directory') || DEFAULT_DIRECTORY)
 
 function saveConcurrency() {
-  localStorage.setItem('freetube-download-concurrency', String(concurrency.value))
+  concurrency.value = digitsOnly(concurrency.value)
+  localStorage.setItem('freetube-download-concurrency', concurrency.value || '1')
   window.dispatchEvent(new CustomEvent('download-settings-changed'))
 }
 

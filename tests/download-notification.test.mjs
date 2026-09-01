@@ -3,10 +3,16 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { getDownloadNotificationId, getDownloadNotificationPayload } from '../src/renderer/helpers/android/download-notification.mjs'
 import { filterDownloads } from '../src/renderer/helpers/android/download-search.mjs'
+import { digitsOnly } from '../src/renderer/helpers/android/download-settings.mjs'
 
 test('notification IDs are stable and distinct', () => {
   assert.equal(getDownloadNotificationId('download-1'), getDownloadNotificationId('download-1'))
   assert.notEqual(getDownloadNotificationId('download-1'), getDownloadNotificationId('download-2'))
+})
+
+test('concurrency input keeps digits only', () => {
+  assert.equal(digitsOnly('12abc3'), '123')
+  assert.equal(digitsOnly(''), '')
 })
 
 test('download search matches metadata and file path', () => {

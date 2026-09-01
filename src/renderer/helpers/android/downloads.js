@@ -260,7 +260,7 @@ export async function downloadProgressiveVideo(video) {
   }
 
   const fileName = safeFileName(video.title, video.id)
-  const directory = localStorage.getItem('freetube-download-directory') || 'data://downloads'
+  const directory = localStorage.getItem('freetube-download-directory') || 'data://downloads/FreetTube'
   android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 5))
   const defaultUri = android.createDownloadFile?.(directory, `${fileName}.part`) || ''
   const dialog = defaultUri

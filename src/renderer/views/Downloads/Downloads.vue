@@ -305,8 +305,11 @@ onBeforeUnmount(async () => {
 <style scoped>
 .downloadsView {
   max-width: 900px;
+  height: calc(100dvh - 96px);
   margin: 0 auto;
   padding: 12px 24px 24px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .downloadsHeader {
@@ -373,6 +376,7 @@ onBeforeUnmount(async () => {
 
 @media only screen and (width <= 680px) {
   .downloadsView {
+    height: calc(100dvh - 92px);
     padding: 8px;
   }
 
