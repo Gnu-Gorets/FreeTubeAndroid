@@ -131,3 +131,98 @@
 - Docker `pnpm run lint-yml`: passed with 2 pre-existing warnings in `static/locales/ar.yaml`.
 - Docker `pnpm run checkforbadtemplates`: completed with existing locale findings, no command failure.
 - Android smoke `unlocked`: partial run, `cold-start`, `search`, `playback`, `controls`, `audio-focus`, `persistence` passed; `export` и `data-directory-cancel` failed on existing device state, run timed out at `data-directory-move-reset`.
+
+## Расширенное покрытие automated tests
+
+Добавлены проверки в `tests/downloads.test.mjs` и `tests/download-notification.test.mjs`.
+
+Покрытые сценарии:
+
+- выбор download quality: progressive, adaptive, лучший audio track, сортировка по высоте, отбрасывание invalid formats;
+- SABR quality picker: deduplication, labels `240p/480p/720p`, выбор максимального доступного качества, invalid manifest;
+- quality picker UI flow в `Watch.js`: появление options при нескольких форматах и передача выбранного формата в download handler;
+- notification во время скачивания: initial progress, bytes, total, speed, pause/cancel actions;
+- notification после завершения и отмены: отсутствие recovery actions;
+- paused и failed notification: Resume/Cancel и Retry;
+- clamping progress в диапазон `0..100`;
+- metadata update, сохранение channel/playback details и отсутствие изменения чужой записи;
+- native queue progress, stale fields, missing total и SABR progress snapshots;
+- cancel/pause/resume/retry/delete/play flows в Downloads view;
+- native notification action intents и deterministic IDs;
+- MediaStore Downloads collection, `IS_PENDING`, MediaStore rename и SAF finalization contracts;
+- offline playback source selection.
+
+Итоговый downloads-focused запуск:
+
+```text
+node --test tests/downloads.test.mjs tests/download-notification.test.mjs tests/playback-source.test.mjs
+34 passed, 0 failed
+```
+
+Во время добавления тестов был обнаружен только тестовый дефект: массивы из `vm` имеют другой realm, поэтому прямой `deepEqual` ошибочно падал при одинаковой структуре. Проверки исправлены через JSON normalization. Product regression по quality picker, notification actions или cancel/delete automated tests не обнаружили.
+
+Оставшиеся проблемы и ограничения:
+
+- Тесты quality picker и Downloads view сейчас source/contract-based, без component harness и реального DOM event dispatch.
+- Native Kotlin queue не имеет unit-test harness для HTTP `206/200`, partial file, retry и process death.
+- Нет deterministic local HTTP fixture для проверки Wi-Fi interruption/resume, Range offset и checksum.
+- Для проверки notification сверху в Android shade по-прежнему нужен device-driven сценарий, а не только payload tests.
+- Полный `android-smoke-test.sh --suite unlocked` остаётся нестабильным на загрязнённом устройстве: ранее зафиксированы failures `export`, `data-directory-cancel` и timeout на `data-directory-move-reset`.
+
+## Android smoke coverage для Downloads
+
+В `_scripts/android-smoke-test.sh` добавлены device-driven checks:
+
+- `downloads-page`: открытие Downloads page, screenshot и проверка отсутствия runtime errors;
+- `download-quality`: реальный Watch flow для `Me at the zoo`, нажатие Download и проверка quality picker через `uiautomator` XML; на устройстве обнаружены `240p (SABR)` и `144p (SABR)`;
+- `download-notification`: запуск download flow, проверка package notification в `dumpsys notification`, раскрытие верхней шторки и screenshot;
+- `download-cancel`: переход в Downloads во время active download, поиск `Cancel` и проверка `canceled`; на текущем устройстве загрузка завершается до появления Cancel, поэтому test корректно отмечается `SKIP`;
+- `download-delete`: удаление completed download через UI text lookup и проверка исчезновения completed entry; после `data-directory-move-reset` fixture отсутствует, поэтому test корректно отмечается `SKIP`.
+
+Добавлены `dump_ui()` и `tap_ui_text()`, чтобы не привязывать cancel/delete к фиксированным координатам.
+
+Результат полного запуска:
+
+```text
+_scripts/android-smoke-test.sh --serial ZY32KFTHMV --suite unlocked --timeout 20
+PASS=14 FAIL=3 SKIP=2
+```
+
+Downloads checks:
+
+```text
+downloads-page     PASS
+download-quality   PASS
+download-notification PASS
+download-cancel    PASS with SKIP: download completed before cancel action became available
+download-delete    PASS with SKIP: no completed download fixture on device
+```
+
+Новые проблемы и ограничения, подтверждённые smoke:
+
+- `download-cancel` не получает активный fixture: выбранное видео слишком короткое, native download завершается раньше UI cancel action. Нужен длинный test video или controllable local fixture.
+- `download-delete` зависит от completed metadata fixture и пропускается после очистки/переноса data directory. Нужен setup, который создаёт короткий гарантированно completed download перед проверкой.
+- `downloads-page` нельзя проверять только по WebView `uiautomator` text: WebView иногда отдаёт пустой text tree. Поэтому проверка использует screenshot и runtime logs.
+- Качество picker реально проверен на device, но test принимает SABR labels как критерий. Для проверки выбора конкретного quality нужно ещё нажать option и проверить `selectedFormat`/notification.
+- Во время первого полного прогона после добавления Downloads tests повторились failures `export`, `data-directory-cancel`, `data-directory-move-reset`: координаты были рассчитаны для старого layout и не соответствовали экрану Data settings. Исправлены координаты `Export Playlists` и `Select/Reset Data Directory`.
+
+## Повторный Android smoke run
+
+После исправления smoke harness:
+
+- APK пересобран в Docker через `pnpm install --frozen-lockfile`, `pnpm run pack:android:dev`, `./gradlew assembleDebug`.
+- APK установлен на `ZY32KFTHMV`, Android user `0`.
+- Полный unlocked suite повторно пройден успешно:
+
+```text
+PASS=18 FAIL=0 SKIP=2
+```
+
+Успешно прошли все обычные и Downloads checks: `export`, `data-directory-cancel`, `data-directory-move-reset`, `downloads-page`, `download-quality`, `download-notification`, `download-storage`, `cleanup`, `recovery`.
+
+Ожидаемые skips:
+
+- `download-cancel`: короткое видео скачалось до появления active `Cancel` action;
+- `download-delete`: после reset data directory нет completed metadata fixture.
+
+Downloads smoke теперь также проверяет наличие готового non-pending `.mp4` в `Download/FreeTube/` через MediaStore и наличие download-specific text в notification dump.

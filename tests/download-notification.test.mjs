@@ -43,6 +43,30 @@ test('Android default downloads use public Freetube folder', () => {
   assert.match(source, /IS_PENDING, 1/)
 })
 
+test('notification reports initial progress without byte totals', () => {
+  assert.deepEqual(getDownloadNotificationPayload({ downloadId: '1', title: 'video', status: 'downloading', progress: 0 }), {
+    downloadId: '1', title: 'video', text: 'Downloading 0%', progress: 0, actions: ['pause', 'cancel']
+  })
+})
+
+test('completed and canceled notifications expose no recovery actions', () => {
+  for (const status of ['completed', 'canceled']) {
+    assert.deepEqual(getDownloadNotificationPayload({ downloadId: '1', title: 'video', status, progress: 1 }), {
+      downloadId: '1', title: 'video', text: 'Downloading 100%', progress: 100, actions: []
+    })
+  }
+})
+
+test('notification progress is clamped to valid Android range', () => {
+  assert.equal(getDownloadNotificationPayload({ downloadId: '1', title: 'video', status: 'downloading', progress: -1 }).progress, 0)
+  assert.equal(getDownloadNotificationPayload({ downloadId: '1', title: 'video', status: 'downloading', progress: 2 }).progress, 100)
+})
+
+test('notification omits invalid speed and total details', () => {
+  const payload = getDownloadNotificationPayload({ downloadId: '1', title: 'video', status: 'downloading', progress: 0.5, received: 20, total: 0, speedBps: 0 })
+  assert.equal(payload.text, 'Downloading 50%')
+})
+
 test('paused and failed notifications expose recovery actions', () => {
   assert.deepEqual(getDownloadNotificationPayload({ downloadId: '1', title: '480p', status: 'paused', progress: 0.25 }), {
     downloadId: '1', title: '480p', text: 'Downloading 25%', progress: 25, actions: ['resume', 'cancel']

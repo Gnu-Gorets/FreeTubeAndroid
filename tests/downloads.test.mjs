@@ -11,6 +11,8 @@ const source = fs.readFileSync(new URL('../src/renderer/helpers/android/download
   .replace(/const setupSabrScheme = .*$/m, 'const setupSabrScheme = () => {}')
 const downloadServiceSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
 const androidBridgeSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
+const watchSource = fs.readFileSync(new URL('../src/renderer/views/Watch/Watch.js', import.meta.url), 'utf8')
+const downloadsViewSource = fs.readFileSync(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
 
 const storage = new Map()
 const context = vm.createContext({
@@ -39,6 +41,29 @@ test('SABR qualities deduplicate variants and use quality labels', () => {
   assert.deepEqual(Array.from(getSabrDownloadFormats(manifest), format => format.label), ['1080p (SABR)', '720p (SABR)'])
 })
 
+test('download qualities filter invalid formats and sort highest first', () => {
+  const formats = getDownloadFormats([
+    { url: 'audio-as-video', mimeType: 'audio/mp4', height: 1080 },
+    { url: 'video-360', mimeType: 'video/mp4', height: 360, bitrate: 1 },
+    { url: 'video-720', mimeType: 'video/mp4', height: 720, bitrate: 1 },
+    { url: '', mimeType: 'video/mp4', height: 144 }
+  ])
+  assert.deepEqual(JSON.parse(JSON.stringify(formats.map(format => format.label))), ['720p', '360p'])
+  assert.equal(formats.every(format => format.audio === null), true)
+})
+
+test('adaptive quality picker uses best audio and keeps video labels', () => {
+  const formats = getDownloadFormats([
+    { url: 'progressive', mimeType: 'video/mp4', height: 480 }
+  ], [
+    { url: 'audio-low', mimeType: 'audio/mp4', bitrate: 10 },
+    { url: 'audio-high', mimeType: 'audio/mp4', bitrate: 20 },
+    { url: 'video-720', mimeType: 'video/mp4', height: 720, bitrate: 100 }
+  ])
+  assert.deepEqual(JSON.parse(JSON.stringify(formats.map(format => format.label))), ['720p (adaptive)', '480p'])
+  assert.equal(formats[0].audio.url, 'audio-high')
+})
+
 test('adaptive formats share one best audio track', () => {
   const formats = getDownloadFormats([], [
     { url: 'audio-low', mimeType: 'audio/mp4', bitrate: 1 },
@@ -48,6 +73,21 @@ test('adaptive formats share one best audio track', () => {
   assert.equal(formats.length, 1)
   assert.equal(formats[0].audio.url, 'audio-high')
   assert.equal(formats[0].label, '720p (adaptive)')
+})
+
+test('invalid SABR manifest returns no quality options', () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('not-a-manifest'))), [])
+  assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('data:application/sabr+json,%7Bbad'))), [])
+})
+
+test('SABR quality labels deduplicate by quality and height', () => {
+  const manifest = `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats: [
+    { mimeType: 'video/mp4', quality: 'hd720', height: 720 },
+    { mimeType: 'video/mp4', quality: 'hd720', height: 640 },
+    { mimeType: 'video/mp4', quality: 'large', height: 480 },
+    { mimeType: 'audio/mp4', quality: 'audio', height: null }
+  ] }))}`
+  assert.deepEqual(Array.from(getSabrDownloadFormats(manifest), format => format.label), ['720p (SABR)', '480p (SABR)'])
 })
 
 test('download metadata preserves channel and playback details', () => {
@@ -74,9 +114,33 @@ test('download metadata preserves channel and playback details', () => {
   })
 })
 
+test('download progress handles missing totals and clamps SABR snapshots', () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(mergeDownloadProgress({ downloadId: 'one' }, {
+    status: 'downloading', received: 5, total: 0, speedBps: 0
+  }))), {
+    downloadId: 'one', status: 'downloading', progress: null, received: 5, total: 0, speedBps: 0, error: null
+  })
+  assert.equal(getStableProgressSnapshot({ size: 100 }, 1000, 2).progress, 1)
+})
+
 test('fallback save dialog requests final mp4 name', () => {
   assert.ok(source.includes("requestSaveDialog(fileName, 'video/mp4')"))
   assert.ok(!source.includes('requestSaveDialog(`${fileName}.part`'))
+})
+
+test('quality picker keeps multiple options and dispatches selected format', () => {
+  assert.ok(watchSource.includes('if (options.length > 1)'))
+  assert.ok(watchSource.includes('this.downloadOptions = options'))
+  assert.ok(watchSource.includes('handleDownloadQuality(formats)'))
+  assert.ok(watchSource.includes('this.downloadOptions = []'))
+  assert.ok(watchSource.includes('this.downloadSelected(formats)'))
+})
+
+test('Downloads view exposes cancel, retry, play and delete flows', () => {
+  for (const action of ["control(download, 'cancel')", "control(download, 'pause')", "control(download, 'resume')", "control(download, 'retry')"]) assert.ok(downloadsViewSource.includes(action))
+  assert.ok(downloadsViewSource.includes("download.status === 'completed'"))
+  assert.ok(downloadsViewSource.includes('window.Android?.deleteFile(download.localPath)'))
+  assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
 })
 
 test('public downloads use MediaStore Downloads collection', () => {

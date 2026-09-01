@@ -28,6 +28,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
+                        downloads-page, download-quality, download-notification, download-storage, download-cancel, download-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -59,6 +60,17 @@ adb_cmd() {
 
 adb_shell() { adb_cmd shell "$@"; }
 screenshot() { adb_cmd exec-out screencap -p >"$ARTIFACT_DIR/$1.png"; }
+dump_ui() {
+  adb_shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || return 1
+  adb_shell cat /sdcard/window.xml >"$ARTIFACT_DIR/$1.xml"
+}
+tap_ui_text() {
+  local text="$1" bounds x1 y1 x2 y2
+  bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"\\[[0-9]*,[0-9]*\\]\\[[0-9]*,[0-9]*\\]\"" | head -1)
+  [[ "$bounds" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
+  x1="${BASH_REMATCH[1]}"; y1="${BASH_REMATCH[2]}"; x2="${BASH_REMATCH[3]}"; y2="${BASH_REMATCH[4]}"
+  adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
+}
 
 if ! command -v adb >/dev/null 2>&1; then
   echo "SKIP: adb is not installed"; exit 77
@@ -357,7 +369,7 @@ open_data_settings() {
 export_data() {
   open_data_settings || return 1
   # Export Playlists button in Data settings.
-  adb_shell input tap 480 1400
+  adb_shell input tap 480 1070
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
@@ -368,7 +380,7 @@ data_directory_cancel() {
   open_data_settings || return 1
   local mapping_before mapping_after
   mapping_before=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
-  adb_shell input tap 215 460
+  adb_shell input tap 215 383
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   close_picker || return 1
@@ -378,7 +390,7 @@ data_directory_cancel() {
 
 data_directory_move_reset() {
   open_data_settings || return 1
-  adb_shell input tap 215 460
+  adb_shell input tap 215 383
   sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   # DocumentsUI reopens last tree location; normalize to Documents before selecting it.
@@ -394,7 +406,7 @@ data_directory_move_reset() {
   adb_shell am force-stop "$PACKAGE"
   start_app || return 1
   open_data_settings || return 1
-  adb_shell input tap 630 460
+  adb_shell input tap 500 383
   sleep 8
   mapping=$(adb_shell cat "/data/user/0/$PACKAGE/files/data/data-location.json" 2>/dev/null || true)
   grep -q '"directory":"data://"' <<<"$mapping" || return 1
@@ -443,6 +455,94 @@ recovery() {
   adb_shell dumpsys activity activities | grep -q "$PACKAGE"
 }
 
+downloads_page() {
+  start_app || return 1
+  adb_shell input tap 535 1540
+  sleep 3
+  screenshot downloads-page
+  dump_ui downloads-page || return 1
+  [[ -s "$ARTIFACT_DIR/downloads-page.png" ]] || return 1
+  no_runtime_errors
+}
+
+download_quality() {
+  clean_logs
+  open_video || return 1
+  # Download action in Watch view at normalized 100% UI scale.
+  adb_shell input tap 185 860
+  sleep 3
+  screenshot download-quality
+  dump_ui download-quality || return 1
+  # A multi-format video must expose quality choices instead of silently starting one.
+  grep -Eq '([0-9]{3,4}p|adaptive|SABR)' "$ARTIFACT_DIR/download-quality.xml" || return 1
+  adb_shell input keyevent KEYCODE_BACK
+  no_runtime_errors
+}
+
+download_notification() {
+  clean_logs
+  open_video || return 1
+  adb_shell input tap 185 860
+  sleep 2
+  adb_shell dumpsys notification --noredact >"$ARTIFACT_DIR/download-notification-during.txt"
+  grep -q "$PACKAGE" "$ARTIFACT_DIR/download-notification-during.txt" || return 1
+  grep -Eq 'Downloads|Downloading|Download complete|Me at the zoo' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
+  adb_shell input swipe 360 100 360 1000 500
+  sleep 2
+  screenshot download-notification-shade
+  [[ -s "$ARTIFACT_DIR/download-notification-shade.png" ]] || return 1
+  adb_shell input keyevent KEYCODE_BACK
+  no_runtime_errors
+}
+
+download_storage() {
+  adb_shell content query --uri content://media/external_primary/downloads \
+    --projection _display_name:relative_path:_size:is_pending >"$ARTIFACT_DIR/download-storage.txt" 2>/dev/null || return 1
+  if ! grep -q 'relative_path=Download/FreeTube/' "$ARTIFACT_DIR/download-storage.txt"; then
+    echo "SKIP: no public FreeTube download fixture on device"
+    SKIP=$((SKIP + 1))
+    return 0
+  fi
+  grep -Eq '_display_name=.*\.mp4, relative_path=Download/FreeTube/, _size=[1-9][0-9]*, is_pending=0' "$ARTIFACT_DIR/download-storage.txt"
+}
+
+download_delete() {
+  start_app || return 1
+  adb_shell input tap 535 1540
+  sleep 3
+  dump_ui download-delete-before || return 1
+  if ! grep -q 'completed' "$ARTIFACT_DIR/download-delete-before.xml"; then
+    echo "SKIP: no completed download fixture on device"
+    SKIP=$((SKIP + 1))
+    return 0
+  fi
+  # Delete first completed entry and verify metadata no longer renders it.
+  tap_ui_text Delete || return 1
+  sleep 2
+  dump_ui download-delete-after || return 1
+  ! grep -q 'completed' "$ARTIFACT_DIR/download-delete-after.xml"
+}
+
+download_cancel() {
+  clean_logs
+  open_video || return 1
+  adb_shell input tap 185 860
+  sleep 1
+  adb_shell input tap 535 1540
+  sleep 2
+  dump_ui download-cancel-before || return 1
+  if ! grep -q 'downloading' "$ARTIFACT_DIR/download-cancel-before.xml"; then
+    echo "SKIP: download completed before cancel action became available"
+    SKIP=$((SKIP + 1))
+    return 0
+  fi
+  tap_ui_text Cancel || return 1
+  sleep 3
+  dump_ui download-cancel-after || return 1
+  grep -q 'canceled' "$ARTIFACT_DIR/download-cancel-after.xml" || return 1
+  no_runtime_errors
+}
+
 run_unlocked_suite() {
   require_unlocked
   if ! preflight; then
@@ -461,6 +561,12 @@ run_unlocked_suite() {
   run_test export export_data
   run_test data-directory-cancel data_directory_cancel
   run_test data-directory-move-reset data_directory_move_reset
+  run_test downloads-page downloads_page
+  run_test download-quality download_quality
+  run_test download-notification download_notification
+  run_test download-storage download_storage
+  run_test download-cancel download_cancel
+  run_test download-delete download_delete
   run_test cleanup cleanup
   run_test recovery recovery
   (( FAIL == 0 ))
@@ -519,6 +625,12 @@ case "$TEST" in
   export) run_test export export_data ;;
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
+  downloads-page) run_test downloads-page downloads_page ;;
+  download-quality) run_test download-quality download_quality ;;
+  download-notification) run_test download-notification download_notification ;;
+  download-storage) run_test download-storage download_storage ;;
+  download-cancel) run_test download-cancel download_cancel ;;
+  download-delete) run_test download-delete download_delete ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
