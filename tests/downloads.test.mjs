@@ -153,10 +153,12 @@ test('Downloads view exposes cancel, retry, play and delete flows', () => {
   assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
 })
 
-test('debug Downloads hook targets records by download ID', () => {
+test('debug Downloads hook targets records and inspects offline storage', () => {
   assert.ok(downloadsViewSource.includes('function installTestHook()'))
   assert.ok(downloadsViewSource.includes('window.Android?.isDebugBuild?.()'))
   assert.ok(downloadsViewSource.includes('downloads.value.find(item => item.downloadId === id)'))
+  assert.ok(downloadsViewSource.includes('active: id => hasSabrDownload(id)'))
+  assert.ok(downloadsViewSource.includes('(await storage.list()).map(content => content.offlineUri).sort()'))
   assert.ok(downloadsViewSource.includes('delete window.__ftTest'))
 })
 

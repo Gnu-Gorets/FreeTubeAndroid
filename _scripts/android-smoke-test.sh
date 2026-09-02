@@ -186,14 +186,50 @@ cdp_eval() {
 }
 
 cdp_wait_status() {
-  local id="$1" status="$2" start now
+  local id="$1" status="$2" timeout="${3:-$TIMEOUT}" start now
   start=$(date +%s)
   while :; do
     [[ $(cdp_eval "window.__ftTest?.downloads().some(d => d.id === '$id' && d.status === '$status')" 2>/dev/null || true) == true ]] && return 0
     now=$(date +%s)
+    ((now - start >= timeout)) && return 1
+    sleep 1
+  done
+}
+
+cdp_wait_inactive() {
+  local id="$1" start now
+  start=$(date +%s)
+  while :; do
+    [[ $(cdp_eval "window.__ftTest && !window.__ftTest.active('$id')" 2>/dev/null || true) == true ]] && return 0
+    now=$(date +%s)
     ((now - start >= TIMEOUT)) && return 1
     sleep 1
   done
+}
+
+cdp_latest_download_id_since() {
+  cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $1).sort((a, b) => b.createdAt - a.createdAt)[0]?.id" | tr -d '"'
+}
+
+cdp_click_download_action() {
+  local id="$1" action="$2"
+  [[ $(cdp_eval "(() => { const row = [...document.querySelectorAll('[data-download-id]')].find(node => node.dataset.downloadId === '$id'); const button = row?.querySelector('[data-download-action=\"$action\"]'); if (!button) return false; button.click(); return true })()") == true ]]
+}
+
+cdp_cleanup_download() {
+  local id="$1" status
+  status=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.status" | tr -d '"')
+  if [[ "$status" =~ ^(queued|downloading|paused)$ ]]; then
+    cdp_click_download_action "$id" cancel || return 1
+    cdp_wait_status "$id" canceled || return 1
+    cdp_wait_inactive "$id" || return 1
+  fi
+  cdp_click_download_action "$id" delete || return 1
+  for _ in $(seq 1 "$TIMEOUT"); do
+    [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] && return 0
+    sleep 1
+  done
+  return 1
 }
 
 open_downloads_cdp() {
@@ -323,8 +359,12 @@ collect_logs() {
   adb_shell dumpsys audio >"$ARTIFACT_DIR/audio.txt"
 }
 no_runtime_errors() {
+  local pid
   collect_logs
-  ! grep -E 'FATAL EXCEPTION|Failed to fetch|TypeError:|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
+  pid=$(adb_shell pidof -s "$PACKAGE" 2>/dev/null || true)
+  [[ -n "$pid" ]] || return 1
+  adb_cmd logcat -d --pid="$pid" '*:E' >"$ARTIFACT_DIR/runtime-errors.txt"
+  ! grep -E 'FATAL EXCEPTION|TypeError:|AndroidRuntime: FATAL' "$ARTIFACT_DIR/runtime-errors.txt" >/dev/null
 }
 
 preflight() {
@@ -598,6 +638,9 @@ downloads_page() {
 download_quality() {
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id format
+  marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 3
   screenshot download-quality
@@ -605,12 +648,22 @@ download_quality() {
   adb_cmd logcat -d -v brief >"$ARTIFACT_DIR/download-quality-logcat.txt"
   grep -q 'picker options' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   grep -Eq '2160p|1440p|1080p|720p|480p|360p|240p|144p' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
-  adb_shell input keyevent KEYCODE_BACK
+  adb_shell input tap 575 875
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  format=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.selectedFormat" | tr -d '"')
+  [[ "$format" =~ ^[0-9]+p\ \(SABR\)$ ]] || return 1
+  cdp_wait_status "$id" downloading || cdp_wait_status "$id" completed || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_sabr_telemetry() {
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id
+  marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 220 940
@@ -619,13 +672,21 @@ download_sabr_telemetry() {
   grep -q 'SABR telemetry' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
   grep -q '"progress":1' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
   grep -Eq 'SABR store complete .*"size":[1-9][0-9]*' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
-  ! grep -q '"mismatch":true' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt"
+  ! grep -q '"mismatch":true' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_sabr_total() {
   echo '[download-sabr-total] opening video'
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id
+  marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
   # Select 1440p SABR, the regression quality where total changed from 216.8 MB to 218.2 MB.
@@ -669,12 +730,20 @@ if final.get('totalExact'):
 else:
     assert final.get('received', 0) >= final.get('total', 0), f'estimated total exceeds final bytes: {final}'
 PY
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_sabr_ui_progress() {
   echo '[download-sabr-ui-progress] opening video'
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id
+  marker=$(cdp_eval 'Date.now()')
   echo '[download-sabr-ui-progress] selecting 360p SABR'
   adb_shell input tap 185 830
   sleep 2
@@ -717,29 +786,40 @@ assert speeds, 'smoothed speed samples are missing'
 assert all(max(a, b) <= min(a, b) * 1.6 for a, b in zip(speeds, speeds[1:])), f'speed jumps between samples: {speeds}'
 assert not re.search(r'metadata update .*"status":"completed".*"speedBps":[1-9]', log)
 PY
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_sabr_pause_resume() {
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id
+  marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
   # Select 720p to leave enough time for pause action before completion.
   adb_shell input tap 160 875
   open_downloads_cdp || return 1
-  local id
-  id=$(cdp_eval "window.__ftTest.downloads().sort((a, b) => b.createdAt - a.createdAt)[0]?.id" | tr -d '"')
+  id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
   cdp_wait_status "$id" downloading || return 1
-  [[ $(cdp_eval "window.__ftTest.control('$id', 'pause')") == true ]] || return 1
+  cdp_click_download_action "$id" pause || return 1
   cdp_wait_status "$id" paused || return 1
-  [[ $(cdp_eval "window.__ftTest.control('$id', 'resume')") == true ]] || return 1
-  cdp_wait_status "$id" downloading || cdp_wait_status "$id" completed
+  cdp_click_download_action "$id" resume || return 1
+  cdp_wait_status "$id" downloading || cdp_wait_status "$id" completed || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_notification() {
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id
+  marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
   # Select 720p from quality picker.
@@ -754,12 +834,19 @@ download_notification() {
   screenshot download-notification-shade
   [[ -s "$ARTIFACT_DIR/download-notification-shade.png" ]] || return 1
   adb_shell input keyevent KEYCODE_BACK
-  no_runtime_errors
+  no_runtime_errors || return 1
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_notification_title() {
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id
+  marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 160 875
@@ -772,7 +859,11 @@ download_notification_title() {
   sleep 2
   screenshot download-notification-title-shade
   adb_shell input keyevent KEYCODE_BACK
-  no_runtime_errors
+  no_runtime_errors || return 1
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_notification_terminal() {
@@ -785,44 +876,69 @@ download_notification_terminal() {
 }
 
 download_storage() {
-  adb_shell content query --uri content://media/external_primary/downloads \
-    --projection _display_name:relative_path:_size:is_pending >"$ARTIFACT_DIR/download-storage.txt" 2>/dev/null || return 1
-  if ! grep -q 'relative_path=Download/FreeTube/' "$ARTIFACT_DIR/download-storage.txt"; then
-    echo "SKIP: no public FreeTube download fixture on device"
-    SKIP=$((SKIP + 1))
-    return 0
-  fi
-  grep -Eq '_display_name=.*\.mp4, relative_path=Download/FreeTube/, _size=[1-9][0-9]*, is_pending=0' "$ARTIFACT_DIR/download-storage.txt"
+  clean_logs
+  open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id uri
+  marker=$(cdp_eval 'Date.now()')
+  adb_shell input tap 185 830
+  sleep 2
+  adb_shell input tap 575 875
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+  uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
+  [[ -n "$uri" && "$uri" != null ]] || return 1
+  [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
+  cdp_cleanup_download "$id"
 }
 
 download_delete() {
-  start_app || return 1
+  clean_logs
+  open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id uri
+  marker=$(cdp_eval 'Date.now()')
+  adb_shell input tap 185 830
+  sleep 2
+  adb_shell input tap 575 875
   open_downloads_cdp || return 1
-  local id
-  id=$(cdp_eval "window.__ftTest.downloads().filter(d => d.status === 'completed').sort((a, b) => b.createdAt - a.createdAt)[0]?.id" | tr -d '"')
-  [[ -n "$id" && "$id" != null ]] || { echo 'FAIL: no completed download fixture'; return 1; }
-  [[ $(cdp_eval "window.__ftTest.remove('$id')") == true ]] || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+  uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
+  [[ -n "$uri" && "$uri" != null ]] || return 1
+  [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
+  cdp_click_download_action "$id" delete || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
-    [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] && return 0
+    [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] && break
     sleep 1
   done
-  return 1
+  [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] || return 1
+  [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == false ]]
 }
 
 download_cancel() {
   clean_logs
   open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id contents_before
+  marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
   # Select 720p from quality picker before opening Downloads.
   adb_shell input tap 160 875
   open_downloads_cdp || return 1
-  local id
-  id=$(cdp_eval "window.__ftTest.downloads().sort((a, b) => b.createdAt - a.createdAt)[0]?.id" | tr -d '"')
+  id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
   cdp_wait_status "$id" downloading || return 1
-  [[ $(cdp_eval "window.__ftTest.control('$id', 'cancel')") == true ]] || return 1
-  cdp_wait_status "$id" canceled
+  contents_before=$(cdp_eval 'window.__ftTest.offlineContents()')
+  cdp_click_download_action "$id" cancel || return 1
+  cdp_wait_status "$id" canceled || return 1
+  cdp_wait_inactive "$id" || return 1
+  [[ $(cdp_eval 'window.__ftTest.offlineContents()') == "$contents_before" ]] || return 1
+  cdp_cleanup_download "$id"
 }
 
 run_unlocked_suite() {

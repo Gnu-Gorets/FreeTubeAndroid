@@ -292,8 +292,20 @@ function handleDownloadControl(event) {
 
 function installTestHook() {
   if (!window.Android?.isDebugBuild?.()) return
+  const offlineContents = async () => {
+    const player = new shaka.Player(document.createElement('video'))
+    const storage = new shaka.offline.Storage(player)
+    try {
+      return (await storage.list()).map(content => content.offlineUri).sort()
+    } finally {
+      await storage.destroy()
+      await player.destroy()
+    }
+  }
   window.__ftTest = {
-    downloads: () => downloads.value.map(({ downloadId, videoId, status, received, total, totalExact, createdAt }) => ({ id: downloadId, videoId, status, received, total, totalExact, createdAt })),
+    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, createdAt })),
+    active: id => hasSabrDownload(id),
+    offlineContents,
     control: (id, action) => {
       const download = downloads.value.find(item => item.downloadId === id)
       if (!download) return false
