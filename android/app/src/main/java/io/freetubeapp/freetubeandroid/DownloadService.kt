@@ -12,6 +12,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
 import android.provider.MediaStore
+import android.util.Log
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaMuxer
@@ -39,6 +40,7 @@ class DownloadService : Service() {
         private const val PREFS = "downloads"
         private const val QUEUE = "queue"
         private const val MAX_RETRIES = 4
+        private const val TAG = "FreeTubeDownload"
 
         fun start(context: Context, intent: Intent) {
             androidx.core.content.ContextCompat.startForegroundService(context, intent.setClass(context, DownloadService::class.java))
@@ -117,8 +119,12 @@ class DownloadService : Service() {
 
     private fun enqueue(item: JSONObject) {
         val queue = readQueue()
-        if ((0 until queue.length()).any { queue.getJSONObject(it).optString("id") == item.optString("id") }) return
+        if ((0 until queue.length()).any { queue.getJSONObject(it).optString("id") == item.optString("id") }) {
+            Log.w(TAG, "enqueue ignored duplicate id=${item.optString("id")}")
+            return
+        }
         item.put("status", "queued").put("progress", 0)
+        Log.i(TAG, "queue status id=${item.optString("id")} null->queued")
         queue.put(item)
         writeQueue(queue)
         executor.execute { process() }
@@ -129,7 +135,10 @@ class DownloadService : Service() {
         val queue = readQueue()
         for (index in 0 until queue.length()) {
             val item = queue.getJSONObject(index)
-            if (item.optString("id") == id) item.put("status", status).put("error", JSONObject.NULL)
+            if (item.optString("id") == id) {
+                Log.i(TAG, "queue status id=$id ${item.optString("status")}->$status")
+                item.put("status", status).put("error", JSONObject.NULL)
+            }
         }
         writeQueue(queue)
         if (status == "paused") connections[id]?.disconnect()
@@ -143,6 +152,7 @@ class DownloadService : Service() {
         for (index in 0 until queue.length()) {
             val item = queue.getJSONObject(index)
             if (item.optString("id") == id) {
+                Log.i(TAG, "queue status id=$id ${item.optString("status")}->canceled")
                 item.put("status", "canceled")
                 delete(item.optString("targetUri"))
             }
@@ -160,6 +170,7 @@ class DownloadService : Service() {
                 val item = queue.getJSONObject(index)
                 val id = item.optString("id")
                 if (item.optString("status") == "queued" && activeDownloads.add(id)) {
+                    Log.i(TAG, "queue status id=$id queued->downloading active=${activeDownloads.size}")
                     item.put("status", "downloading")
                     items += item
                 }
@@ -170,6 +181,8 @@ class DownloadService : Service() {
             executor.execute {
                 try {
                     download(item)
+                    verifyCompletedTarget(item)
+                    Log.i(TAG, "queue status id=${item.optString("id")} downloading->completed received=${item.optLong("received", 0)} total=${item.optLong("total", 0)}")
                     item.put("status", "completed").put("progress", 1)
                     rename(item.optString("targetUri"), item.optString("finalName"))
                     publish(item.optString("targetUri"))
@@ -180,7 +193,8 @@ class DownloadService : Service() {
                             .firstOrNull { it.optString("id") == item.optString("id") }?.optString("status")
                     }
                     val status = if (currentState == "paused" || currentState == "canceled") currentState else "failed"
-                    item.put("status", status).put("error", error.message ?: "Download failed")
+                    Log.e(TAG, "queue status id=${item.optString("id")} $currentState->$status error=${error.message}", error)
+                    item.put("status", status).put("error", if (status == "failed") error.message ?: "Download failed" else JSONObject.NULL)
                     notify(item.optString("id"), item.optString("title"), item.optString("error"), null, false)
                 } finally {
                     connections.remove(item.optString("id"))?.disconnect()
@@ -246,7 +260,11 @@ class DownloadService : Service() {
             try {
                 return action()
             } catch (error: Exception) {
-                if (error is InterruptedException || !isRetryable(error) || attempt++ >= MAX_RETRIES) throw error
+                val retryable = isRetryable(error)
+                if (error is java.net.SocketTimeoutException) Log.w(TAG, "no progress timeout attempt=${attempt + 1}")
+                Log.w(TAG, "download attempt=${attempt + 1} failed retryable=$retryable error=${error.message}", error)
+                if (error is InterruptedException || !retryable || attempt++ >= MAX_RETRIES) throw error
+                Log.i(TAG, "download retry attempt=${attempt + 1} delayMs=${1000L shl (attempt - 1)}")
                 Thread.sleep(1000L shl (attempt - 1))
             }
         }
@@ -268,8 +286,10 @@ class DownloadService : Service() {
             if (existing > 0) request.setRequestProperty("Range", "bytes=$existing-")
             request.connect()
             val response = request.responseCode
+            Log.i(TAG, "HTTP response id=${item.optString("id")} code=$response existing=$existing requestedRange=${existing > 0} contentLength=${request.contentLengthLong}")
             if (response !in 200..299) throw IllegalStateException("HTTP $response")
             val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
+            if (existing > 0 && !append) Log.w(TAG, "resume rejected id=${item.optString("id")} existing=$existing code=$response; restarting")
             val receivedStart = if (append) existing else 0L
             val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
             openTarget(target.toString(), if (append) "wa" else "wt").use { output ->
@@ -278,6 +298,8 @@ class DownloadService : Service() {
                     var received = receivedStart
                     var lastBytes = received
                     var lastTime = System.nanoTime()
+                    var lastProgressTime = lastTime
+                    var lastLoggedSpeed = 0L
                     while (true) {
                         checkDownloadState(item)
                         val count = input.read(buffer)
@@ -288,6 +310,10 @@ class DownloadService : Service() {
                         val elapsed = (now - lastTime) / 1_000_000_000.0
                         val speed = if (elapsed > 0) ((received - lastBytes) / elapsed).toLong() else 0L
                         val progress = if (total > 0) received.toDouble() / total else 0.0
+                        if (speed > 0 && lastLoggedSpeed > 0 && (speed > lastLoggedSpeed * 2 || speed * 2 < lastLoggedSpeed)) Log.w(TAG, "speed jump id=${item.optString("id")} $lastLoggedSpeed->$speed received=$received")
+                        if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$received total=$total")
+                        if (received > lastBytes) lastProgressTime = now
+                        lastLoggedSpeed = speed
                         item.put("progress", progress).put("received", received).put("total", total).put("speedBps", speed)
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
                         lastBytes = received
@@ -315,8 +341,10 @@ class DownloadService : Service() {
             if (existing > 0) request.setRequestProperty("Range", "bytes=$existing-")
             request.connect()
             val response = request.responseCode
+            Log.i(TAG, "HTTP response id=${item.optString("id")} code=$response existing=$existing requestedRange=${existing > 0} contentLength=${request.contentLengthLong}")
             if (response !in 200..299) throw IllegalStateException("HTTP $response")
             val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
+            if (existing > 0 && !append) Log.w(TAG, "resume rejected id=${item.optString("id")} existing=$existing code=$response; restarting")
             val receivedStart = if (append) existing else 0L
             val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
             java.io.FileOutputStream(target, append).use { output ->
@@ -325,6 +353,8 @@ class DownloadService : Service() {
                     var received = receivedStart
                     var lastBytes = received
                     var lastTime = System.nanoTime()
+                    var lastProgressTime = lastTime
+                    var lastLoggedSpeed = 0L
                     while (true) {
                         checkDownloadState(item)
                         val count = input.read(buffer)
@@ -335,6 +365,10 @@ class DownloadService : Service() {
                         val elapsed = (now - lastTime) / 1_000_000_000.0
                         val speed = if (elapsed > 0) ((received - lastBytes) / elapsed).toLong() else 0L
                         val progress = if (total > 0) received.toDouble() / total else 0.0
+                        if (speed > 0 && lastLoggedSpeed > 0 && (speed > lastLoggedSpeed * 2 || speed * 2 < lastLoggedSpeed)) Log.w(TAG, "speed jump id=${item.optString("id")} $lastLoggedSpeed->$speed received=$received")
+                        if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$received total=$total")
+                        if (received > lastBytes) lastProgressTime = now
+                        lastLoggedSpeed = speed
                         item.put("progress", base + progress * weight).put("received", received).put("total", total).put("speedBps", speed)
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
                         lastBytes = received
@@ -349,6 +383,13 @@ class DownloadService : Service() {
             request.disconnect()
             connections.remove(item.optString("id"))
         }
+    }
+
+    private fun verifyCompletedTarget(item: JSONObject) {
+        val uri = item.optString("targetUri")
+        val actual = length(Uri.parse(uri))
+        Log.i(TAG, "completed target id=${item.optString("id")} exists=${targetExists(uri)} actual=$actual received=${item.optLong("received", 0)} total=${item.optLong("total", 0)} progress=${item.optDouble("progress", 0.0)}")
+        if (!targetExists(uri) || actual <= 0) throw IOException("Completed download target is empty")
     }
 
     private fun checkDownloadState(item: JSONObject) {
@@ -501,9 +542,11 @@ class DownloadService : Service() {
     private fun notify(id: String, title: String, text: String, progress: Double?, ongoing: Boolean) {
         val manager = getSystemService(NotificationManager::class.java)
         if (!ongoing) {
+            Log.i(TAG, "notification terminal id=$id text=$text")
             manager.cancel(notificationId(id))
             return
         }
+        Log.d(TAG, "notification progress id=$id progress=${progress ?: -1.0} text=$text")
         manager.notify(notificationId(id), notification(id, title, text, progress, true))
     }
 }

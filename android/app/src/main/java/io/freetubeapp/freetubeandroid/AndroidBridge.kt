@@ -425,7 +425,7 @@ class AndroidBridge(
                 dispatchDownload(downloadId, "completed", received, total, null)
             } catch (error: Exception) {
                 val status = if (!downloadJobs.containsKey(downloadId) || error is InterruptedException) "canceled" else "failed"
-                dispatchDownload(downloadId, status, 0, 0, error.message)
+                dispatchDownload(downloadId, status, 0, 0, if (status == "failed") error.message else null)
             } finally {
                 downloadJobs.remove(downloadId)
                 connection?.disconnect()
@@ -451,7 +451,7 @@ class AndroidBridge(
                 dispatchDownload(downloadId, "completed", outputFile.length(), outputFile.length(), null)
             } catch (error: Exception) {
                 val status = if (!downloadJobs.containsKey(downloadId) || error is InterruptedException) "canceled" else "failed"
-                dispatchDownload(downloadId, status, 0, 0, error.message)
+                dispatchDownload(downloadId, status, 0, 0, if (status == "failed") error.message else null)
             } finally {
                 downloadJobs.remove(downloadId)
                 videoFile.delete()

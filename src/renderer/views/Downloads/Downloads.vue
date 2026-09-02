@@ -158,7 +158,12 @@ function load() {
 
 async function retry(download) {
   if (nativeQueue().some(item => item.id === download.downloadId)) {
-    control(download, 'retry')
+    if (/HTTP 403/.test(download.error || '')) {
+      console.warn('[Downloads] stale URL retry requires fresh formats', { id: download.downloadId })
+      router.push(`/watch/${download.videoId}`)
+    } else {
+      control(download, 'retry')
+    }
     return
   }
   if (download.manifestSrc && download.sabrData) {

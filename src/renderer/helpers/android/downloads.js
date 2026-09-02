@@ -121,12 +121,27 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
   let lastLoggedPercent = -1
   let transportBytes = 0
   let stableTotal = 0
+  let lastTelemetryAt = Date.now()
+  let lastTelemetryReceived = 0
+  let lastTelemetrySpeed = 0
   setupSabrScheme(download.sabrData, () => player, () => manifestRef.value, 640, 360, scheme, bytes => {
     transportBytes += bytes
   })
   try {
     await player.load(manifestSrc, null, download.manifestMimeType)
     manifestRef.value = player.getManifest()
+    const sizeEstimate = await estimateSabrSize(manifestRef.value, maxHeight)
+    stableTotal = sizeEstimate.total
+    log('SABR size estimate', {
+      id: download.downloadId,
+      total: stableTotal,
+      exact: sizeEstimate.exact,
+      source: 'manifest segment sizes with 50% container overhead',
+      maxHeight,
+      candidates: manifestRef.value.variants
+        ?.filter(variant => variant.video?.height && variant.video.height <= (maxHeight || Infinity))
+        .map(variant => ({ height: variant.video.height, videoSize: variant.video.size || 0, audioSize: variant.audio?.size || 0, bandwidth: variant.bandwidth || 0 }))
+    })
     storage = new shaka.offline.Storage(player)
     storage.configure({
       offline: {
@@ -135,17 +150,32 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
             const variants = tracks.filter(track => track.type === 'variant' && track.height != null)
             const heights = variants.filter(track => track.height <= maxHeight).map(track => track.height)
             const height = Math.max(...heights, Math.min(...variants.map(track => track.height)))
-            return tracks.filter(track => track.type !== 'variant' || track.height === height)
+            const selectedVariant = variants
+              .filter(track => track.height === height)
+              .sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0]
+            return tracks.filter(track => track.type !== 'variant' || track === selectedVariant)
           }
           : undefined,
         progressCallback(content, progress) {
+          const now = Date.now()
           const percent = Math.round(progress * 100)
+          const transportSnapshot = getProgressSnapshot(content, transportBytes, progress, stableTotal)
+          const snapshot = getStableProgressSnapshot(content, transportBytes, progress, stableTotal)
+          stableTotal = snapshot.total
+          const elapsed = (now - lastTelemetryAt) / 1000
+          const speedBps = elapsed > 0 ? Math.max(0, Math.round((snapshot.received - lastTelemetryReceived) / elapsed)) : 0
+          const speedJump = speedBps > 0 && lastTelemetrySpeed > 0 && (speedBps > lastTelemetrySpeed * 2 || speedBps * 2 < lastTelemetrySpeed)
+          const mismatch = snapshot.progress < 0 || snapshot.progress > 1
+          if (speedJump || mismatch || now - lastTelemetryAt >= 5000 || percent === 0 || percent === 100) {
+            log('SABR telemetry', { id: download.downloadId, received: snapshot.received, total: snapshot.total, transportTotal: transportSnapshot.total, progress: snapshot.progress, speedBps, speedJump, mismatch })
+            lastTelemetryAt = now
+            lastTelemetryReceived = snapshot.received
+            lastTelemetrySpeed = speedBps
+          }
           if (percent !== lastLoggedPercent && (percent === 0 || percent === 100 || percent % 10 === 0)) {
             lastLoggedPercent = percent
             log('SABR store progress', { id: download.downloadId, percent })
           }
-          const snapshot = getStableProgressSnapshot(content, transportBytes, progress, stableTotal)
-          stableTotal = snapshot.total
           onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total)
         }
       }
@@ -153,8 +183,8 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
     const operation = storage.store(manifestSrc, {}, download.manifestMimeType)
     sabrOperations.set(download.downloadId, operation)
     const content = await operation.promise
-    log('SABR store complete', { id: download.downloadId, hasOfflineUri: Boolean(content?.offlineUri) })
-    if (!content?.offlineUri) {
+    log('SABR store complete', { id: download.downloadId, hasOfflineUri: Boolean(content?.offlineUri), size: content?.size || 0 })
+    if (!content?.offlineUri || !(content?.size > 0)) {
       console.error(`[SABR] storage returned invalid content: ${JSON.stringify(content)}`)
       throw new Error('Offline storage returned no URI')
     }
@@ -223,10 +253,32 @@ export function getProgressSnapshot(content, transportBytes, progress, knownTota
 
 export function getStableProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
   const snapshot = getProgressSnapshot(content, transportBytes, progress, knownTotal)
-  return {
-    ...snapshot,
-    progress: snapshot.total > 0 ? Math.min(snapshot.received / snapshot.total, 1) : progress
+  if (progress >= 1) return { received: snapshot.received, total: snapshot.received, progress: 1 }
+  return { received: snapshot.received, total: knownTotal, progress }
+}
+
+async function estimateSabrSize(manifest, maxHeight) {
+  const variants = manifest?.variants?.filter(variant => variant.video?.height && variant.video.height <= (maxHeight || Infinity)) || []
+  const selected = variants.sort((a, b) => (b.video?.height || 0) - (a.video?.height || 0))[0]
+  const streams = [selected?.video, selected?.audio].filter(Boolean)
+  await Promise.all(streams.map(stream => stream.createSegmentIndex?.()))
+  let total = 0
+  for (const stream of streams) {
+    let initSize = 0
+    let segmentSize = 0
+    const references = stream.segmentIndex?.getNumReferences?.() || 0
+    for (let index = 0; index < references; index++) {
+      const reference = stream.segmentIndex.get(index)
+      if (!initSize && reference?.initSegmentReference) {
+        initSize = reference.initSegmentReference.getSize()
+      }
+      const end = reference?.getEndByte()
+      if (end != null) segmentSize += end - reference.getStartByte() + 1
+    }
+    total += initSize + segmentSize
   }
+  if (total > 0) return { total: Math.ceil(total * 1.5), exact: false }
+  return { total: (selected?.video?.size || 0) + (selected?.audio?.size || 0), exact: false }
 }
 
 export function mergeDownloadProgress(download, detail, native = null) {

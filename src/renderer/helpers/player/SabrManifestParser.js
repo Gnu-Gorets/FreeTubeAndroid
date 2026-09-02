@@ -75,6 +75,10 @@ export const MANIFEST_TYPE_SABR = 'application/sabr+json'
 
 const CODECS_REGEX = /codecs="?([^"]+)"?/
 
+function rangeSize(range) {
+  return range?.start != null && range?.end != null ? range.end - range.start + 1 : 0
+}
+
 const VIDEO_CODEC_PRIORITIES = [
   'av01',
   'vp09',
@@ -362,7 +366,8 @@ function createAudioStream(
     codecs: format.mimeType.match(CODECS_REGEX)[1],
     fullMimeTypes: new Set([format.mimeType]),
     bandwidth: format.bitrate,
-    audioSamplingRate: format.audioSampleRate ?? null,
+    size: (format.contentLength || 0) + rangeSize(format.initRange) + rangeSize(format.indexRange),
+    audioSamplingRate: format.audioSamplingRate ?? null,
     channelsCount: format.audioChannels ?? null,
     label,
     language: format.language ?? 'und',
@@ -435,6 +440,7 @@ function createVideoStream(format, id, presentationTimeline, networkingEngine, s
     codecs: format.mimeType.match(CODECS_REGEX)[1],
     fullMimeTypes: new Set([format.mimeType]),
     bandwidth: format.bitrate,
+    size: (format.contentLength || 0) + rangeSize(format.initRange) + rangeSize(format.indexRange),
     width: format.width,
     height: format.height,
     frameRate: format.frameRate,

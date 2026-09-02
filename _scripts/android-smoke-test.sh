@@ -29,7 +29,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
+                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-ui-progress, download-sabr-pause-resume, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -76,6 +76,17 @@ wait_for_ui_text() {
   done
 }
 
+wait_for_logcat() {
+  local pattern="$1" start now
+  start=$(date +%s)
+  while :; do
+    adb_cmd logcat -d -v brief | grep -q "$pattern" && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+
 wait_for_notification() {
   local pattern="$1" start now dump
   start=$(date +%s)
@@ -94,6 +105,30 @@ tap_ui_text() {
   [[ "$bounds" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
   x1="${BASH_REMATCH[1]}"; y1="${BASH_REMATCH[2]}"; x2="${BASH_REMATCH[3]}"; y2="${BASH_REMATCH[4]}"
   adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
+}
+
+tap_ui_text_last() {
+  local text="$1" bounds x1 y1 x2 y2
+  bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"[^\"]*\"" | grep -v 'bounds="\\[0,0\\]\\[0,0\\]"' | tail -1)
+  [[ "$bounds" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
+  x1="${BASH_REMATCH[1]}"; y1="${BASH_REMATCH[2]}"; x2="${BASH_REMATCH[3]}"; y2="${BASH_REMATCH[4]}"
+  adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
+}
+
+tap_visible_ui_text() {
+  local text="$1" bounds x1 y1 x2 y2
+  for _ in $(seq 1 12); do
+    dump_ui visible-action >/dev/null 2>&1 || true
+    bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"[^\"]*\"" | grep -v 'bounds="\\[0,0\\]\\[0,0\\]"' | head -1)
+    if [[ "$bounds" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]]; then
+      x1="${BASH_REMATCH[1]}"; y1="${BASH_REMATCH[2]}"; x2="${BASH_REMATCH[3]}"; y2="${BASH_REMATCH[4]}"
+      adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
+      return 0
+    fi
+    adb_shell input swipe 360 1300 360 500 300
+    sleep 1
+  done
+  return 1
 }
 
 tap_delete_after_last_completed() {
@@ -530,6 +565,52 @@ download_quality() {
   no_runtime_errors
 }
 
+download_sabr_telemetry() {
+  clean_logs
+  open_download_video || return 1
+  adb_shell input tap 185 830
+  sleep 2
+  adb_shell input tap 220 940
+  wait_for_logcat 'SABR store complete' || return 1
+  adb_cmd logcat -d -v threadtime >"$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt"
+  grep -q 'SABR telemetry' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
+  grep -q '"progress":1' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
+  grep -Eq 'SABR store complete .*"size":[1-9][0-9]*' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
+  ! grep -q '"mismatch":true' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt"
+}
+
+download_sabr_ui_progress() {
+  clean_logs
+  open_download_video || true
+  adb_shell input tap 185 830
+  sleep 2
+  adb_shell input tap 575 875
+  adb_shell input tap 535 1540
+  sleep 1
+  screenshot download-sabr-ui-progress
+  dump_ui download-sabr-ui-progress || true
+  test -s "$ARTIFACT_DIR/download-sabr-ui-progress.png" || return 1
+}
+
+download_sabr_pause_resume() {
+  clean_logs
+  open_download_video || return 1
+  adb_shell input tap 185 830
+  sleep 2
+  adb_shell input tap 220 940
+  adb_shell input tap 535 1540
+  wait_for_ui_text downloading || return 1
+  tap_visible_ui_text Pause || return 1
+  sleep 2
+  dump_ui download-sabr-pause || return 1
+  grep -q 'paused' "$ARTIFACT_DIR/download-sabr-pause.xml" || return 1
+  tap_visible_ui_text Resume || return 1
+  sleep 2
+  dump_ui download-sabr-resume || return 1
+  grep -Eq 'downloading|completed' "$ARTIFACT_DIR/download-sabr-resume.xml" || return 1
+  no_runtime_errors
+}
+
 download_notification() {
   clean_logs
   open_download_video || return 1
@@ -601,7 +682,7 @@ download_delete() {
   # Delete last completed entry and verify completed count decreases.
   local before_count after_count
   before_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
-  tap_ui_text Delete || return 1
+  tap_visible_ui_text Delete || return 1
   sleep 3
   dump_ui download-delete-after || return 1
   after_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
@@ -624,7 +705,7 @@ download_cancel() {
     SKIP=$((SKIP + 1))
     return 0
   fi
-  tap_ui_text Cancel || return 1
+  tap_visible_ui_text Cancel || return 1
   sleep 3
   dump_ui download-cancel-after || return 1
   grep -q 'canceled' "$ARTIFACT_DIR/download-cancel-after.xml" || return 1
@@ -651,6 +732,8 @@ run_unlocked_suite() {
   run_test data-directory-move-reset data_directory_move_reset
   run_test downloads-page downloads_page
   run_test download-quality download_quality
+  run_test download-sabr-telemetry download_sabr_telemetry
+  run_test download-sabr-pause-resume download_sabr_pause_resume
   run_test download-notification download_notification
   run_test download-storage download_storage
   run_test download-cancel download_cancel
@@ -671,6 +754,9 @@ run_downloads_suite() {
   PASS=$((PASS + 1))
   run_test downloads-page downloads_page
   run_test download-quality download_quality
+  run_test download-sabr-telemetry download_sabr_telemetry
+  run_test download-sabr-ui-progress download_sabr_ui_progress
+  run_test download-sabr-pause-resume download_sabr_pause_resume
   run_test download-notification download_notification
   run_test download-notification-title download_notification_title
   run_test download-notification-terminal download_notification_terminal
@@ -736,6 +822,9 @@ case "$TEST" in
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
   downloads-page) run_test downloads-page downloads_page ;;
   download-quality) run_test download-quality download_quality ;;
+  download-sabr-telemetry) run_test download-sabr-telemetry download_sabr_telemetry ;;
+  download-sabr-ui-progress) run_test download-sabr-ui-progress download_sabr_ui_progress ;;
+  download-sabr-pause-resume) run_test download-sabr-pause-resume download_sabr_pause_resume ;;
   download-notification) run_test download-notification download_notification ;;
   download-notification-title) run_test download-notification-title download_notification_title ;;
   download-notification-terminal) run_test download-notification-terminal download_notification_terminal ;;

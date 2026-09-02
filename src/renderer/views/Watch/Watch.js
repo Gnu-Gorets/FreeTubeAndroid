@@ -1424,19 +1424,19 @@ export default defineComponent({
           manifestSrc: this.manifestSrc,
           manifestMimeType: this.manifestMimeType,
           sabrData: this.sabrData
-        }, (storedContent, progress) => {
+        }, (storedContent, progress, snapshotTotal) => {
           const now = Date.now()
           const received = storedContent?.size || 0
           const elapsed = (now - lastProgressAt) / 1000
           const speedBps = elapsed > 0 ? Math.max(0, Math.round((received - lastBytes) / elapsed)) : 0
-          const total = progress > 0 ? Math.round(received / progress) : 0
+          const total = progress >= 1 ? received : snapshotTotal
           lastProgress = progress
           lastReceived = received
           lastTotal = total
           lastSpeedBps = speedBps
           lastProgressAt = now
           lastBytes = received
-          updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, speedBps })
+          updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, transportTotal: total, speedBps })
           const notification = getDownloadNotificationPayload({ downloadId, title: this.videoTitle, status: 'downloading', progress, speedBps, received, total })
           android.updateDownloadNotification?.(notification.downloadId, notification.title, 'downloading', notification.progress, speedBps, received, total)
           window.dispatchEvent(new CustomEvent('android-download', {
@@ -1451,6 +1451,7 @@ export default defineComponent({
           offlineUri: content.offlineUri,
           received: content.size || 0,
           total: content.size || 0,
+          transportTotal: lastTotal,
           completedAt: Date.now()
         })
         android.finishDownloadNotification?.(downloadId, this.videoTitle, true)
@@ -1927,6 +1928,7 @@ export default defineComponent({
           mimeType: format.mime_type,
           xtags: format.xtags,
           bitrate: format.bitrate,
+          contentLength: Number(format.content_length || 0),
           initRange: format.init_range,
           indexRange: format.index_range,
           width: format.width,
