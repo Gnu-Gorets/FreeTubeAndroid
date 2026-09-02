@@ -52,7 +52,7 @@ class MainActivity : Activity() {
             view.setPadding(0, 0, 0, 0)
             insets
         }
-        pendingDeepLink = intent
+        pendingDeepLink = intent.takeIf { it.action == Intent.ACTION_VIEW && it.data != null }
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val requestUrl = request?.url ?: return null
@@ -65,6 +65,7 @@ class MainActivity : Activity() {
                 pendingDeepLink?.let {
                     dispatchDeepLink(it)
                     pendingDeepLink = null
+                    setIntent(Intent(this@MainActivity, MainActivity::class.java))
                 }
             }
         }
@@ -213,11 +214,15 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        setIntent(intent)
         when (intent?.action) {
             "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
             "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
             "DOWNLOAD_CONTROL" -> dispatchDownloadControl(intent)
-            Intent.ACTION_VIEW -> dispatchDeepLink(intent)
+            Intent.ACTION_VIEW -> {
+                dispatchDeepLink(intent)
+                setIntent(Intent(this, MainActivity::class.java))
+            }
         }
     }
 

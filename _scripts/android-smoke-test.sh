@@ -333,8 +333,10 @@ open_video() {
 }
 
 open_download_video() {
+  adb_shell am force-stop "$PACKAGE"
   adb_shell am start -a android.intent.action.VIEW -d "$DOWNLOAD_VIDEO_URL" -n "$ACTIVITY" >/dev/null
-  sleep 30
+  wait_for "$PACKAGE" || return 1
+  sleep 35
   adb_shell input tap 400 340
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
   sleep 3
@@ -774,11 +776,11 @@ download_delete() {
   fi
   # Delete last completed entry and verify completed count decreases.
   local before_count after_count
-  before_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
+  before_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
   tap_delete_after_last_completed || return 1
   sleep 3
   dump_ui download-delete-after || return 1
-  after_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
+  after_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
   (( after_count < before_count ))
 }
 
