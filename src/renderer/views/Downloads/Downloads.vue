@@ -228,7 +228,8 @@ async function remove(download) {
     const player = new shaka.Player(document.createElement('video'))
     const storage = new shaka.offline.Storage(player)
     try {
-      await storage.remove(download.offlineUri)
+      const stored = await storage.list()
+      if (stored.some(content => content.offlineUri === download.offlineUri)) await storage.remove(download.offlineUri)
     } finally {
       await storage.destroy()
       await player.destroy()

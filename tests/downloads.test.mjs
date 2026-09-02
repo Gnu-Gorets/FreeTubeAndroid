@@ -150,6 +150,7 @@ test('Downloads view exposes cancel, retry, play and delete flows', () => {
   for (const action of ["control(download, 'cancel')", "control(download, 'pause')", "control(download, 'resume')", "control(download, 'retry')"]) assert.ok(downloadsViewSource.includes(action))
   assert.ok(downloadsViewSource.includes("download.status === 'completed'"))
   assert.ok(downloadsViewSource.includes('window.Android?.deleteFile(download.localPath)'))
+  assert.ok(downloadsViewSource.includes('stored.some(content => content.offlineUri === download.offlineUri)'))
   assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
 })
 

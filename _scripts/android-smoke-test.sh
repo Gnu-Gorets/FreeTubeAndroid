@@ -898,7 +898,7 @@ download_delete() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
-  local marker id uri
+  local marker id uri stale_id
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
@@ -907,6 +907,12 @@ download_delete() {
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
   cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+  stale_id="smoke-stale-$(date +%s)"
+  cdp_eval "(() => { const items = JSON.parse(localStorage.getItem('freetube-downloads') || '[]'); items.push({ downloadId: '$stale_id', title: 'Stale smoke fixture', status: 'completed', offlineUri: 'offline:manifest/idb/v5/999999999', createdAt: Date.now() }); localStorage.setItem('freetube-downloads', JSON.stringify(items)); return true })()" >/dev/null
+  sleep 2
+  cdp_click_download_action "$stale_id" delete || return 1
+  sleep 2
+  [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$stale_id')") == false ]] || return 1
   uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
   [[ -n "$uri" && "$uri" != null ]] || return 1
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
