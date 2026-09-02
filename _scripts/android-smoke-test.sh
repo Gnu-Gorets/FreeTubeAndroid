@@ -3,6 +3,7 @@ set -u
 
 PACKAGE="io.freetubeapp.freetubeandroid"
 ACTIVITY="$PACKAGE/.MainActivity"
+PERSONAL_USER_ID=0
 APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/debug/app-debug.apk"
 SERIAL=""
 TEST="all"
@@ -10,6 +11,7 @@ SUITE="all"
 DOWNLOAD_VIDEO_URL="https://youtu.be/6gFpmmLbs2U"
 KEEP_DATA=1
 TIMEOUT=45
+DOWNLOAD_TIMEOUT=180
 ARTIFACT_DIR="$(cd "$(dirname "$0")/.." && pwd)/tmp/android-smoke/$(date +%Y%m%d-%H%M%S)"
 LOG_FILE=""
 PASS=0
@@ -46,7 +48,7 @@ while (($#)); do
     --suite) SUITE="$2"; shift 2 ;;
     --test) TEST="$2"; shift 2 ;;
     --keep-data) KEEP_DATA=1; shift ;;
-    --timeout) TIMEOUT="$2"; shift 2 ;;
+    --timeout) TIMEOUT="$2"; DOWNLOAD_TIMEOUT=$((TIMEOUT * 4)); shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -60,6 +62,14 @@ adb_cmd() {
 }
 
 adb_shell() { adb_cmd shell "$@"; }
+assert_personal_profile() {
+  local current_user
+  current_user=$(adb_shell am get-current-user 2>/dev/null || true)
+  [[ "$current_user" == "$PERSONAL_USER_ID" ]] || {
+    echo "FAIL: personal profile user $PERSONAL_USER_ID is required; refusing work-profile interaction" >&2
+    return 1
+  }
+}
 screenshot() { adb_cmd exec-out screencap -p >"$ARTIFACT_DIR/$1.png"; }
 dump_ui() {
   adb_shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || return 1
@@ -109,7 +119,7 @@ tap_ui_text() {
 
 tap_ui_text_last() {
   local text="$1" bounds x1 y1 x2 y2
-  bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"[^\"]*\"" | grep -v 'bounds="\\[0,0\\]\\[0,0\\]"' | tail -1)
+  bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"[^\"]*\"" | grep -v 'bounds="\[0,0\]\[0,0\]"' | tail -1)
   [[ "$bounds" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
   x1="${BASH_REMATCH[1]}"; y1="${BASH_REMATCH[2]}"; x2="${BASH_REMATCH[3]}"; y2="${BASH_REMATCH[4]}"
   adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
@@ -119,7 +129,7 @@ tap_visible_ui_text() {
   local text="$1" bounds x1 y1 x2 y2
   for _ in $(seq 1 12); do
     dump_ui visible-action >/dev/null 2>&1 || true
-    bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"[^\"]*\"" | grep -v 'bounds="\\[0,0\\]\\[0,0\\]"' | head -1)
+    bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"[^\"]*\"" | grep -v 'bounds="\[0,0\]\[0,0\]"' | head -1)
     if [[ "$bounds" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]]; then
       x1="${BASH_REMATCH[1]}"; y1="${BASH_REMATCH[2]}"; x2="${BASH_REMATCH[3]}"; y2="${BASH_REMATCH[4]}"
       adb_shell input tap "$(( (x1 + x2) / 2 ))" "$(( (y1 + y2) / 2 ))"
@@ -133,7 +143,7 @@ tap_visible_ui_text() {
 
 tap_delete_after_last_completed() {
   local completed delete x1 y1 x2 y2 completed_y2
-  completed=$(adb_shell cat /sdcard/window.xml | grep -o 'text="completed"[^>]*bounds="\\[[0-9]*,[0-9]*\\]\\[[0-9]*,[0-9]*\\]"' | grep -v 'bounds="\\[0,0\\]\\[0,0\\]"' | head -1)
+  completed=$(adb_shell cat /sdcard/window.xml | grep -o 'text="completed"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | grep -v 'bounds="\[0,0\]\[0,0\]"' | head -1)
   [[ "$completed" =~ bounds=\"\[[0-9]+,[0-9]+\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
   completed_y2="${BASH_REMATCH[2]}"
   while read -r delete; do
@@ -158,13 +168,14 @@ fi
 if [[ -z "$SERIAL" ]] || ! adb_cmd get-state >/dev/null 2>&1; then
   echo "SKIP: no adb device connected"; exit 77
 fi
+assert_personal_profile || exit 77
 adb_cmd root >/dev/null 2>&1 || true
 sleep 2
 
 run_test() {
   local name="$1"; shift
   echo "== $name =="
-  if "$@"; then
+  if assert_personal_profile && "$@"; then
     echo "PASS $name"
     PASS=$((PASS + 1))
   else
@@ -283,17 +294,14 @@ no_runtime_errors() {
 }
 
 preflight() {
-  [[ "$(adb_shell am get-current-user 2>/dev/null)" == "0" ]] || {
-    echo "FAIL: Android personal profile user 0 is required; work profile is not supported"
-    return 1
-  }
+  assert_personal_profile || return 1
   [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
-  adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
+  adb_cmd install -r --user "$PERSONAL_USER_ID" "$APK" >/dev/null || return 1
   local pkg
   pkg=$(adb_shell dumpsys package "$PACKAGE") || return 1
   grep -q 'targetSdk=36' <<<"$pkg" || { echo "targetSdk 36 not found"; return 1; }
   grep -q 'versionCode=' <<<"$pkg" || { echo "package not installed"; return 1; }
-  adb_shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+  adb_shell pm grant --user "$PERSONAL_USER_ID" "$PACKAGE" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
   return 0
 }
 
@@ -580,16 +588,51 @@ download_sabr_telemetry() {
 }
 
 download_sabr_ui_progress() {
+  echo '[download-sabr-ui-progress] opening video'
   clean_logs
-  open_download_video || true
+  open_download_video || return 1
+  echo '[download-sabr-ui-progress] selecting 360p SABR'
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
   adb_shell input tap 535 1540
-  sleep 1
+  echo '[download-sabr-ui-progress] download started, waiting for completion'
+  sleep 2
   screenshot download-sabr-ui-progress
   dump_ui download-sabr-ui-progress || true
   test -s "$ARTIFACT_DIR/download-sabr-ui-progress.png" || return 1
+  if grep -q 'downloading' "$ARTIFACT_DIR/download-sabr-ui-progress.xml"; then
+    grep -Eq '[0-9]+% · [1-9][0-9.]* (KB|MB|GB) / [1-9][0-9.]* (KB|MB|GB)' "$ARTIFACT_DIR/download-sabr-ui-progress.xml" || return 1
+    ! grep -Eq '0 B|—' "$ARTIFACT_DIR/download-sabr-ui-progress.xml" || return 1
+  fi
+  completed=0
+  for second in $(seq 0 2 "$DOWNLOAD_TIMEOUT"); do
+    if adb_cmd logcat -d -v brief | grep -q 'SABR store complete'; then
+      completed=1
+      echo "[download-sabr-ui-progress] completion detected at ${second}s"
+      break
+    fi
+    if (( second % 10 == 0 )); then
+      progress=$(adb_cmd logcat -d -v brief | grep 'SABR store progress' | tail -1 || true)
+      telemetry=$(adb_cmd logcat -d -v brief | grep 'SABR telemetry' | tail -1 || true)
+      echo "[download-sabr-ui-progress] ${second}s progress=${progress:-none} telemetry=${telemetry:-none}"
+    fi
+    sleep 2
+  done
+  (( completed == 1 )) || { echo '[download-sabr-ui-progress] completion timeout'; return 1; }
+  adb_cmd logcat -d -v threadtime > "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt"
+  grep -q 'SABR store complete' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
+  grep -q 'metadata update.*"status":"completed"' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
+  python3 - "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" <<'PY'
+import re
+import sys
+
+log = open(sys.argv[1], encoding='utf-8').read()
+speeds = [int(value) for value in re.findall(r'metadata update .*"speedBps":([1-9][0-9]*)', log)]
+assert speeds, 'smoothed speed samples are missing'
+assert all(max(a, b) <= min(a, b) * 1.6 for a, b in zip(speeds, speeds[1:])), f'speed jumps between samples: {speeds}'
+assert not re.search(r'metadata update .*"status":"completed".*"speedBps":[1-9]', log)
+PY
 }
 
 download_sabr_pause_resume() {

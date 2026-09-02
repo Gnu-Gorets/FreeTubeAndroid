@@ -40,12 +40,12 @@
           {{ download.selectedFormat }}
         </p>
         <p
-          v-if="download.status === 'downloading'"
+          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
         >
           {{ formatProgress(download) }}
         </p>
         <progress
-          v-if="download.status === 'downloading' && download.progress !== null"
+          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
           max="1"
           :value="download.progress"
           :aria-label="t('Downloads.Progress')"
@@ -122,10 +122,10 @@ function formatBytes(value) {
 }
 
 function formatProgress(download) {
-  const percent = Number.isFinite(download.progress) ? `${Math.round(download.progress * 100)}%` : '…'
-  const bytes = download.total > 0 ? `${formatBytes(download.received || 0)} / ${formatBytes(download.total)}` : formatBytes(download.received)
-  const speed = download.speedBps > 0 ? `${formatBytes(download.speedBps)}/s` : '—'
-  return `${percent} · ${bytes} · ${speed}`
+  const percent = `${Math.round(download.progress * 100)}%`
+  const bytes = `${formatBytes(download.received)} / ${formatBytes(download.total)}`
+  const speed = download.speedBps > 0 ? ` · ${formatBytes(download.speedBps)}/s` : ''
+  return `${percent} · ${bytes}${speed}`
 }
 
 function nativeQueue() {

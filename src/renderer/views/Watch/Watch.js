@@ -1416,6 +1416,7 @@ export default defineComponent({
       let lastReceived = 0
       let lastTotal = 0
       let lastSpeedBps = 0
+      const speedSamples = []
       try {
         let lastProgressAt = Date.now()
         let lastBytes = 0
@@ -1428,7 +1429,16 @@ export default defineComponent({
           const now = Date.now()
           const received = storedContent?.size || 0
           const elapsed = (now - lastProgressAt) / 1000
-          const speedBps = elapsed > 0 ? Math.max(0, Math.round((received - lastBytes) / elapsed)) : 0
+          const rawSpeedBps = elapsed > 0 ? Math.max(0, Math.round((received - lastBytes) / elapsed)) : 0
+          if (rawSpeedBps > 0) {
+            speedSamples.push(rawSpeedBps)
+            if (speedSamples.length > 3) speedSamples.shift()
+            const averageSpeedBps = Math.round(speedSamples.reduce((sum, value) => sum + value, 0) / speedSamples.length)
+            lastSpeedBps = lastSpeedBps > 0
+              ? Math.min(lastSpeedBps * 1.5, Math.max(lastSpeedBps / 1.5, averageSpeedBps))
+              : averageSpeedBps
+          }
+          const speedBps = lastSpeedBps
           const total = progress >= 1 ? received : snapshotTotal
           lastProgress = progress
           lastReceived = received

@@ -136,7 +136,7 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
       id: download.downloadId,
       total: stableTotal,
       exact: sizeEstimate.exact,
-      source: 'manifest segment sizes with 50% container overhead',
+      source: 'manifest byte ranges',
       maxHeight,
       candidates: manifestRef.value.variants
         ?.filter(variant => variant.video?.height && variant.video.height <= (maxHeight || Infinity))
@@ -254,7 +254,7 @@ export function getProgressSnapshot(content, transportBytes, progress, knownTota
 export function getStableProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
   const snapshot = getProgressSnapshot(content, transportBytes, progress, knownTotal)
   if (progress >= 1) return { received: snapshot.received, total: snapshot.received, progress: 1 }
-  return { received: snapshot.received, total: knownTotal, progress }
+  return { received: snapshot.received, total: knownTotal > 0 ? knownTotal : snapshot.total, progress }
 }
 
 async function estimateSabrSize(manifest, maxHeight) {
@@ -272,12 +272,13 @@ async function estimateSabrSize(manifest, maxHeight) {
       if (!initSize && reference?.initSegmentReference) {
         initSize = reference.initSegmentReference.getSize()
       }
+      const start = reference?.getStartByte()
       const end = reference?.getEndByte()
-      if (end != null) segmentSize += end - reference.getStartByte() + 1
+      if (Number.isFinite(start) && Number.isFinite(end) && end >= start) segmentSize += end - start + 1
     }
     total += initSize + segmentSize
   }
-  if (total > 0) return { total: Math.ceil(total * 1.5), exact: false }
+  if (total > 0) return { total, exact: true }
   return { total: (selected?.video?.size || 0) + (selected?.audio?.size || 0), exact: false }
 }
 
@@ -301,7 +302,7 @@ export function updateDownloadMetadata(downloadId, changes) {
   if (!download) return
   const statusChanged = changes.status && changes.status !== download.status
   Object.assign(download, changes)
-  if (statusChanged || changes.offlineUri || changes.error) log('metadata update', { id: downloadId, status: changes.status, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error })
+  if (statusChanged || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, speedBps: changes.speedBps })
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
 }
 
