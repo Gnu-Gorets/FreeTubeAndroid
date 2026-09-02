@@ -316,6 +316,11 @@ export async function downloadProgressiveVideo(video) {
             metadata.fileName = fileName
             metadata.completedAt = Date.now()
           }
+          if (['downloading', 'paused'].includes(item.status)) {
+            android.updateDownloadNotification?.(downloadId, video.title, item.status, Math.round((item.progress || 0) * 100), item.speedBps || 0, item.received || 0, item.total || 0)
+          } else if (['completed', 'failed', 'canceled'].includes(item.status)) {
+            android.finishDownloadNotification?.(downloadId, video.title, item.status === 'completed')
+          }
           localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
           if (['completed', 'failed', 'canceled'].includes(item.status)) {
             clearInterval(timer)

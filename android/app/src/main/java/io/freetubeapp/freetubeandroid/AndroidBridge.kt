@@ -602,13 +602,15 @@ class AndroidBridge(
     fun finishDownloadNotification(downloadId: String, title: String, success: Boolean): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return false
+        val notificationId = downloadNotificationId(downloadId)
+        notificationManager.cancel(notificationId)
         val notification = Notification.Builder(activity, "downloads")
             .setSmallIcon(R.drawable.ic_media_notification_icon)
             .setContentTitle(title)
             .setContentText(if (success) "Download complete" else "Download failed")
             .setAutoCancel(true)
             .build()
-        notificationManager.notify(downloadNotificationId(downloadId), notification)
+        notificationManager.notify(notificationId, notification)
         return true
     }
 

@@ -187,6 +187,17 @@ test('SABR progress event updates bytes, speed and percent immediately', () => {
   })
 })
 
+test('native queue notifications sync title and terminal state', () => {
+  assert.ok(source.includes('android.updateDownloadNotification?.(downloadId, video.title, item.status'))
+  assert.ok(source.includes('android.finishDownloadNotification?.(downloadId, video.title, item.status === \'completed\')'))
+})
+
+test('SABR notifications use video title for every terminal state', () => {
+  assert.ok(watchSource.includes('getDownloadNotificationPayload({ downloadId, title: this.videoTitle'))
+  assert.ok(watchSource.includes('android.finishDownloadNotification?.(downloadId, this.videoTitle, true)'))
+  assert.ok(watchSource.includes('android.finishDownloadNotification?.(downloadId, this.videoTitle, false)'))
+})
+
 test('metadata update changes only matching download', () => {
   storage.set('freetube-downloads', JSON.stringify([
     { downloadId: 'one', status: 'downloading' },

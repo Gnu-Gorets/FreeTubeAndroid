@@ -29,7 +29,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-notification, download-storage, download-cancel, download-delete,
+                        downloads-page, download-quality, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -527,6 +527,33 @@ download_notification() {
   no_runtime_errors
 }
 
+download_notification_title() {
+  clean_logs
+  open_download_video || return 1
+  adb_shell input tap 185 830
+  sleep 2
+  adb_shell input tap 160 875
+  sleep 5
+  local dump
+  dump=$(adb_shell dumpsys notification --noredact)
+  grep -q 'channel=downloads' <<<"$dump" || return 1
+  grep -Eq 'android.title=String \([A-Za-zА-Яа-я]' <<<"$dump" || return 1
+  adb_shell input swipe 360 100 360 1000 500
+  sleep 2
+  screenshot download-notification-title-shade
+  adb_shell input keyevent KEYCODE_BACK
+  no_runtime_errors
+}
+
+download_notification_terminal() {
+  adb_shell am force-stop "$PACKAGE"
+  start_app || return 1
+  adb_shell input swipe 360 100 360 1000 500
+  sleep 2
+  screenshot download-notification-terminal-shade
+  ! adb_shell dumpsys notification --noredact | grep -q 'Downloading [0-9]'
+}
+
 download_storage() {
   adb_shell content query --uri content://media/external_primary/downloads \
     --projection _display_name:relative_path:_size:is_pending >"$ARTIFACT_DIR/download-storage.txt" 2>/dev/null || return 1
@@ -550,11 +577,11 @@ download_delete() {
   fi
   # Delete last completed entry and verify completed count decreases.
   local before_count after_count
-  before_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
-  tap_delete_after_last_completed || return 1
-  sleep 2
+  before_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
+  adb_shell input tap 390 558
+  sleep 3
   dump_ui download-delete-after || return 1
-  after_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
+  after_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
   (( after_count < before_count ))
 }
 
@@ -622,6 +649,8 @@ run_downloads_suite() {
   run_test downloads-page downloads_page
   run_test download-quality download_quality
   run_test download-notification download_notification
+  run_test download-notification-title download_notification_title
+  run_test download-notification-terminal download_notification_terminal
   run_test download-storage download_storage
   run_test download-cancel download_cancel
   run_test download-delete download_delete
@@ -685,6 +714,8 @@ case "$TEST" in
   downloads-page) run_test downloads-page downloads_page ;;
   download-quality) run_test download-quality download_quality ;;
   download-notification) run_test download-notification download_notification ;;
+  download-notification-title) run_test download-notification-title download_notification_title ;;
+  download-notification-terminal) run_test download-notification-terminal download_notification_terminal ;;
   download-storage) run_test download-storage download_storage ;;
   download-cancel) run_test download-cancel download_cancel ;;
   download-delete) run_test download-delete download_delete ;;

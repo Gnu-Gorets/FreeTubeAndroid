@@ -1437,7 +1437,7 @@ export default defineComponent({
           lastProgressAt = now
           lastBytes = received
           updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, speedBps })
-          const notification = getDownloadNotificationPayload({ downloadId, title: selectedFormat || this.videoTitle, status: 'downloading', progress, speedBps, received, total })
+          const notification = getDownloadNotificationPayload({ downloadId, title: this.videoTitle, status: 'downloading', progress, speedBps, received, total })
           android.updateDownloadNotification?.(notification.downloadId, notification.title, 'downloading', notification.progress, speedBps, received, total)
           window.dispatchEvent(new CustomEvent('android-download', {
             detail: { id: downloadId, status: 'downloading', progress, received, total, speedBps }
@@ -1463,6 +1463,7 @@ export default defineComponent({
         }
         if (isSabrDownloadCanceled(downloadId)) {
           updateDownloadMetadata(downloadId, { status: 'canceled', error: null })
+          android.finishDownloadNotification?.(downloadId, this.videoTitle, false)
           return
         }
         updateDownloadMetadata(downloadId, { status: 'failed', error: error?.message || String(error) })
