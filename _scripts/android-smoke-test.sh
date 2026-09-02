@@ -31,7 +31,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-ui-progress, download-sabr-pause-resume, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
+                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -587,6 +587,53 @@ download_sabr_telemetry() {
   ! grep -q '"mismatch":true' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt"
 }
 
+download_sabr_total() {
+  echo '[download-sabr-total] opening video'
+  clean_logs
+  open_download_video || return 1
+  adb_shell input tap 185 830
+  sleep 2
+  # Select 1440p SABR, the regression quality where total changed from 216.8 MB to 218.2 MB.
+  adb_shell input tap 360 808
+  sleep 2
+  screenshot download-sabr-total-start
+  local completed=0
+  for second in $(seq 0 2 "$DOWNLOAD_TIMEOUT"); do
+    if adb_cmd logcat -d -v brief | grep -q 'SABR store complete'; then
+      completed=1
+      echo "[download-sabr-total] completion detected at ${second}s"
+      break
+    fi
+    sleep 2
+  done
+  (( completed == 1 )) || { echo '[download-sabr-total] completion timeout'; return 1; }
+  adb_cmd logcat -d -v threadtime >"$ARTIFACT_DIR/download-sabr-total-logcat.txt"
+  python3 - "$ARTIFACT_DIR/download-sabr-total-logcat.txt" <<'PY'
+import json
+import re
+import sys
+
+log = open(sys.argv[1], encoding='utf-8').read()
+estimates = [json.loads(value) for value in re.findall(r'SABR size estimate (\{.*?\}) \(webpack', log)]
+assert estimates, 'SABR size estimate is missing'
+estimate = estimates[-1]
+download_id = estimate['id']
+assert estimate.get('maxHeight') == 1440, estimate
+updates = [json.loads(value) for value in re.findall(r'metadata update (\{.*?\}) \(webpack', log)]
+updates = [item for item in updates if item.get('id') == download_id]
+progress = [item for item in updates if item.get('status') == 'downloading' and item.get('total', 0) > 0]
+assert progress, 'SABR progress totals are missing'
+totals = {item['total'] for item in progress}
+assert totals == {estimate['total']}, f'total changed during download: estimate={estimate["total"]}, updates={sorted(totals)}'
+completed = [item for item in updates if item.get('status') == 'completed']
+assert completed, 'SABR completion metadata is missing'
+final = completed[-1]
+assert final.get('total') == estimate['total'], f'total changed on completion: {estimate["total"]} -> {final.get("total")}'
+assert final.get('totalExact') is True, f'final total is not exact: {final}'
+assert final.get('received') == final.get('total'), f'final bytes mismatch: {final}'
+PY
+}
+
 download_sabr_ui_progress() {
   echo '[download-sabr-ui-progress] opening video'
   clean_logs
@@ -799,6 +846,7 @@ run_downloads_suite() {
   run_test downloads-page downloads_page
   run_test download-quality download_quality
   run_test download-sabr-telemetry download_sabr_telemetry
+  run_test download-sabr-total download_sabr_total
   run_test download-sabr-ui-progress download_sabr_ui_progress
   run_test download-sabr-pause-resume download_sabr_pause_resume
   run_test download-notification download_notification
@@ -867,6 +915,7 @@ case "$TEST" in
   downloads-page) run_test downloads-page downloads_page ;;
   download-quality) run_test download-quality download_quality ;;
   download-sabr-telemetry) run_test download-sabr-telemetry download_sabr_telemetry ;;
+  download-sabr-total) run_test download-sabr-total download_sabr_total ;;
   download-sabr-ui-progress) run_test download-sabr-ui-progress download_sabr_ui_progress ;;
   download-sabr-pause-resume) run_test download-sabr-pause-resume download_sabr_pause_resume ;;
   download-notification) run_test download-notification download_notification ;;

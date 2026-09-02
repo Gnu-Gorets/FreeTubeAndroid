@@ -183,8 +183,8 @@ class DownloadService : Service() {
                     download(item)
                     verifyCompletedTarget(item)
                     Log.i(TAG, "queue status id=${item.optString("id")} downloading->completed received=${item.optLong("received", 0)} total=${item.optLong("total", 0)}")
-                    item.put("status", "completed").put("progress", 1)
-                    rename(item.optString("targetUri"), item.optString("finalName"))
+                    item.put("status", "completed").put("phase", "completed").put("progress", 1).put("speedBps", 0).put("etaSeconds", 0)
+                    item.put("targetUri", rename(item.optString("targetUri"), item.optString("finalName")))
                     publish(item.optString("targetUri"))
                     notify(item.optString("id"), item.optString("title"), "Download complete", null, false)
                 } catch (error: Exception) {
@@ -194,7 +194,7 @@ class DownloadService : Service() {
                     }
                     val status = if (currentState == "paused" || currentState == "canceled") currentState else "failed"
                     Log.e(TAG, "queue status id=${item.optString("id")} $currentState->$status error=${error.message}", error)
-                    item.put("status", status).put("error", if (status == "failed") error.message ?: "Download failed" else JSONObject.NULL)
+                    item.put("status", status).put("phase", status).put("error", if (status == "failed") error.message ?: "Download failed" else JSONObject.NULL)
                     notify(item.optString("id"), item.optString("title"), item.optString("error"), null, false)
                 } finally {
                     connections.remove(item.optString("id"))?.disconnect()
@@ -239,9 +239,18 @@ class DownloadService : Service() {
             val videoFile = java.io.File(cacheDir, "${item.optString("id")}-video.mp4")
             val audioFile = java.io.File(cacheDir, "${item.optString("id")}-audio.mp4")
             val outputFile = java.io.File(cacheDir, "${item.optString("id")}-output.mp4")
+            val videoTotal = item.optLong("videoTotal", 0)
+            val audioTotal = item.optLong("audioTotal", 0)
+            val expectedTotal = if (videoTotal > 0 && audioTotal > 0) videoTotal + audioTotal else 0
             try {
-                withRetries { downloadToFile(url, videoFile, item, 0.0, 0.5) }
-                withRetries { downloadToFile(audioUrl, audioFile, item, 0.5, 0.5) }
+                withRetries { downloadToFile(url, videoFile, item, 0, expectedTotal, "video") }
+                val completedVideoBytes = videoFile.length()
+                withRetries { downloadToFile(audioUrl, audioFile, item, completedVideoBytes, expectedTotal, "audio") }
+                val received = videoFile.length() + audioFile.length()
+                val total = item.optLong("total", 0).takeIf { it > 0 } ?: received
+                item.put("phase", "processing").put("progress", 1).put("received", received).put("total", total).put("speedBps", 0).put("etaSeconds", 0)
+                saveItem(item)
+                notify(item.optString("id"), item.optString("title"), "Processing", 1.0, true)
                 muxMp4(videoFile, audioFile, outputFile)
                 openTarget(item.getString("targetUri"), "wt").use { stream -> outputFile.inputStream().use { input -> input.copyTo(stream) } }
             } finally {
@@ -251,6 +260,7 @@ class DownloadService : Service() {
             }
             return
         }
+        item.put("phase", "video")
         withRetries { downloadSingleFile(url, Uri.parse(item.getString("targetUri")), item) }
     }
 
@@ -330,7 +340,7 @@ class DownloadService : Service() {
         }
     }
 
-    private fun downloadToFile(url: String, target: java.io.File, item: JSONObject, base: Double, weight: Double) {
+    private fun downloadToFile(url: String, target: java.io.File, item: JSONObject, completedBytes: Long, expectedTotal: Long, phase: String) {
         val existing = target.length()
         val request = URL(url).openConnection() as HttpURLConnection
         connections[item.optString("id")] = request
@@ -346,7 +356,13 @@ class DownloadService : Service() {
             val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
             if (existing > 0 && !append) Log.w(TAG, "resume rejected id=${item.optString("id")} existing=$existing code=$response; restarting")
             val receivedStart = if (append) existing else 0L
-            val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
+            val componentTotal = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
+            val total = when {
+                expectedTotal > 0 -> expectedTotal
+                componentTotal > 0 -> completedBytes + componentTotal
+                else -> -1L
+            }
+            item.put("phase", phase)
             java.io.FileOutputStream(target, append).use { output ->
                 request.inputStream.use { input ->
                     val buffer = ByteArray(64 * 1024)
@@ -364,19 +380,20 @@ class DownloadService : Service() {
                         val now = System.nanoTime()
                         val elapsed = (now - lastTime) / 1_000_000_000.0
                         val speed = if (elapsed > 0) ((received - lastBytes) / elapsed).toLong() else 0L
-                        val progress = if (total > 0) received.toDouble() / total else 0.0
-                        if (speed > 0 && lastLoggedSpeed > 0 && (speed > lastLoggedSpeed * 2 || speed * 2 < lastLoggedSpeed)) Log.w(TAG, "speed jump id=${item.optString("id")} $lastLoggedSpeed->$speed received=$received")
-                        if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$received total=$total")
+                        val aggregateReceived = completedBytes + received
+                        val progress = if (total > 0) (aggregateReceived.toDouble() / total).coerceIn(0.0, 1.0) else 0.0
+                        if (speed > 0 && lastLoggedSpeed > 0 && (speed > lastLoggedSpeed * 2 || speed * 2 < lastLoggedSpeed)) Log.w(TAG, "speed jump id=${item.optString("id")} $lastLoggedSpeed->$speed received=$aggregateReceived")
+                        if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$aggregateReceived total=$total")
                         if (received > lastBytes) lastProgressTime = now
                         lastLoggedSpeed = speed
-                        item.put("progress", base + progress * weight).put("received", received).put("total", total).put("speedBps", speed)
-                        if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
+                        item.put("progress", progress).put("received", aggregateReceived).put("total", total).put("speedBps", speed)
+                        if (speed > 0 && total > 0) item.put("etaSeconds", ((total - aggregateReceived).coerceAtLeast(0) / speed).toLong())
                         lastBytes = received
                         lastTime = now
                         saveItem(item)
-                        notify(item.optString("id"), item.optString("title"), "Downloading ${"%.0f".format(item.optDouble("progress") * 100)}%", item.optDouble("progress"), true)
+                        notify(item.optString("id"), item.optString("title"), "Downloading ${"%.0f".format(progress * 100)}%", progress, true)
                     }
-                    if (total > 0 && received != total) throw IOException("Incomplete download: $received/$total")
+                    if (componentTotal > 0 && received != componentTotal) throw IOException("Incomplete download: $received/$componentTotal")
                 }
             }
         } finally {
@@ -452,25 +469,23 @@ class DownloadService : Service() {
         targetFile(uri.toString())?.length() ?: contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.coerceAtLeast(0) } ?: 0
     } catch (_: Exception) { 0 }
 
-    private fun rename(uriString: String, finalName: String) {
-        if (finalName.isBlank()) return
-        targetFile(uriString)?.let {
-            if (!it.renameTo(java.io.File(it.parentFile, finalName)) && it.name != finalName) {
-                throw IOException("Unable to rename download target")
-            }
-            return
+    private fun rename(uriString: String, finalName: String): String {
+        if (finalName.isBlank()) return uriString
+        targetFile(uriString)?.let { source ->
+            val target = java.io.File(source.parentFile, finalName)
+            if (!source.renameTo(target) && source.name != finalName) throw IOException("Unable to rename download target")
+            return "data://${target.relativeTo(java.io.File(filesDir, "data")).path}"
         }
         val uri = Uri.parse(uriString)
         if (uri.authority == MediaStore.AUTHORITY) {
             if (contentResolver.update(uri, ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, finalName)
                 }, null, null) == 0) throw IOException("Unable to rename download target")
-            return
+            return uriString
         }
         val target = DocumentFile.fromSingleUri(this, uri)
-        if (target?.name != finalName && target?.renameTo(finalName) != true) {
-            throw IOException("Unable to rename download target")
-        }
+        if (target?.name != finalName && target?.renameTo(finalName) != true) throw IOException("Unable to rename download target")
+        return target.uri.toString()
     }
 
     private fun delete(uriString: String) {

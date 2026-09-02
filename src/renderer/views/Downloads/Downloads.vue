@@ -113,6 +113,7 @@ const downloads = ref([])
 const searchQuery = ref('')
 const filteredDownloads = computed(() => filterDownloads(downloads.value, searchQuery.value))
 let queueTimer = null
+let sabrRecoveryRunning = false
 
 function formatBytes(value) {
   if (!Number.isFinite(value) || value <= 0) return '0 B'
@@ -123,7 +124,7 @@ function formatBytes(value) {
 
 function formatProgress(download) {
   const percent = `${Math.round(download.progress * 100)}%`
-  const bytes = `${formatBytes(download.received)} / ${formatBytes(download.total)}`
+  const bytes = `${formatBytes(download.received)} / ${download.totalExact === false ? '~' : ''}${formatBytes(download.total)}`
   const speed = download.speedBps > 0 ? ` · ${formatBytes(download.speedBps)}/s` : ''
   return `${percent} · ${bytes}${speed}`
 }
@@ -189,7 +190,7 @@ function control(download, action) {
       if (action === 'pause') {
         android.updateDownloadNotification?.(download.downloadId, download.title, 'paused', Math.round((download.progress || 0) * 100), download.speedBps || 0, download.received || 0, download.total || 0)
       } else {
-        android.finishDownloadNotification?.(download.downloadId, download.title, false)
+        android.finishDownloadNotification?.(download.downloadId)
       }
     } else if (action === 'resume' || action === 'retry') {
       download.status = 'queued'
@@ -211,6 +212,11 @@ function play(download) {
 
 async function remove(download) {
   console.warn('[Downloads] remove start', { id: download.downloadId, hasOfflineUri: Boolean(download.offlineUri), status: download.status })
+  const active = ['queued', 'downloading', 'paused'].includes(download.status)
+  if (active) {
+    control(download, 'cancel')
+    if (!download.manifestSrc) await new Promise(resolve => setTimeout(resolve, 300))
+  }
   if (download.offlineUri) {
     const player = new shaka.Player(document.createElement('video'))
     const storage = new shaka.offline.Storage(player)
@@ -223,56 +229,51 @@ async function remove(download) {
   } else {
     window.Android?.deleteFile(download.localPath)
   }
-  if (['queued', 'downloading', 'paused'].includes(download.status)) control(download, 'cancel')
   downloads.value = downloads.value.filter(item => item.downloadId !== download.downloadId)
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
   console.warn('[Downloads] remove complete', { id: download.downloadId, remaining: downloads.value.length })
 }
 
 async function recoverSabrDownloads() {
-  const download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData)
-  if (!download) return
-  download.status = 'downloading'
-  download.progress = 0
-  download.received = 0
-  download.total = 0
-  download.speedBps = 0
-  download.etaSeconds = 0
-  updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
+  if (sabrRecoveryRunning) return
+  sabrRecoveryRunning = true
   try {
-    download.offlineUri = await recoverSabrDownload(download, (content, progress, total) => {
-      if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
-      download.progress = progress
-      download.received = content?.size || 0
-      download.total = total || 0
-      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total })
-    })
-    download.status = 'completed'
-    download.progress = 1
-    download.interrupted = false
-    updateDownloadMetadata(download.downloadId, {
-      status: 'completed',
-      progress: 1,
-      offlineUri: download.offlineUri,
-      completedAt: Date.now(),
-      interrupted: false
-    })
-  } catch (error) {
-    if (isSabrDownloadPaused(download.downloadId)) {
-      download.status = 'paused'
-      download.error = null
-      updateDownloadMetadata(download.downloadId, { status: 'paused', interrupted: true, error: null })
-      return
+    let download
+    while ((download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData))) {
+      Object.assign(download, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
+      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
+      try {
+        download.offlineUri = await recoverSabrDownload(download, (content, progress, total, networkBytes, totalExact) => {
+          if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
+          Object.assign(download, { progress, received: content?.size || 0, total: total || 0, networkBytes, totalExact })
+          updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total, networkBytes, totalExact })
+        })
+        Object.assign(download, { status: 'completed', progress: 1, received: download.received, interrupted: false })
+        updateDownloadMetadata(download.downloadId, {
+          status: 'completed',
+          progress: 1,
+          received: download.received,
+          total: download.total,
+          totalExact: download.totalExact && download.received === download.total,
+          offlineUri: download.offlineUri,
+          completedAt: Date.now(),
+          interrupted: false
+        })
+      } catch (error) {
+        if (isSabrDownloadPaused(download.downloadId)) {
+          Object.assign(download, { status: 'paused', error: null })
+          updateDownloadMetadata(download.downloadId, { status: 'paused', interrupted: true, error: null })
+        } else if (isSabrDownloadCanceled(download.downloadId)) {
+          Object.assign(download, { status: 'canceled', error: null })
+          updateDownloadMetadata(download.downloadId, { status: 'canceled', error: null })
+        } else {
+          Object.assign(download, { status: 'failed', error: error.message || 'SABR recovery failed' })
+          updateDownloadMetadata(download.downloadId, { status: 'failed', error: download.error })
+        }
+      }
     }
-    if (isSabrDownloadCanceled(download.downloadId)) {
-      download.status = 'canceled'
-      download.error = null
-      updateDownloadMetadata(download.downloadId, { status: 'canceled', error: null })
-      return
-    }
-    download.status = 'failed'
-    download.error = error.message || 'SABR recovery failed'
-    updateDownloadMetadata(download.downloadId, { status: 'failed', error: download.error })
+  } finally {
+    sabrRecoveryRunning = false
   }
 }
 

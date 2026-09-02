@@ -599,12 +599,10 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun finishDownloadNotification(downloadId: String, title: String, success: Boolean): Boolean {
+    fun finishDownloadNotification(downloadId: String): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return false
-        val notificationId = downloadNotificationId(downloadId)
-        notificationManager.cancel(notificationId)
-        notificationManager.cancel(notificationId)
+        notificationManager.cancel(downloadNotificationId(downloadId))
         return true
     }
 

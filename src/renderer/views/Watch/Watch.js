@@ -913,7 +913,8 @@ export default defineComponent({
               mimeType: format.mime_type,
               width: format.width,
               height: format.height,
-              bitrate: format.bitrate
+              bitrate: format.bitrate,
+              contentLength: Number(format.content_length || format.contentLength || 0)
             }))
 
             if (result.captions) {
@@ -1211,7 +1212,8 @@ export default defineComponent({
               mimeType: format.type,
               width: format.width,
               height: format.height,
-              bitrate: parseInt(format.bitrate)
+              bitrate: parseInt(format.bitrate),
+              contentLength: Number(format.clen || format.contentLength || 0)
             }))
 
             if (!process.env.SUPPORTS_LOCAL_API || this.proxyVideos) {
@@ -1408,6 +1410,7 @@ export default defineComponent({
         manifestSrc: this.manifestSrc,
         manifestMimeType: this.manifestMimeType,
         sabrData: this.sabrData,
+        engine: 'sabr',
         status: 'downloading',
         progress: 0,
         createdAt: Date.now()
@@ -1415,6 +1418,8 @@ export default defineComponent({
       let lastProgress = 0
       let lastReceived = 0
       let lastTotal = 0
+      let lastNetworkBytes = 0
+      let lastTotalExact = false
       let lastSpeedBps = 0
       const speedSamples = []
       try {
@@ -1425,7 +1430,7 @@ export default defineComponent({
           manifestSrc: this.manifestSrc,
           manifestMimeType: this.manifestMimeType,
           sabrData: this.sabrData
-        }, (storedContent, progress, snapshotTotal) => {
+        }, (storedContent, progress, snapshotTotal, networkBytes, totalExact) => {
           if (isSabrDownloadPaused(downloadId) || isSabrDownloadCanceled(downloadId)) return
           const now = Date.now()
           const received = storedContent?.size || 0
@@ -1440,18 +1445,20 @@ export default defineComponent({
               : averageSpeedBps
           }
           const speedBps = lastSpeedBps
-          const total = progress >= 1 ? received : snapshotTotal
+          const total = snapshotTotal
           lastProgress = progress
           lastReceived = received
           lastTotal = total
+          lastNetworkBytes = networkBytes
+          lastTotalExact = totalExact
           lastSpeedBps = speedBps
           lastProgressAt = now
           lastBytes = received
-          updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, transportTotal: total, speedBps })
+          updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, networkBytes, totalExact, speedBps })
           const notification = getDownloadNotificationPayload({ downloadId, title: this.videoTitle, status: 'downloading', progress, speedBps, received, total })
           android.updateDownloadNotification?.(notification.downloadId, notification.title, 'downloading', notification.progress, speedBps, received, total)
           window.dispatchEvent(new CustomEvent('android-download', {
-            detail: { id: downloadId, status: 'downloading', progress, received, total, speedBps }
+            detail: { id: downloadId, status: 'downloading', progress, received, total, networkBytes, totalExact, speedBps }
           }))
         }, maxHeight)
         if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
@@ -1461,11 +1468,13 @@ export default defineComponent({
           progress: 1,
           offlineUri: content.offlineUri,
           received: content.size || 0,
-          total: content.size || 0,
-          transportTotal: lastTotal,
+          total: lastTotal || content.size || 0,
+          networkBytes: lastNetworkBytes,
+          totalExact: lastTotalExact && content.size === lastTotal,
+          speedBps: 0,
           completedAt: Date.now()
         })
-        android.finishDownloadNotification?.(downloadId, this.videoTitle, true)
+        android.finishDownloadNotification?.(downloadId)
         showToast(this.t('Video.Download complete'))
       } catch (error) {
         if (isSabrDownloadPaused(downloadId)) {
@@ -1475,11 +1484,11 @@ export default defineComponent({
         }
         if (isSabrDownloadCanceled(downloadId)) {
           updateDownloadMetadata(downloadId, { status: 'canceled', error: null })
-          android.finishDownloadNotification?.(downloadId, this.videoTitle, false)
+          android.finishDownloadNotification?.(downloadId)
           return
         }
         updateDownloadMetadata(downloadId, { status: 'failed', error: error?.message || String(error) })
-        android.finishDownloadNotification?.(downloadId, this.videoTitle, false)
+        android.finishDownloadNotification?.(downloadId)
         console.error(`[Downloads] SABR download failed: id=${downloadId} code=${error?.code} category=${error?.category} message=${error?.message}`)
         showToast(this.t('Video.Download unavailable'))
       }
@@ -1500,6 +1509,9 @@ export default defineComponent({
           thumbnail: this.thumbnail,
           videoUrl: formats.video.url,
           audioUrl: formats.audio?.url ?? null,
+          videoTotal: Number(formats.video.contentLength || formats.video.content_length || formats.video.clen || 0),
+          audioTotal: Number(formats.audio?.contentLength || formats.audio?.content_length || formats.audio?.clen || 0),
+          selectedFormat: formats.label,
           sourceBackend: this.backendPreference,
           metadata: this.getDownloadMetadata()
         })

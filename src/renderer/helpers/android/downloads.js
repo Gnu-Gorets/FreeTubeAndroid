@@ -66,6 +66,16 @@ export function selectDownloadFormats(progressiveFormats, adaptiveFormats = []) 
   return getDownloadFormats(progressiveFormats, adaptiveFormats)[0] ?? null
 }
 
+export function selectSabrDownloadTrack(tracks = [], maxHeight) {
+  const variants = tracks.filter(track => track.type === 'variant' && track.height != null)
+  const eligible = variants.filter(track => track.height <= (maxHeight || Infinity))
+  const candidates = eligible.length > 0 ? eligible : variants
+  const height = Math.max(...candidates.map(track => track.height), 0)
+  return candidates
+    .filter(track => track.height === height)
+    .sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0] ?? null
+}
+
 const sabrOperations = new Map()
 const sabrStarting = new Set()
 const sabrCanceled = new Set()
@@ -128,46 +138,40 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
     transportBytes += bytes
   })
   try {
+    if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped before start')
     await player.load(manifestSrc, null, download.manifestMimeType)
     manifestRef.value = player.getManifest()
-    const sizeEstimate = await estimateSabrSize(manifestRef.value, maxHeight)
+    const selectedTrack = selectSabrDownloadTrack(player.getVariantTracks(), maxHeight)
+    if (!selectedTrack) throw new Error('SABR download has no selectable track')
+    const sizeEstimate = await estimateSabrSize(manifestRef.value, selectedTrack)
     stableTotal = sizeEstimate.total
     log('SABR size estimate', {
       id: download.downloadId,
       total: stableTotal,
       exact: sizeEstimate.exact,
-      source: 'manifest byte ranges',
+      source: 'selected track byte ranges',
       maxHeight,
-      candidates: manifestRef.value.variants
-        ?.filter(variant => variant.video?.height && variant.video.height <= (maxHeight || Infinity))
-        .map(variant => ({ height: variant.video.height, videoSize: variant.video.size || 0, audioSize: variant.audio?.size || 0, bandwidth: variant.bandwidth || 0 }))
+      selected: { height: selectedTrack.height, bandwidth: selectedTrack.bandwidth, video: selectedTrack.originalVideoId, audio: selectedTrack.originalAudioId }
     })
     storage = new shaka.offline.Storage(player)
     storage.configure({
       offline: {
-        trackSelectionCallback: maxHeight
-          ? tracks => {
-            const variants = tracks.filter(track => track.type === 'variant' && track.height != null)
-            const heights = variants.filter(track => track.height <= maxHeight).map(track => track.height)
-            const height = Math.max(...heights, Math.min(...variants.map(track => track.height)))
-            const selectedVariant = variants
-              .filter(track => track.height === height)
-              .sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0]
-            return tracks.filter(track => track.type !== 'variant' || track === selectedVariant)
-          }
-          : undefined,
+        trackSelectionCallback: tracks => {
+          const match = tracks.find(track => track.type === 'variant' &&
+            track.originalVideoId === selectedTrack.originalVideoId &&
+            track.originalAudioId === selectedTrack.originalAudioId)
+          return [match || selectSabrDownloadTrack(tracks, maxHeight)].filter(Boolean)
+        },
         progressCallback(content, progress) {
           const now = Date.now()
           const percent = Math.round(progress * 100)
-          const transportSnapshot = getProgressSnapshot(content, transportBytes, progress, stableTotal)
           const snapshot = getStableProgressSnapshot(content, transportBytes, progress, stableTotal)
-          stableTotal = snapshot.total
           const elapsed = (now - lastTelemetryAt) / 1000
           const speedBps = elapsed > 0 ? Math.max(0, Math.round((snapshot.received - lastTelemetryReceived) / elapsed)) : 0
           const speedJump = speedBps > 0 && lastTelemetrySpeed > 0 && (speedBps > lastTelemetrySpeed * 2 || speedBps * 2 < lastTelemetrySpeed)
           const mismatch = snapshot.progress < 0 || snapshot.progress > 1
           if (speedJump || mismatch || now - lastTelemetryAt >= 5000 || percent === 0 || percent === 100) {
-            log('SABR telemetry', { id: download.downloadId, received: snapshot.received, total: snapshot.total, transportTotal: transportSnapshot.total, progress: snapshot.progress, speedBps, speedJump, mismatch })
+            log('SABR telemetry', { id: download.downloadId, received: snapshot.received, total: snapshot.total, networkBytes: transportBytes, totalExact: sizeEstimate.exact, progress: snapshot.progress, speedBps, speedJump, mismatch })
             lastTelemetryAt = now
             lastTelemetryReceived = snapshot.received
             lastTelemetrySpeed = speedBps
@@ -177,15 +181,17 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
             log('SABR store progress', { id: download.downloadId, percent })
           }
           if (!sabrPaused.has(download.downloadId) && !sabrCanceled.has(download.downloadId)) {
-            onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total)
+            onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total, transportBytes, sizeEstimate.exact)
           }
         }
       }
     })
+    if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped before storage')
     const operation = storage.store(manifestSrc, {}, download.manifestMimeType)
     sabrOperations.set(download.downloadId, operation)
     const content = await operation.promise
-    log('SABR store complete', { id: download.downloadId, hasOfflineUri: Boolean(content?.offlineUri), size: content?.size || 0 })
+    if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped')
+    log('SABR store complete', { id: download.downloadId, hasOfflineUri: Boolean(content?.offlineUri), size: content?.size || 0, estimatedTotal: stableTotal, totalExact: sizeEstimate.exact && content?.size === stableTotal })
     if (!content?.offlineUri || !(content?.size > 0)) {
       console.error(`[SABR] storage returned invalid content: ${JSON.stringify(content)}`)
       throw new Error('Offline storage returned no URI')
@@ -236,52 +242,57 @@ export function mergeNativeDownload(download, native) {
   return {
     ...download,
     status: native.status,
+    localPath: native.targetUri || download.localPath,
     progress: native.progress,
     received: native.received,
     total: native.total,
+    totalExact: native.total > 0,
+    phase: native.phase,
     speedBps: native.speedBps,
     etaSeconds: native.etaSeconds,
     error: native.error
   }
 }
 
-export function getProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
-  const received = Math.max(content?.size || 0, transportBytes || 0)
+export function getProgressSnapshot(content, _transportBytes, progress, knownTotal = 0) {
+  const received = Math.max(content?.size || 0, 0)
   const estimatedTotal = progress > 0 ? Math.round(received / progress) : 0
   return {
     received,
-    total: knownTotal > 0 ? Math.max(knownTotal, received) : Math.max(received, estimatedTotal)
+    total: knownTotal > 0 ? knownTotal : Math.max(received, estimatedTotal)
   }
 }
 
 export function getStableProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
-  const snapshot = getProgressSnapshot(content, transportBytes, progress, knownTotal)
-  if (progress >= 1) return { received: snapshot.received, total: snapshot.received, progress: 1 }
-  return { received: snapshot.received, total: snapshot.total, progress }
+  return {
+    ...getProgressSnapshot(content, transportBytes, progress, knownTotal),
+    progress: Math.max(0, Math.min(1, progress))
+  }
 }
 
-async function estimateSabrSize(manifest, maxHeight) {
-  const variants = manifest?.variants?.filter(variant => variant.video?.height && variant.video.height <= (maxHeight || Infinity)) || []
-  const selected = variants.sort((a, b) => (b.video?.height || 0) - (a.video?.height || 0))[0]
+async function estimateSabrSize(manifest, selectedTrack) {
+  const selected = manifest?.variants?.find(variant =>
+    variant.video?.originalId === selectedTrack?.originalVideoId &&
+    variant.audio?.originalId === selectedTrack?.originalAudioId)
   const streams = [selected?.video, selected?.audio].filter(Boolean)
   await Promise.all(streams.map(stream => stream.createSegmentIndex?.()))
   let total = 0
+  let exact = streams.length > 0
   for (const stream of streams) {
-    let initSize = 0
-    let segmentSize = 0
+    const initSize = stream.segmentIndex?.get(0)?.initSegmentReference?.getSize?.() || 0
     const references = stream.segmentIndex?.getNumReferences?.() || 0
+    let segmentSize = 0
+    if (references === 0 || initSize <= 0) exact = false
     for (let index = 0; index < references; index++) {
       const reference = stream.segmentIndex.get(index)
-      if (!initSize && reference?.initSegmentReference) {
-        initSize = reference.initSegmentReference.getSize()
-      }
       const start = reference?.getStartByte()
       const end = reference?.getEndByte()
       if (Number.isFinite(start) && Number.isFinite(end) && end >= start) segmentSize += end - start + 1
+      else exact = false
     }
     total += initSize + segmentSize
   }
-  if (total > 0) return { total, exact: true }
+  if (total > 0) return { total, exact }
   return { total: (selected?.video?.size || 0) + (selected?.audio?.size || 0), exact: false }
 }
 
@@ -293,6 +304,9 @@ export function mergeDownloadProgress(download, detail, native = null) {
     progress: detail.progress ?? (detail.total > 0 ? detail.received / detail.total : null),
     received: detail.received,
     total: detail.total,
+    totalExact: detail.totalExact ?? download.totalExact,
+    networkBytes: detail.networkBytes ?? download.networkBytes,
+    phase: detail.phase ?? download.phase,
     speedBps: detail.speedBps,
     etaSeconds: detail.etaSeconds,
     error: detail.error || null
@@ -305,7 +319,7 @@ export function updateDownloadMetadata(downloadId, changes) {
   if (!download) return
   const statusChanged = changes.status && changes.status !== download.status
   Object.assign(download, changes)
-  if (statusChanged || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, speedBps: changes.speedBps })
+  if (statusChanged || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, networkBytes: changes.networkBytes, totalExact: changes.totalExact, speedBps: changes.speedBps })
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
 }
 
@@ -346,7 +360,8 @@ export async function downloadProgressiveVideo(video) {
     thumbnail: video.thumbnail ?? '',
     ...video.metadata,
     sourceBackend: video.sourceBackend ?? 'unknown',
-    selectedFormat: video.audioUrl ? 'adaptive-mp4' : 'progressive',
+    engine: 'native',
+    selectedFormat: video.selectedFormat || (video.audioUrl ? 'adaptive-mp4' : 'progressive'),
     localPath: dialog.uri,
     status: 'downloading',
     createdAt: Date.now()
@@ -358,6 +373,8 @@ export async function downloadProgressiveVideo(video) {
       title: video.title,
       videoUrl: video.videoUrl,
       audioUrl: video.audioUrl || '',
+      videoTotal: video.videoTotal || 0,
+      audioTotal: video.audioTotal || 0,
       targetUri: dialog.uri,
       finalName: fileName
     }))
@@ -379,11 +396,6 @@ export async function downloadProgressiveVideo(video) {
           if (item.status === 'completed') {
             metadata.fileName = fileName
             metadata.completedAt ??= Date.now()
-          }
-          if (['downloading', 'paused'].includes(item.status)) {
-            android.updateDownloadNotification?.(downloadId, video.title, item.status, Math.round((item.progress || 0) * 100), item.speedBps || 0, item.received || 0, item.total || 0)
-          } else if (['completed', 'failed', 'canceled'].includes(item.status)) {
-            android.finishDownloadNotification?.(downloadId, video.title, item.status === 'completed')
           }
           localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
           if (['completed', 'failed', 'canceled'].includes(item.status)) {
@@ -417,7 +429,7 @@ export async function downloadProgressiveVideo(video) {
           return
         }
         metadata.status = 'completed'
-        android.finishDownloadNotification?.(downloadId, video.title, true)
+        android.finishDownloadNotification?.(downloadId)
         metadata.fileName = fileName
         metadata.completedAt = Date.now()
         localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
@@ -426,7 +438,7 @@ export async function downloadProgressiveVideo(video) {
         window.removeEventListener(eventName, onEvent)
         android.deleteFile(dialog.uri)
         metadata.status = event.detail.status
-        android.finishDownloadNotification?.(downloadId, video.title, false)
+        android.finishDownloadNotification?.(downloadId)
         metadata.error = event.detail.error || null
         localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
         reject(new Error(event.detail.error || 'Download failed'))

@@ -35,7 +35,7 @@ test('Android notification defines separate action intents', () => {
   const source = readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
   for (const action of ['pause', 'resume', 'retry', 'cancel']) assert.match(source, new RegExp(`downloadAction\\(downloadId, "[^\\"]+", "${action}"\\)`))
   assert.ok(source.includes('downloadNotificationId("$downloadId:$action")'))
-  assert.ok(source.includes('notificationManager.cancel(notificationId)'))
+  assert.ok(source.includes('notificationManager.cancel(downloadNotificationId(downloadId))'))
 })
 
 test('Android default downloads use public Freetube folder', () => {

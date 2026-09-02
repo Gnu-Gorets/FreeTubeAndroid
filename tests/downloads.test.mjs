@@ -27,7 +27,7 @@ const context = vm.createContext({
 })
 vm.runInContext(source, context)
 
-const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, recordDownloadMetadata, updateDownloadMetadata } = context
+const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, recordDownloadMetadata, selectSabrDownloadTrack, updateDownloadMetadata } = context
 
 test('SABR qualities deduplicate variants and use quality labels', () => {
   const manifest = `data:application/sabr+json,${encodeURIComponent(JSON.stringify({
@@ -73,6 +73,16 @@ test('adaptive formats share one best audio track', () => {
   assert.equal(formats.length, 1)
   assert.equal(formats[0].audio.url, 'audio-high')
   assert.equal(formats[0].label, '720p (adaptive)')
+})
+
+test('SABR storage and size estimation select same highest-bandwidth track', () => {
+  const low = { type: 'variant', height: 1080, bandwidth: 10, originalVideoId: 'video-low', originalAudioId: 'audio' }
+  const high = { type: 'variant', height: 1080, bandwidth: 20, originalVideoId: 'video-high', originalAudioId: 'audio' }
+  const tooLarge = { type: 'variant', height: 1440, bandwidth: 30, originalVideoId: 'video-1440', originalAudioId: 'audio' }
+  const text = { type: 'text', language: 'en' }
+  assert.equal(selectSabrDownloadTrack([low, tooLarge, text, high], 1080), high)
+  assert.equal(selectSabrDownloadTrack([low, tooLarge, text, high], 1440), tooLarge)
+  assert.equal(selectSabrDownloadTrack([text], 1080), null)
 })
 
 test('invalid SABR manifest returns no quality options', () => {
@@ -153,6 +163,20 @@ test('native finalization separates MediaStore publish from SAF targets', () => 
   assert.ok(downloadServiceSource.includes('!targetExists(item.optString("targetUri"))'))
   assert.match(downloadServiceSource, /Unable to rename download target/)
   assert.ok(downloadServiceSource.includes('MediaStore.MediaColumns.DISPLAY_NAME'))
+  assert.ok(downloadServiceSource.includes('item.put("targetUri", rename('))
+})
+
+test('native adaptive progress aggregates video and audio bytes', () => {
+  assert.ok(downloadServiceSource.includes('val aggregateReceived = completedBytes + received'))
+  assert.ok(downloadServiceSource.includes('videoTotal + audioTotal'))
+  assert.ok(!downloadServiceSource.includes('0.0, 0.5'))
+  assert.ok(!downloadServiceSource.includes('0.5, 0.5'))
+})
+
+test('direct download keeps selected quality and source sizes', () => {
+  assert.ok(watchSource.includes('selectedFormat: formats.label'))
+  assert.ok(watchSource.includes('videoTotal: Number(formats.video.contentLength'))
+  assert.ok(source.includes("selectedFormat: video.selectedFormat ||"))
 })
 
 test('native queue progress replaces stale UI progress fields', () => {
@@ -160,22 +184,23 @@ test('native queue progress replaces stale UI progress fields', () => {
     status: 'downloading', progress: 0.4, received: 40, total: 100, speedBps: 30, etaSeconds: 2, error: null
   })
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-    downloadId: 'one', status: 'downloading', progress: 0.4, received: 40, total: 100, speedBps: 30, etaSeconds: 2, error: null
+    downloadId: 'one', status: 'downloading', progress: 0.4, received: 40, total: 100, totalExact: true, speedBps: 30, etaSeconds: 2, error: null
   })
 })
 
-test('SABR progress snapshot uses transport bytes before storage catches up', () => {
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 0 }, 200, 0.1))), { received: 200, total: 2000 })
+test('SABR progress uses stored bytes instead of transport overhead', () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 0 }, 200, 0.1))), { received: 0, total: 0 })
   assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 200, 0.5))), { received: 500, total: 1000 })
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 700 }, 900, 0.6, 2000))), { received: 900, total: 2000 })
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 700 }, 900, 0.6, 2000))), { received: 700, total: 2000 })
 })
 
-test('SABR total never falls below received bytes', () => {
-  const first = getStableProgressSnapshot({ size: 100 }, 100, 0.1)
-  const second = getStableProgressSnapshot({ size: 1500 }, 1500, 0.5, first.total)
+test('SABR known total stays fixed through completion', () => {
+  const first = getStableProgressSnapshot({ size: 100 }, 100, 0.1, 1000)
+  const second = getStableProgressSnapshot({ size: 1000 }, 1500, 1, first.total)
   assert.equal(first.total, 1000)
-  assert.equal(second.total, 1500)
-  assert.equal(second.progress, 0.5)
+  assert.equal(second.total, 1000)
+  assert.equal(second.received, 1000)
+  assert.equal(second.progress, 1)
 })
 
 test('SABR progress event updates bytes, speed and percent immediately', () => {
@@ -187,15 +212,14 @@ test('SABR progress event updates bytes, speed and percent immediately', () => {
   })
 })
 
-test('native queue notifications sync title and terminal state', () => {
-  assert.ok(source.includes('android.updateDownloadNotification?.(downloadId, video.title, item.status'))
-  assert.ok(source.includes('android.finishDownloadNotification?.(downloadId, video.title, item.status === \'completed\')'))
+test('native queue leaves progress notifications to DownloadService', () => {
+  assert.ok(!source.includes('android.updateDownloadNotification?.(downloadId, video.title, item.status'))
+  assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title")'))
 })
 
-test('SABR notifications use video title for every terminal state', () => {
+test('SABR notifications use video title and clear every terminal state', () => {
   assert.ok(watchSource.includes('getDownloadNotificationPayload({ downloadId, title: this.videoTitle'))
-  assert.ok(watchSource.includes('android.finishDownloadNotification?.(downloadId, this.videoTitle, true)'))
-  assert.ok(watchSource.includes('android.finishDownloadNotification?.(downloadId, this.videoTitle, false)'))
+  assert.equal(watchSource.match(/android\.finishDownloadNotification\?\.\(downloadId\)/g)?.length, 3)
 })
 
 test('metadata update changes only matching download', () => {
