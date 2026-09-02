@@ -143,7 +143,7 @@ tap_visible_ui_text() {
 
 tap_delete_after_last_completed() {
   local completed delete x1 y1 x2 y2 completed_y2
-  completed=$(adb_shell cat /sdcard/window.xml | grep -o 'text="completed"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | grep -v 'bounds="\[0,0\]\[0,0\]"' | head -1)
+  completed=$(adb_shell cat /sdcard/window.xml | grep -o 'text="completed"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | grep -v 'bounds="\[0,0\]\[0,0\]"' | tail -1)
   [[ "$completed" =~ bounds=\"\[[0-9]+,[0-9]+\]\[([0-9]+),([0-9]+)\]\" ]] || return 1
   completed_y2="${BASH_REMATCH[2]}"
   while read -r delete; do
@@ -640,11 +640,12 @@ download_sabr_pause_resume() {
   open_download_video || return 1
   adb_shell input tap 185 830
   sleep 2
-  adb_shell input tap 220 940
+  # Select 720p to leave enough time for pause action before completion.
+  adb_shell input tap 160 875
   adb_shell input tap 535 1540
   wait_for_ui_text downloading || return 1
   tap_visible_ui_text Pause || return 1
-  sleep 2
+  wait_for_ui_text paused || return 1
   dump_ui download-sabr-pause || return 1
   grep -q 'paused' "$ARTIFACT_DIR/download-sabr-pause.xml" || return 1
   tap_visible_ui_text Resume || return 1
@@ -725,7 +726,7 @@ download_delete() {
   # Delete last completed entry and verify completed count decreases.
   local before_count after_count
   before_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
-  tap_visible_ui_text Delete || return 1
+  tap_delete_after_last_completed || return 1
   sleep 3
   dump_ui download-delete-after || return 1
   after_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)

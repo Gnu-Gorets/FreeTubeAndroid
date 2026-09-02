@@ -241,6 +241,7 @@ async function recoverSabrDownloads() {
   updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
   try {
     download.offlineUri = await recoverSabrDownload(download, (content, progress, total) => {
+      if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
       download.progress = progress
       download.received = content?.size || 0
       download.total = total || 0

@@ -176,7 +176,9 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
             lastLoggedPercent = percent
             log('SABR store progress', { id: download.downloadId, percent })
           }
-          onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total)
+          if (!sabrPaused.has(download.downloadId) && !sabrCanceled.has(download.downloadId)) {
+            onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total)
+          }
         }
       }
     })
@@ -245,16 +247,17 @@ export function mergeNativeDownload(download, native) {
 
 export function getProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
   const received = Math.max(content?.size || 0, transportBytes || 0)
+  const estimatedTotal = progress > 0 ? Math.round(received / progress) : 0
   return {
     received,
-    total: knownTotal > 0 ? knownTotal : progress > 0 ? Math.round(received / progress) : 0
+    total: knownTotal > 0 ? Math.max(knownTotal, received) : Math.max(received, estimatedTotal)
   }
 }
 
 export function getStableProgressSnapshot(content, transportBytes, progress, knownTotal = 0) {
   const snapshot = getProgressSnapshot(content, transportBytes, progress, knownTotal)
   if (progress >= 1) return { received: snapshot.received, total: snapshot.received, progress: 1 }
-  return { received: snapshot.received, total: knownTotal > 0 ? knownTotal : snapshot.total, progress }
+  return { received: snapshot.received, total: snapshot.total, progress }
 }
 
 async function estimateSabrSize(manifest, maxHeight) {

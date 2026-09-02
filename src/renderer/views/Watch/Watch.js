@@ -1426,6 +1426,7 @@ export default defineComponent({
           manifestMimeType: this.manifestMimeType,
           sabrData: this.sabrData
         }, (storedContent, progress, snapshotTotal) => {
+          if (isSabrDownloadPaused(downloadId) || isSabrDownloadCanceled(downloadId)) return
           const now = Date.now()
           const received = storedContent?.size || 0
           const elapsed = (now - lastProgressAt) / 1000

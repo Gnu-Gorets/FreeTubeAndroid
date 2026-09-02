@@ -170,11 +170,11 @@ test('SABR progress snapshot uses transport bytes before storage catches up', ()
   assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 700 }, 900, 0.6, 2000))), { received: 900, total: 2000 })
 })
 
-test('SABR total stays fixed after first estimate', () => {
+test('SABR total never falls below received bytes', () => {
   const first = getStableProgressSnapshot({ size: 100 }, 100, 0.1)
-  const second = getStableProgressSnapshot({ size: 500 }, 500, 0.5, first.total)
+  const second = getStableProgressSnapshot({ size: 1500 }, 1500, 0.5, first.total)
   assert.equal(first.total, 1000)
-  assert.equal(second.total, 1000)
+  assert.equal(second.total, 1500)
   assert.equal(second.progress, 0.5)
 })
 
