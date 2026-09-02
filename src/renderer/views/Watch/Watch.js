@@ -46,7 +46,7 @@ import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { getDownloadNotificationPayload } from '../../helpers/android/download-notification.mjs'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, getDownloadFormats, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, exportSabrDownload, getDownloadFormats, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1462,16 +1462,20 @@ export default defineComponent({
           }))
         }, maxHeight)
         if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
-        console.warn('[Downloads] SABR download completed', { id: downloadId, height: maxHeight })
+        const exported = await exportSabrDownload(content, this.videoTitle, downloadId)
+        console.warn('[Downloads] SABR download completed', { id: downloadId, height: maxHeight, fileName: exported.fileName })
         updateDownloadMetadata(downloadId, {
           status: 'completed',
           progress: 1,
           offlineUri: content.offlineUri,
+          localPath: exported.localPath,
+          fileName: exported.fileName,
           received: content.size || 0,
           total: lastTotal || content.size || 0,
           networkBytes: lastNetworkBytes,
           totalExact: lastTotalExact && content.size === lastTotal,
           speedBps: 0,
+          error: null,
           completedAt: Date.now()
         })
         android.finishDownloadNotification?.(downloadId)

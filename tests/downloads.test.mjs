@@ -85,6 +85,12 @@ test('SABR storage and size estimation select same highest-bandwidth track', () 
   assert.equal(selectSabrDownloadTrack([text], 1080), null)
 })
 
+test('SABR storage prefers MP4 audio for Android MP4 export', () => {
+  const opus = { type: 'variant', height: 720, bandwidth: 30, audioMimeType: 'audio/webm' }
+  const aac = { type: 'variant', height: 720, bandwidth: 20, audioMimeType: 'audio/mp4' }
+  assert.equal(selectSabrDownloadTrack([opus, aac], 720), aac)
+})
+
 test('invalid SABR manifest returns no quality options', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('not-a-manifest'))), [])
   assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('data:application/sabr+json,%7Bbad'))), [])

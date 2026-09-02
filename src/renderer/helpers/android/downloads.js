@@ -1,6 +1,8 @@
 import android from 'android'
 import shaka from 'shaka-player'
 import { requestSaveDialog } from './dialogs'
+import { awaitAsyncResult } from './jsinterface'
+import { writeFile } from './storage'
 import { setupSabrScheme } from '../player/SabrSchemePlugin'
 import { getDownloadNotificationPayload } from './download-notification.mjs'
 
@@ -70,8 +72,10 @@ export function selectSabrDownloadTrack(tracks = [], maxHeight) {
   const variants = tracks.filter(track => track.type === 'variant' && track.height != null)
   const eligible = variants.filter(track => track.height <= (maxHeight || Infinity))
   const candidates = eligible.length > 0 ? eligible : variants
-  const height = Math.max(...candidates.map(track => track.height), 0)
-  return candidates
+  const mp4Candidates = candidates.filter(track => track.audioMimeType?.startsWith('audio/mp4'))
+  const compatible = mp4Candidates.length > 0 ? mp4Candidates : candidates
+  const height = Math.max(...compatible.map(track => track.height), 0)
+  return compatible
     .filter(track => track.height === height)
     .sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0] ?? null
 }
@@ -211,7 +215,7 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
 
 export async function recoverSabrDownload(download, onProgress) {
   const content = await storeSabrDownload(download, onProgress)
-  return content.offlineUri
+  return { ...await exportSabrDownload(content, download.title, download.downloadId), offlineUri: content.offlineUri }
 }
 
 export function hasSabrDownload(downloadId) {
@@ -328,6 +332,76 @@ function safeFileName(title, id) {
   return `${(name || id).slice(0, 180)}.mp4`
 }
 
+function downloadDirectory() {
+  const stored = localStorage.getItem('freetube-download-directory')
+  return !stored || ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube'].includes(stored)
+    ? 'data://downloads/FreeTube'
+    : stored
+}
+
+function idbValue(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function writeOfflineStream(db, stream, uri) {
+  let append = false
+  const writtenInitSegments = new Set()
+  for (const segment of [...stream.segments].sort((a, b) => a.startTime - b.startTime)) {
+    const keys = []
+    if (segment.initSegmentKey != null && !writtenInitSegments.has(segment.initSegmentKey)) {
+      writtenInitSegments.add(segment.initSegmentKey)
+      keys.push(segment.initSegmentKey)
+    }
+    keys.push(segment.dataKey)
+    for (const key of keys) {
+      const stored = await idbValue(db.transaction('segment-v5').objectStore('segment-v5').get(key))
+      if (!stored?.data) throw new Error(`Offline segment ${key} is unavailable`)
+      await writeFile(uri, new Blob([stored.data]), append)
+      append = true
+    }
+  }
+  if (!append) throw new Error(`Offline ${stream.type} stream is empty`)
+}
+
+export async function exportSabrDownload(content, title, downloadId) {
+  if (!content?.offlineUri || typeof android.muxStoredDownload !== 'function') throw new Error('SABR MP4 export is unavailable')
+  const match = /^offline:manifest\/idb\/v5\/([0-9]+)$/.exec(content.offlineUri)
+  if (!match) throw new Error('Unsupported SABR offline URI')
+  const fileName = safeFileName(title, downloadId)
+  const videoUri = `data://sabr/${downloadId}-video.mp4`
+  const audioUri = `data://sabr/${downloadId}-audio.mp4`
+  let targetUri = ''
+  const db = await idbValue(indexedDB.open('shaka_offline_db'))
+  try {
+    const manifest = await idbValue(db.transaction('manifest-v5').objectStore('manifest-v5').get(Number(match[1])))
+    const video = manifest?.streams?.find(stream => stream.type === 'video' && stream.mimeType === 'video/mp4')
+    const audio = manifest?.streams?.find(stream => stream.type === 'audio' && stream.mimeType === 'audio/mp4')
+    if (!video || !audio) throw new Error('Offline MP4 tracks are unavailable')
+    await Promise.all([
+      writeOfflineStream(db, video, videoUri),
+      writeOfflineStream(db, audio, audioUri)
+    ])
+    targetUri = android.createDownloadFile?.(downloadDirectory(), `${fileName}.part`) || ''
+    if (!targetUri) {
+      const dialog = await requestSaveDialog(fileName, 'video/mp4')
+      if (dialog.canceled) throw new Error('SABR MP4 export canceled')
+      targetUri = dialog.uri
+    }
+    const localPath = await awaitAsyncResult(android.muxStoredDownload(videoUri, audioUri, targetUri, fileName))
+    return { fileName, localPath }
+  } catch (error) {
+    if (targetUri) android.deleteFile?.(targetUri)
+    throw error
+  } finally {
+    db.close()
+    android.deleteFile?.(videoUri)
+    android.deleteFile?.(audioUri)
+  }
+}
+
 /**
  * Downloads one video through Android native storage.
  * @param {{id: string, title: string, videoUrl: string, audioUrl?: string|null, thumbnail?: string, sourceBackend?: string, metadata?: object}} video
@@ -340,12 +414,8 @@ export async function downloadProgressiveVideo(video) {
   }
 
   const fileName = safeFileName(video.title, video.id)
-  const storedDirectory = localStorage.getItem('freetube-download-directory')
-  const directory = !storedDirectory || ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube'].includes(storedDirectory)
-    ? 'data://downloads/FreeTube'
-    : storedDirectory
   android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 1))
-  const defaultUri = android.createDownloadFile?.(directory, `${fileName}.part`) || ''
+  const defaultUri = android.createDownloadFile?.(downloadDirectory(), `${fileName}.part`) || ''
   const dialog = defaultUri
     ? { canceled: false, uri: defaultUri }
     : await requestSaveDialog(fileName, 'video/mp4')

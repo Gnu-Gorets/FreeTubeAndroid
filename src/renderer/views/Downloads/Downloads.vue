@@ -234,9 +234,8 @@ async function remove(download) {
       await storage.destroy()
       await player.destroy()
     }
-  } else {
-    window.Android?.deleteFile(download.localPath)
   }
+  if (download.localPath) window.Android?.deleteFile(download.localPath)
   downloads.value = downloads.value.filter(item => item.downloadId !== download.downloadId)
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
   console.warn('[Downloads] remove complete', { id: download.downloadId, remaining: downloads.value.length })
@@ -251,12 +250,12 @@ async function recoverSabrDownloads() {
       Object.assign(download, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
       updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
       try {
-        download.offlineUri = await recoverSabrDownload(download, (content, progress, total, networkBytes, totalExact) => {
+        const recovered = await recoverSabrDownload(download, (content, progress, total, networkBytes, totalExact) => {
           if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
           Object.assign(download, { progress, received: content?.size || 0, total: total || 0, networkBytes, totalExact })
           updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total, networkBytes, totalExact })
         })
-        Object.assign(download, { status: 'completed', progress: 1, received: download.received, interrupted: false })
+        Object.assign(download, recovered, { status: 'completed', progress: 1, received: download.received, interrupted: false })
         updateDownloadMetadata(download.downloadId, {
           status: 'completed',
           progress: 1,
@@ -264,6 +263,9 @@ async function recoverSabrDownloads() {
           total: download.total,
           totalExact: download.totalExact && download.received === download.total,
           offlineUri: download.offlineUri,
+          localPath: download.localPath,
+          fileName: download.fileName,
+          error: null,
           completedAt: Date.now(),
           interrupted: false
         })
@@ -304,7 +306,7 @@ function installTestHook() {
     }
   }
   window.__ftTest = {
-    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, createdAt })),
+    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, localPath, fileName, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, localPath, fileName, createdAt })),
     active: id => hasSabrDownload(id),
     offlineContents,
     control: (id, action) => {

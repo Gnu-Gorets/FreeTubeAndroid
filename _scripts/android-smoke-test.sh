@@ -31,7 +31,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
+                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -875,11 +875,11 @@ download_notification_terminal() {
   ! adb_shell dumpsys notification --noredact | grep -q 'Downloading [0-9]'
 }
 
-download_storage() {
+download_sabr_export() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
-  local marker id uri
+  local marker id uri local_path file_name media_row
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
@@ -889,10 +889,20 @@ download_storage() {
   [[ -n "$id" && "$id" != null ]] || return 1
   cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
   uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
+  local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
+  file_name=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.fileName" | tr -d '"')
   [[ -n "$uri" && "$uri" != null ]] || return 1
+  [[ -n "$local_path" && "$local_path" != null ]] || return 1
+  [[ -n "$file_name" && "$file_name" == *.mp4 ]] || return 1
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
+  media_row=$(adb_shell content query --uri "$local_path" --projection _display_name:_size:relative_path:is_pending 2>/dev/null) || return 1
+  [[ "$media_row" == *'relative_path=Download/FreeTube/'* && "$media_row" == *'is_pending=0'* ]] || return 1
+  [[ "$media_row" =~ _size=[1-9][0-9]* ]] || return 1
+  [[ "$media_row" != *'.part.mp4'* && "$media_row" != *'.mp4.part'* ]] || return 1
   cdp_cleanup_download "$id"
 }
+
+download_storage() { download_sabr_export; }
 
 download_delete() {
   clean_logs
@@ -970,7 +980,7 @@ run_unlocked_suite() {
   run_test download-sabr-telemetry download_sabr_telemetry
   run_test download-sabr-pause-resume download_sabr_pause_resume
   run_test download-notification download_notification
-  run_test download-storage download_storage
+  run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
   run_test download-delete download_delete
   run_test cleanup cleanup
@@ -996,7 +1006,7 @@ run_downloads_suite() {
   run_test download-notification download_notification
   run_test download-notification-title download_notification_title
   run_test download-notification-terminal download_notification_terminal
-  run_test download-storage download_storage
+  run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
   run_test download-delete download_delete
   (( FAIL == 0 ))
@@ -1065,6 +1075,7 @@ case "$TEST" in
   download-notification) run_test download-notification download_notification ;;
   download-notification-title) run_test download-notification-title download_notification_title ;;
   download-notification-terminal) run_test download-notification-terminal download_notification_terminal ;;
+  download-sabr-export) run_test download-sabr-export download_sabr_export ;;
   download-storage) run_test download-storage download_storage ;;
   download-cancel) run_test download-cancel download_cancel ;;
   download-delete) run_test download-delete download_delete ;;
