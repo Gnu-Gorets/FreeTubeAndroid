@@ -293,7 +293,7 @@ function handleDownloadControl(event) {
 function installTestHook() {
   if (!window.Android?.isDebugBuild?.()) return
   window.__ftTest = {
-    downloads: () => downloads.value.map(({ downloadId, videoId, status, received, total, totalExact }) => ({ id: downloadId, videoId, status, received, total, totalExact })),
+    downloads: () => downloads.value.map(({ downloadId, videoId, status, received, total, totalExact, createdAt }) => ({ id: downloadId, videoId, status, received, total, totalExact, createdAt })),
     control: (id, action) => {
       const download = downloads.value.find(item => item.downloadId === id)
       if (!download) return false

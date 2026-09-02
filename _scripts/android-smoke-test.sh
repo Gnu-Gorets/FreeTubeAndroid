@@ -728,8 +728,9 @@ download_sabr_pause_resume() {
   adb_shell input tap 160 875
   open_downloads_cdp || return 1
   local id
-  id=$(cdp_eval "window.__ftTest.downloads().find(d => d.status === 'downloading')?.id" | tr -d '"')
+  id=$(cdp_eval "window.__ftTest.downloads().sort((a, b) => b.createdAt - a.createdAt)[0]?.id" | tr -d '"')
   [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" downloading || return 1
   [[ $(cdp_eval "window.__ftTest.control('$id', 'pause')") == true ]] || return 1
   cdp_wait_status "$id" paused || return 1
   [[ $(cdp_eval "window.__ftTest.control('$id', 'resume')") == true ]] || return 1
@@ -798,7 +799,7 @@ download_delete() {
   start_app || return 1
   open_downloads_cdp || return 1
   local id
-  id=$(cdp_eval "window.__ftTest.downloads().find(d => d.status === 'completed')?.id" | tr -d '"')
+  id=$(cdp_eval "window.__ftTest.downloads().filter(d => d.status === 'completed').sort((a, b) => b.createdAt - a.createdAt)[0]?.id" | tr -d '"')
   [[ -n "$id" && "$id" != null ]] || { echo 'FAIL: no completed download fixture'; return 1; }
   [[ $(cdp_eval "window.__ftTest.remove('$id')") == true ]] || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
@@ -817,8 +818,9 @@ download_cancel() {
   adb_shell input tap 160 875
   open_downloads_cdp || return 1
   local id
-  id=$(cdp_eval "window.__ftTest.downloads().find(d => d.status === 'downloading')?.id" | tr -d '"')
+  id=$(cdp_eval "window.__ftTest.downloads().sort((a, b) => b.createdAt - a.createdAt)[0]?.id" | tr -d '"')
   [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" downloading || return 1
   [[ $(cdp_eval "window.__ftTest.control('$id', 'cancel')") == true ]] || return 1
   cdp_wait_status "$id" canceled
 }

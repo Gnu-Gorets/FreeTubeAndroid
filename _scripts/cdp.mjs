@@ -7,7 +7,7 @@ if (!expression) {
 }
 
 const targets = await fetch('http://127.0.0.1:9222/json/list').then(response => response.json())
-const target = targets.find(item => item.type === 'page')
+const target = targets.find(item => item.type === 'page' && item.url.includes('/index.html'))
 if (!target?.webSocketDebuggerUrl) throw new Error('No WebView page available through CDP')
 
 const socket = new WebSocket(target.webSocketDebuggerUrl)
