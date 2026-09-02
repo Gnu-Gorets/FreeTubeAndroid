@@ -42,6 +42,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
             val safeInsets = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()

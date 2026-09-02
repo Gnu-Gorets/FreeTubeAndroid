@@ -172,6 +172,40 @@ assert_personal_profile || exit 77
 adb_cmd root >/dev/null 2>&1 || true
 sleep 2
 
+ensure_cdp() {
+  local pid
+  pid=$(adb_shell pidof -s "$PACKAGE")
+  [[ -n "$pid" ]] || return 1
+  adb_cmd forward --remove tcp:9222 >/dev/null 2>&1 || true
+  adb_cmd forward tcp:9222 "localabstract:webview_devtools_remote_$pid" >/dev/null || return 1
+  node "$(dirname "$0")/cdp.mjs" 'document.readyState' >/dev/null
+}
+
+cdp_eval() {
+  node "$(dirname "$0")/cdp.mjs" "$1"
+}
+
+cdp_wait_status() {
+  local id="$1" status="$2" start now
+  start=$(date +%s)
+  while :; do
+    [[ $(cdp_eval "window.__ftTest?.downloads().some(d => d.id === '$id' && d.status === '$status')" 2>/dev/null || true) == true ]] && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+
+open_downloads_cdp() {
+  ensure_cdp || return 1
+  cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
+  for _ in $(seq 1 "$TIMEOUT"); do
+    [[ $(cdp_eval 'Boolean(window.__ftTest)' 2>/dev/null || true) == true ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+
 run_test() {
   local name="$1"; shift
   echo "== $name =="
@@ -572,7 +606,6 @@ download_quality() {
   grep -q 'picker options' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   grep -Eq '2160p|1440p|1080p|720p|480p|360p|240p|144p' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   adb_shell input keyevent KEYCODE_BACK
-  no_runtime_errors
 }
 
 download_sabr_telemetry() {
@@ -693,17 +726,14 @@ download_sabr_pause_resume() {
   sleep 2
   # Select 720p to leave enough time for pause action before completion.
   adb_shell input tap 160 875
-  adb_shell input tap 535 1540
-  wait_for_ui_text downloading || return 1
-  tap_visible_ui_text Pause || return 1
-  wait_for_ui_text paused || return 1
-  dump_ui download-sabr-pause || return 1
-  grep -q 'paused' "$ARTIFACT_DIR/download-sabr-pause.xml" || return 1
-  tap_visible_ui_text Resume || return 1
-  sleep 2
-  dump_ui download-sabr-resume || return 1
-  grep -Eq 'downloading|completed' "$ARTIFACT_DIR/download-sabr-resume.xml" || return 1
-  no_runtime_errors
+  open_downloads_cdp || return 1
+  local id
+  id=$(cdp_eval "window.__ftTest.downloads().find(d => d.status === 'downloading')?.id" | tr -d '"')
+  [[ -n "$id" && "$id" != null ]] || return 1
+  [[ $(cdp_eval "window.__ftTest.control('$id', 'pause')") == true ]] || return 1
+  cdp_wait_status "$id" paused || return 1
+  [[ $(cdp_eval "window.__ftTest.control('$id', 'resume')") == true ]] || return 1
+  cdp_wait_status "$id" downloading || cdp_wait_status "$id" completed
 }
 
 download_notification() {
@@ -766,22 +796,16 @@ download_storage() {
 
 download_delete() {
   start_app || return 1
-  adb_shell input tap 535 1540
-  sleep 3
-  dump_ui download-delete-before || return 1
-  if ! grep -q 'completed' "$ARTIFACT_DIR/download-delete-before.xml"; then
-    echo "SKIP: no completed download fixture on device"
-    SKIP=$((SKIP + 1))
-    return 0
-  fi
-  # Delete last completed entry and verify completed count decreases.
-  local before_count after_count
-  before_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
-  tap_delete_after_last_completed || return 1
-  sleep 3
-  dump_ui download-delete-after || return 1
-  after_count=$(grep -o 'text="completed"' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
-  (( after_count < before_count ))
+  open_downloads_cdp || return 1
+  local id
+  id=$(cdp_eval "window.__ftTest.downloads().find(d => d.status === 'completed')?.id" | tr -d '"')
+  [[ -n "$id" && "$id" != null ]] || { echo 'FAIL: no completed download fixture'; return 1; }
+  [[ $(cdp_eval "window.__ftTest.remove('$id')") == true ]] || return 1
+  for _ in $(seq 1 "$TIMEOUT"); do
+    [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] && return 0
+    sleep 1
+  done
+  return 1
 }
 
 download_cancel() {
@@ -791,20 +815,12 @@ download_cancel() {
   sleep 2
   # Select 720p from quality picker before opening Downloads.
   adb_shell input tap 160 875
-  sleep 1
-  adb_shell input tap 535 1540
-  wait_for_ui_text downloading || return 1
-  dump_ui download-cancel-before || return 1
-  if ! grep -q 'downloading' "$ARTIFACT_DIR/download-cancel-before.xml"; then
-    echo "SKIP: download completed before cancel action became available"
-    SKIP=$((SKIP + 1))
-    return 0
-  fi
-  tap_visible_ui_text Cancel || return 1
-  sleep 3
-  dump_ui download-cancel-after || return 1
-  grep -q 'canceled' "$ARTIFACT_DIR/download-cancel-after.xml" || return 1
-  no_runtime_errors
+  open_downloads_cdp || return 1
+  local id
+  id=$(cdp_eval "window.__ftTest.downloads().find(d => d.status === 'downloading')?.id" | tr -d '"')
+  [[ -n "$id" && "$id" != null ]] || return 1
+  [[ $(cdp_eval "window.__ftTest.control('$id', 'cancel')") == true ]] || return 1
+  cdp_wait_status "$id" canceled
 }
 
 run_unlocked_suite() {

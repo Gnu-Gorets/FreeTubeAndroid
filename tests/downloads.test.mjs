@@ -153,6 +153,19 @@ test('Downloads view exposes cancel, retry, play and delete flows', () => {
   assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
 })
 
+test('debug Downloads hook targets records by download ID', () => {
+  assert.ok(downloadsViewSource.includes('function installTestHook()'))
+  assert.ok(downloadsViewSource.includes('window.Android?.isDebugBuild?.()'))
+  assert.ok(downloadsViewSource.includes('downloads.value.find(item => item.downloadId === id)'))
+  assert.ok(downloadsViewSource.includes('delete window.__ftTest'))
+})
+
+test('WebView debugging is enabled only in debug builds', () => {
+  const mainActivitySource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
+  assert.ok(mainActivitySource.includes('WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)'))
+  assert.ok(androidBridgeSource.includes('fun isDebugBuild(): Boolean = BuildConfig.DEBUG'))
+})
+
 test('public downloads use MediaStore Downloads collection', () => {
   assert.ok(androidBridgeSource.includes('MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)'))
   assert.ok(!androidBridgeSource.includes('MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)'))

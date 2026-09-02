@@ -84,7 +84,7 @@ let sabrActive = 0
 const sabrWaiters = []
 
 async function acquireSabrSlot() {
-  const limit = Number(localStorage.getItem('freetube-download-concurrency') || 5)
+  const limit = Number(localStorage.getItem('freetube-download-concurrency') || 1)
   if (sabrActive < Math.max(1, Math.min(5, limit))) {
     sabrActive++
     return
@@ -344,7 +344,7 @@ export async function downloadProgressiveVideo(video) {
   const directory = !storedDirectory || ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube'].includes(storedDirectory)
     ? 'data://downloads/FreeTube'
     : storedDirectory
-  android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 5))
+  android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 1))
   const defaultUri = android.createDownloadFile?.(directory, `${fileName}.part`) || ''
   const dialog = defaultUri
     ? { canceled: false, uri: defaultUri }

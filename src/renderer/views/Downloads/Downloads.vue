@@ -25,6 +25,7 @@
       v-for="download in filteredDownloads"
       :key="download.offlineUri || download.localPath || download.downloadId"
       class="downloadItem"
+      :data-download-id="download.downloadId"
     >
       <img
         :src="download.thumbnail || ''"
@@ -54,6 +55,7 @@
           <button
             v-if="download.status === 'completed'"
             type="button"
+            data-download-action="play"
             @click="play(download)"
           >
             {{ t('Downloads.Play') }}
@@ -61,6 +63,7 @@
           <button
             v-if="download.status === 'failed'"
             type="button"
+            data-download-action="retry"
             @click="retry(download)"
           >
             {{ t('Downloads.Retry') }}
@@ -68,6 +71,7 @@
           <button
             v-if="download.status === 'downloading'"
             type="button"
+            data-download-action="pause"
             @click="control(download, 'pause')"
           >
             {{ t('Downloads.Pause') }}
@@ -75,6 +79,7 @@
           <button
             v-if="download.status === 'paused'"
             type="button"
+            data-download-action="resume"
             @click="control(download, 'resume')"
           >
             {{ t('Downloads.Resume') }}
@@ -82,12 +87,14 @@
           <button
             v-if="['queued', 'downloading', 'paused'].includes(download.status)"
             type="button"
+            data-download-action="cancel"
             @click="control(download, 'cancel')"
           >
             {{ t('Downloads.Cancel') }}
           </button>
           <button
             type="button"
+            data-download-action="delete"
             @click="remove(download)"
           >
             {{ t('Downloads.Delete') }}
@@ -283,6 +290,29 @@ function handleDownloadControl(event) {
   if (download) control(download, action)
 }
 
+function installTestHook() {
+  if (!window.Android?.isDebugBuild?.()) return
+  window.__ftTest = {
+    downloads: () => downloads.value.map(({ downloadId, videoId, status, received, total, totalExact }) => ({ id: downloadId, videoId, status, received, total, totalExact })),
+    control: (id, action) => {
+      const download = downloads.value.find(item => item.downloadId === id)
+      if (!download) return false
+      control(download, action)
+      return true
+    },
+    remove: async id => {
+      const download = downloads.value.find(item => item.downloadId === id)
+      if (!download) return false
+      await remove(download)
+      return true
+    },
+    clearQueue: async () => {
+      for (const download of [...downloads.value]) await remove(download)
+      return true
+    }
+  }
+}
+
 function handleDownloadEvent(event) {
   const detail = event.detail
   const download = downloads.value.find(item => item.downloadId === detail?.id)
@@ -296,6 +326,7 @@ function handleDownloadEvent(event) {
 onMounted(() => {
   console.warn('[Downloads] view mounted')
   load()
+  installTestHook()
   recoverSabrDownloads()
   try {
     const pending = JSON.parse(sessionStorage.getItem('pending-download-control') || 'null')
@@ -312,6 +343,7 @@ onMounted(() => {
 onBeforeUnmount(async () => {
   window.removeEventListener('android-download', handleDownloadEvent)
   window.removeEventListener('android-download-control', handleDownloadControl)
+  delete window.__ftTest
   if (queueTimer) clearInterval(queueTimer)
 })
 </script>

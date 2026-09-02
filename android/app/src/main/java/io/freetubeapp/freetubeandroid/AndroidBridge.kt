@@ -147,6 +147,9 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun isDebugBuild(): Boolean = BuildConfig.DEBUG
+
+    @JavascriptInterface
     fun getDirectory(directory: String): String = if (directory == "data://") dataDirectory.absolutePath else directory
 
     @JavascriptInterface

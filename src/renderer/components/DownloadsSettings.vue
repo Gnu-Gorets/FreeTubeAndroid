@@ -40,7 +40,7 @@ import { digitsOnly } from '../helpers/android/download-settings.mjs'
 const { t } = useI18n()
 const DEFAULT_DIRECTORY = 'data://downloads/FreeTube'
 const LEGACY_DEFAULT_DIRECTORIES = ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube']
-const concurrency = ref(localStorage.getItem('freetube-download-concurrency') || '5')
+const concurrency = ref(localStorage.getItem('freetube-download-concurrency') || '1')
 const savedDirectory = localStorage.getItem('freetube-download-directory')
 const directory = ref(!savedDirectory || LEGACY_DEFAULT_DIRECTORIES.includes(savedDirectory) ? DEFAULT_DIRECTORY : savedDirectory)
 if (directory.value !== savedDirectory) localStorage.setItem('freetube-download-directory', directory.value)
