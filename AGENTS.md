@@ -7,6 +7,6 @@ Read these before modifying the repository:
 
 For Android work, require ADB access to the connected physical test phone. Check `adb devices -l` before making validation claims and use the detected device for install, launch, logs, and smoke tests.
 
-Do not edit generated bundles in `dist/` or `android/app/src/main/assets/` by hand. Regenerate them with the documented packaging commands. Keep generated output, local data, and logs out of commits.
+Do not edit generated bundles in `dist/` or `android/app/src/main/assets/` by hand. Regenerate them with the documented packaging commands. Keep generated output, local data, logs, and all files under `docs/plans/` out of commits. Task plans are local-only and must never be added to Git or staged.
 
 Build Android APK inside Docker using `docker compose run --rm android-build ...`; do not rely on host `pnpm` or Android toolchain. Use the container for `pnpm install --frozen-lockfile`, `pnpm run pack:android:dev`, and `android/./gradlew assembleDebug`.
