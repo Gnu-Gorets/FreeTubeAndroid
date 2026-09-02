@@ -311,10 +311,18 @@ export async function downloadProgressiveVideo(video) {
         try {
           const item = JSON.parse(android.getNativeDownloadQueue?.() || '[]').find(entry => entry.id === downloadId)
           if (!item) return
-          Object.assign(metadata, { status: item.status, progress: item.progress, error: item.error || null })
+          Object.assign(metadata, {
+            status: item.status,
+            progress: item.progress ?? null,
+            received: item.received ?? 0,
+            total: item.total ?? 0,
+            speedBps: item.speedBps ?? 0,
+            etaSeconds: item.etaSeconds ?? 0,
+            error: item.error || null
+          })
           if (item.status === 'completed') {
             metadata.fileName = fileName
-            metadata.completedAt = Date.now()
+            metadata.completedAt ??= Date.now()
           }
           if (['downloading', 'paused'].includes(item.status)) {
             android.updateDownloadNotification?.(downloadId, video.title, item.status, Math.round((item.progress || 0) * 100), item.speedBps || 0, item.received || 0, item.total || 0)

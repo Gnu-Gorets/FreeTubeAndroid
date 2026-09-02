@@ -604,13 +604,7 @@ class AndroidBridge(
             activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return false
         val notificationId = downloadNotificationId(downloadId)
         notificationManager.cancel(notificationId)
-        val notification = Notification.Builder(activity, "downloads")
-            .setSmallIcon(R.drawable.ic_media_notification_icon)
-            .setContentTitle(title)
-            .setContentText(if (success) "Download complete" else "Download failed")
-            .setAutoCancel(true)
-            .build()
-        notificationManager.notify(notificationId, notification)
+        notificationManager.cancel(notificationId)
         return true
     }
 

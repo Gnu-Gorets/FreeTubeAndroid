@@ -43,6 +43,14 @@ class DownloadService : Service() {
         fun start(context: Context, intent: Intent) {
             androidx.core.content.ContextCompat.startForegroundService(context, intent.setClass(context, DownloadService::class.java))
         }
+
+        fun resumeIfNeeded(context: Context) {
+            val queue = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(QUEUE, "[]") ?: "[]"
+            if (runCatching {
+                val items = JSONArray(queue)
+                (0 until items.length()).any { items.getJSONObject(it).optString("status") == "queued" || items.getJSONObject(it).optString("status") == "downloading" }
+            }.getOrDefault(false)) start(context, Intent())
+        }
     }
 
     private val executor = Executors.newFixedThreadPool(5)
@@ -456,13 +464,15 @@ class DownloadService : Service() {
         if (current == null) return builder.build()
         if (current.optString("status") == "downloading") builder.addAction(action("Pause", ACTION_PAUSE, current.optString("id")))
         if (current.optString("status") == "paused") builder.addAction(action("Resume", ACTION_RESUME, current.optString("id")))
-        builder.addAction(action("Cancel", ACTION_CANCEL, current.optString("id")))
+        if (current.optString("status") in setOf("downloading", "paused")) {
+            builder.addAction(action("Cancel", ACTION_CANCEL, current.optString("id")))
+        }
         return builder.build()
     }
 
     private fun action(label: String, action: String, id: String): Notification.Action {
         val intent = Intent(this, DownloadService::class.java).setAction(action).putExtra(EXTRA_ID, id)
-        val pending = PendingIntent.getService(this, action.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val pending = PendingIntent.getService(this, "$id:$action".hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_media_notification_icon), label, pending).build()
     }
 
@@ -489,6 +499,11 @@ class DownloadService : Service() {
     private fun notificationId(id: String): Int = 3000 + (id.hashCode() and 0x7fffffff) % 100000
 
     private fun notify(id: String, title: String, text: String, progress: Double?, ongoing: Boolean) {
-        getSystemService(NotificationManager::class.java).notify(notificationId(id), notification(id, title, text, progress, ongoing))
+        val manager = getSystemService(NotificationManager::class.java)
+        if (!ongoing) {
+            manager.cancel(notificationId(id))
+            return
+        }
+        manager.notify(notificationId(id), notification(id, title, text, progress, true))
     }
 }

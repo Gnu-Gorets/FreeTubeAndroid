@@ -115,6 +115,7 @@ class MainActivity : Activity() {
         webView.settings.mediaPlaybackRequiresUserGesture = false
         androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
         webView.addJavascriptInterface(androidBridge, "Android")
+        DownloadService.resumeIfNeeded(this)
         webView.loadUrl("file:///android_asset/index.html")
     }
 

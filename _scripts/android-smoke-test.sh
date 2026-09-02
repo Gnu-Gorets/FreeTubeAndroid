@@ -65,6 +65,29 @@ dump_ui() {
   adb_shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || return 1
   adb_shell cat /sdcard/window.xml >"$ARTIFACT_DIR/$1.xml"
 }
+wait_for_ui_text() {
+  local text="$1" start now
+  start=$(date +%s)
+  while :; do
+    dump_ui wait-for-ui >/dev/null 2>&1 && grep -q "text=\"$text\"" "$ARTIFACT_DIR/wait-for-ui.xml" && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+
+wait_for_notification() {
+  local pattern="$1" start now dump
+  start=$(date +%s)
+  while :; do
+    dump=$(adb_shell dumpsys notification --noredact)
+    grep -q "$pattern" <<<"$dump" && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+
 tap_ui_text() {
   local text="$1" bounds x1 y1 x2 y2
   bounds=$(adb_shell cat /sdcard/window.xml | grep -o "text=\"$text\"[^>]*bounds=\"\\[[0-9]*,[0-9]*\\]\\[[0-9]*,[0-9]*\\]\"" | head -1)
@@ -483,6 +506,7 @@ recovery() {
 }
 
 downloads_page() {
+  clean_logs
   start_app || return 1
   adb_shell input tap 535 1540
   sleep 3
@@ -513,9 +537,8 @@ download_notification() {
   sleep 2
   # Select 720p from quality picker.
   adb_shell input tap 160 875
-  sleep 5
+  wait_for_notification 'channel=downloads' || return 1
   adb_shell dumpsys notification --noredact >"$ARTIFACT_DIR/download-notification-during.txt"
-  grep -q 'channel=downloads' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
   grep -q '"Pause"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
   grep -q '"Cancel"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
   grep -q 'android.progress=Integer' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
@@ -533,7 +556,7 @@ download_notification_title() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 160 875
-  sleep 5
+  wait_for_notification 'channel=downloads' || return 1
   local dump
   dump=$(adb_shell dumpsys notification --noredact)
   grep -q 'channel=downloads' <<<"$dump" || return 1
@@ -578,7 +601,7 @@ download_delete() {
   # Delete last completed entry and verify completed count decreases.
   local before_count after_count
   before_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-before.xml" | wc -l)
-  adb_shell input tap 390 558
+  tap_ui_text Delete || return 1
   sleep 3
   dump_ui download-delete-after || return 1
   after_count=$(grep -o 'text="completed"[^>]*bounds="\[[1-9][0-9]*,' "$ARTIFACT_DIR/download-delete-after.xml" | wc -l)
@@ -594,7 +617,7 @@ download_cancel() {
   adb_shell input tap 160 875
   sleep 1
   adb_shell input tap 535 1540
-  sleep 2
+  wait_for_ui_text downloading || return 1
   dump_ui download-cancel-before || return 1
   if ! grep -q 'downloading' "$ARTIFACT_DIR/download-cancel-before.xml"; then
     echo "SKIP: download completed before cancel action became available"
