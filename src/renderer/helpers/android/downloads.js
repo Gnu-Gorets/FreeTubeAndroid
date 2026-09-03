@@ -36,22 +36,22 @@ export function getDownloadFormats(progressiveFormats = [], adaptiveFormats = []
     .sort((a, b) => (b.video.height ?? 0) - (a.video.height ?? 0) || (b.video.bitrate ?? 0) - (a.video.bitrate ?? 0))
 }
 
-function parseSabrManifest(manifestSrc) {
+function parseSabrFormats(manifestSrc) {
   const prefix = 'data:application/sabr+json,'
-  if (!manifestSrc?.startsWith(prefix)) return null
+  if (!manifestSrc?.startsWith(prefix)) return []
   try {
     const manifest = JSON.parse(decodeURIComponent(manifestSrc.slice(prefix.length)))
-    return Array.isArray(manifest.formats) ? manifest : null
+    return Array.isArray(manifest.formats) ? manifest.formats : []
   } catch {
-    return null
+    return []
   }
 }
 
 export function getSabrDownloadFormats(manifestSrc) {
   try {
-    const manifest = parseSabrManifest(manifestSrc)
-    if (!manifest || !manifest.formats.some(format => format.mimeType?.startsWith('audio/mp4'))) return []
-    const formats = manifest.formats.filter(format => format.mimeType?.startsWith('video/mp4') && format.height)
+    const sourceFormats = parseSabrFormats(manifestSrc)
+    if (!sourceFormats.some(format => format.mimeType?.startsWith('audio/mp4'))) return []
+    const formats = sourceFormats.filter(format => format.mimeType?.startsWith('video/mp4') && format.height)
     log('SABR video dimensions', formats.map(format => ({ width: format.width, height: format.height, quality: format.quality })).slice(0, 12))
     const qualities = new Map()
     for (const format of formats) {
@@ -292,11 +292,11 @@ export async function preflightSabrDownload(player, manifestSrc, maxHeight) {
   const manifest = player?.getManifest?.()
   const selectedTrack = selectSabrDownloadTrack(player?.getVariantTracks?.() || [], maxHeight)
   if (!manifest || !selectedTrack) throw new Error('SABR download is not ready')
-  const formats = parseSabrManifest(manifestSrc)?.formats || []
+  const formats = parseSabrFormats(manifestSrc)
   const find = id => formats.find(format => id?.startsWith(`${format.itag}-${format.lastModified}-`))
   const videoLength = Number(find(selectedTrack.originalVideoId)?.contentLength)
   const audioLength = Number(find(selectedTrack.originalAudioId)?.contentLength)
-  if ([videoLength, audioLength].every(value => Number.isInteger(value) && value > 0)) {
+  if ([videoLength, audioLength].every(value => Number.isFinite(value) && Number.isInteger(value) && value > 0)) {
     return { videoId: selectedTrack.originalVideoId, audioId: selectedTrack.originalAudioId, total: videoLength + audioLength, totalExact: true }
   }
   const estimate = await estimateSabrSize(manifest, selectedTrack)

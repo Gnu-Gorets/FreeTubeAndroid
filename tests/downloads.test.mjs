@@ -27,7 +27,18 @@ const context = vm.createContext({
 })
 vm.runInContext(source, context)
 
-const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, updateDownloadMetadata } = context
+const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, updateDownloadMetadata } = context
+
+function sabrManifest(formats) {
+  return `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats }))}`
+}
+
+function sabrPlayer(track, streams = []) {
+  return {
+    getManifest: () => ({ variants: [{ video: streams[0], audio: streams[1] }] }),
+    getVariantTracks: () => [track]
+  }
+}
 
 test('SABR qualities deduplicate variants and use quality labels', () => {
   const manifest = `data:application/sabr+json,${encodeURIComponent(JSON.stringify({
@@ -130,6 +141,70 @@ test('SABR quality labels deduplicate by quality and height', () => {
     { mimeType: 'audio/mp4', quality: 'audio', height: null }
   ] }))}`
   assert.deepEqual(Array.from(getSabrDownloadFormats(manifest), format => format.label), ['720p (SABR)', '480p (SABR)'])
+})
+
+test('SABR preflight uses exact source lengths matched by itag and lastModified', async () => {
+  const track = {
+    type: 'variant', height: 720, bandwidth: 1,
+    videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4',
+    originalVideoId: '137-111-video', originalAudioId: '140-333-en'
+  }
+  const result = await preflightSabrDownload(sabrPlayer(track), sabrManifest([
+    { itag: 137, lastModified: '111', contentLength: '1000' },
+    { itag: 140, lastModified: '222', contentLength: '200' },
+    { itag: 140, lastModified: '333', contentLength: '300' }
+  ]), 720)
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    videoId: '137-111-video', audioId: '140-333-en', total: 1300, totalExact: true
+  })
+})
+
+test('SABR preflight marks segment fallback totals as inexact', async () => {
+  const track = {
+    type: 'variant', height: 720, bandwidth: 1,
+    videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4',
+    originalVideoId: '137-111-video', originalAudioId: '140-222-audio'
+  }
+  const stream = (originalId, initSize, start, end) => ({
+    originalId,
+    createSegmentIndex: async () => {},
+    segmentIndex: {
+      getNumReferences: () => 1,
+      get: () => ({
+        initSegmentReference: { getSize: () => initSize },
+        getStartByte: () => start,
+        getEndByte: () => end
+      })
+    }
+  })
+  const result = await preflightSabrDownload(sabrPlayer(track, [
+    stream(track.originalVideoId, 10, 0, 99),
+    stream(track.originalAudioId, 20, 0, 49)
+  ]), sabrManifest([
+    { itag: 137, lastModified: '111', contentLength: '1000' },
+    { itag: 140, lastModified: '222', contentLength: '1.5' }
+  ]), 720)
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    videoId: track.originalVideoId, audioId: track.originalAudioId, total: 180, totalExact: false
+  })
+})
+
+test('SABR preflight allows a zero inexact fallback total', async () => {
+  const track = {
+    type: 'variant', height: 720, bandwidth: 1,
+    videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4',
+    originalVideoId: '137-111-video', originalAudioId: '140-222-audio'
+  }
+  const result = await preflightSabrDownload(sabrPlayer(track), sabrManifest([
+    { itag: 137, lastModified: '111', contentLength: 'Infinity' },
+    { itag: 140, lastModified: '222', contentLength: '0' }
+  ]), 720)
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    videoId: track.originalVideoId, audioId: track.originalAudioId, total: 0, totalExact: false
+  })
+  assert.ok(watchSource.includes('preflightSabrDownload(this.$refs.player, this.manifestSrc, maxHeight)'))
+  assert.ok(watchSource.includes('videoTrackId: preflight.videoId'))
+  assert.ok(watchSource.includes('audioTrackId: preflight.audioId'))
 })
 
 test('download metadata preserves channel and playback details', () => {
