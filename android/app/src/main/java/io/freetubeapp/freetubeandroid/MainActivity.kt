@@ -68,6 +68,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
+        webView.setBackgroundColor(ContextCompat.getColor(this, R.color.app_background))
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
             val safeInsets = insets.getInsets(
