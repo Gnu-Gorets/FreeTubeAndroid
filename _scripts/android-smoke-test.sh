@@ -19,6 +19,7 @@ FAIL=0
 SKIP=0
 UI_SCALE_SET=0
 SCREEN_RECORD_PID=""
+LOGCAT_STREAM_PID=""
 RUN_MARKER=$(date +%s%3N)
 declare -a TEST_TIMINGS=()
 
@@ -65,6 +66,13 @@ adb_cmd() {
 }
 
 adb_shell() { adb_cmd shell "$@"; }
+adb_logcat_stream() {
+  if [[ -n "$SERIAL" ]]; then
+    exec adb -s "$SERIAL" exec-out logcat -v brief
+  else
+    exec adb exec-out logcat -v brief
+  fi
+}
 start_screen_recording() {
   "$(dirname "$0")/android-screen-record.sh" --serial "$SERIAL" --output "$ARTIFACT_DIR/screen.mp4" >"$ARTIFACT_DIR/screen-record.log" 2>&1 &
   SCREEN_RECORD_PID=$!
@@ -76,10 +84,17 @@ start_screen_recording() {
   fi
 }
 stop_screen_recording() {
+  stop_logcat_stream
   [[ -n "$SCREEN_RECORD_PID" ]] || return
   kill -TERM "$SCREEN_RECORD_PID" 2>/dev/null || true
   wait "$SCREEN_RECORD_PID" 2>/dev/null || true
   SCREEN_RECORD_PID=""
+}
+stop_logcat_stream() {
+  [[ -n "$LOGCAT_STREAM_PID" ]] || return
+  kill "$LOGCAT_STREAM_PID" 2>/dev/null || true
+  wait "$LOGCAT_STREAM_PID" 2>/dev/null || true
+  LOGCAT_STREAM_PID=""
 }
 assert_personal_profile() {
   local current_user
@@ -107,9 +122,10 @@ wait_for_ui_text() {
 
 wait_for_logcat() {
   local pattern="$1" start now
+  [[ -n "$LOGCAT_STREAM_PID" ]] || return 1
   start=$(date +%s)
   while :; do
-    adb_cmd logcat -d -v brief | grep -q "$pattern" && return 0
+    grep -q "$pattern" "$ARTIFACT_DIR/live-logcat.txt" 2>/dev/null && return 0
     now=$(date +%s)
     ((now - start >= TIMEOUT)) && return 1
     sleep 1
@@ -430,7 +446,14 @@ open_search_results() {
   cdp_wait "location.hash.startsWith('#/search/')"
 }
 
-clean_logs() { adb_cmd logcat -c; : >"$LOG_FILE"; }
+clean_logs() {
+  stop_logcat_stream
+  adb_cmd logcat -c
+  : >"$LOG_FILE"
+  : >"$ARTIFACT_DIR/live-logcat.txt"
+  adb_logcat_stream >"$ARTIFACT_DIR/live-logcat.txt" 2>/dev/null &
+  LOGCAT_STREAM_PID=$!
+}
 collect_logs() {
   adb_cmd logcat -d -v brief >"$LOG_FILE"
   adb_shell dumpsys media_session >"$ARTIFACT_DIR/media_session.txt"
