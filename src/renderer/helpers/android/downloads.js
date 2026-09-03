@@ -98,6 +98,7 @@ function selectSabrStorageTracks(tracks = [], selection = {}) {
   const exact = selection.videoTrackId && selection.audioTrackId
     ? tracks.find(track => track.type === 'variant' &&
       Number.isFinite(track.height) &&
+      (!selection.maxHeight || track.height <= selection.maxHeight) &&
       track.videoMimeType?.startsWith('video/mp4') &&
       track.audioMimeType?.startsWith('audio/mp4') &&
       track.originalVideoId === selection.videoTrackId &&
@@ -290,6 +291,7 @@ export function getProgressSnapshot(content, shakaProgress, knownTotal = 0, tota
   const received = Math.max(Number(content?.size) || 0, 0)
   const known = Number(knownTotal)
   const rawProgress = Number(shakaProgress)
+  if (rawProgress >= 1 && received > 0) return { received, total: received, totalExact: true, progress: 1 }
   const hasKnownTotal = Number.isFinite(known) && known > 0
   const canEstimate = !hasKnownTotal && Number.isFinite(rawProgress) && rawProgress > 0 && received > 0
   const total = hasKnownTotal
@@ -354,7 +356,8 @@ export function mergeDownloadProgress(download, detail, native = null) {
   )
   return {
     ...download,
-    status: detail.status,
+    ...detail,
+    status: detail.status ?? download.status,
     ...snapshot,
     fileSize: detail.fileSize || download.fileSize || 0,
     phase: detail.phase ?? download.phase,

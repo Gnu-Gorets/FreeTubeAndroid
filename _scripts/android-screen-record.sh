@@ -56,7 +56,7 @@ finish() {
   [[ -z "$ADB_PID" ]] || wait "$ADB_PID" 2>/dev/null || true
   if adb_cmd pull "$REMOTE" "$RAW" >/dev/null 2>&1; then
     adb_cmd shell rm -f "$REMOTE" >/dev/null 2>&1 || true
-    if ffmpeg -loglevel error -y -i "$RAW" -vf fps=15 -an -c:v libx264 -preset veryfast -crf 30 -movflags +faststart "$OUTPUT" &&
+    if ffmpeg -loglevel error -y -i "$RAW" -vf fps=15 -an -c:v libx264 -preset ultrafast -crf 32 -movflags +faststart "$OUTPUT" &&
       ffprobe -v error -select_streams v:0 -show_entries stream=index -of csv=p=0 "$OUTPUT" | grep -q .; then
       rm -f "$RAW"
       echo "Screen recording: $OUTPUT"

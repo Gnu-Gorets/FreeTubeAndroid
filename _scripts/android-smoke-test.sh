@@ -19,6 +19,8 @@ FAIL=0
 SKIP=0
 UI_SCALE_SET=0
 SCREEN_RECORD_PID=""
+RUN_MARKER=$(date +%s%3N)
+declare -a TEST_TIMINGS=()
 
 usage() {
   cat <<'EOF'
@@ -186,8 +188,6 @@ if [[ -z "$SERIAL" ]] || ! adb_cmd get-state >/dev/null 2>&1; then
   echo "SKIP: no adb device connected"; exit 77
 fi
 assert_personal_profile || exit 77
-adb_cmd root >/dev/null 2>&1 || true
-sleep 2
 trap stop_screen_recording EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -204,6 +204,17 @@ ensure_cdp() {
 
 cdp_eval() {
   node "$(dirname "$0")/cdp.mjs" "$1"
+}
+
+cdp_wait() {
+  local expression="$1" timeout="${2:-$TIMEOUT}" start now
+  start=$(date +%s)
+  while :; do
+    [[ $(cdp_eval "$expression" 2>/dev/null || true) == true ]] && return 0
+    now=$(date +%s)
+    ((now - start >= timeout)) && return 1
+    sleep 1
+  done
 }
 
 cdp_wait_status() {
@@ -239,7 +250,7 @@ cdp_click_download_action() {
 
 cdp_click_bulk_action() {
   local action="$1"
-  [[ $(cdp_eval "(() => { const button = document.querySelector('[data-download-action=\"$action\"]'); if (!button) return false; button.click(); return true })()") == true ]]
+  [[ $(cdp_eval "(() => { const target = document.querySelector('[data-download-action=\"$action\"]'); const button = target?.matches('button') ? target : target?.querySelector('button'); if (!button) return false; button.click(); return true })()") == true ]]
 }
 
 cdp_click_prompt_option() {
@@ -290,9 +301,22 @@ open_downloads_cdp() {
   return 1
 }
 
+cleanup_run_downloads() {
+  device_is_unlocked || return 0
+  open_downloads_cdp || return 0
+  local ids id
+  local -a run_ids
+  ids=$(cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $RUN_MARKER).map(d => d.id).join('|')" 2>/dev/null | tr -d '"')
+  IFS='|' read -ra run_ids <<<"$ids"
+  for id in "${run_ids[@]}"; do
+    [[ -n "$id" ]] && cdp_cleanup_download "$id" || true
+  done
+}
+
 run_test() {
-  local name="$1"; shift
+  local name="$1" start elapsed; shift
   echo "== $name =="
+  start=$(date +%s)
   if assert_personal_profile && "$@"; then
     echo "PASS $name"
     PASS=$((PASS + 1))
@@ -300,6 +324,8 @@ run_test() {
     echo "FAIL $name"
     FAIL=$((FAIL + 1))
   fi
+  elapsed=$(($(date +%s) - start))
+  TEST_TIMINGS+=("$name=${elapsed}s")
 }
 
 is_focused() {
@@ -388,16 +414,18 @@ start_app() {
   adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
   adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
   wait_for "$PACKAGE" || return 1
-  sleep 5
+  ensure_cdp && cdp_wait "document.readyState === 'complete'"
 }
 
 open_search_results() {
   start_app || return 1
-  adb_shell input tap 350 104
+  ensure_cdp || return 1
+  [[ $(cdp_eval "(() => { document.querySelector('.navSearchButton')?.click(); return true })()") == true ]] || return 1
+  cdp_wait "Boolean(document.querySelector('.searchInput input'))" || return 1
+  cdp_eval "document.querySelector('.searchInput input').focus(); true" >/dev/null || return 1
   adb_shell input text linux
-  adb_shell input tap 525 104
   adb_shell input keyevent KEYCODE_ENTER
-  sleep 12
+  cdp_wait "location.hash.startsWith('#/search/')"
 }
 
 clean_logs() { adb_cmd logcat -c; : >"$LOG_FILE"; }
@@ -447,7 +475,7 @@ search() {
 
 open_video() {
   adb_shell am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=jNQXAC9IVRw' -n "$ACTIVITY" >/dev/null
-  sleep 25
+  ensure_cdp && cdp_wait "Boolean(document.querySelector('video'))"
   adb_shell input tap 400 340
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
   sleep 3
@@ -461,7 +489,7 @@ open_download_video() {
     adb_shell am force-stop "$PACKAGE"
     adb_shell am start -a android.intent.action.VIEW -d "$DOWNLOAD_VIDEO_URL" -n "$ACTIVITY" >/dev/null
     wait_for "$PACKAGE" || return 1
-    sleep 35
+    ensure_cdp && cdp_wait "Boolean(document.querySelector('[data-download-action=\"start-download\"] button'))" "$DOWNLOAD_TIMEOUT" || return 1
     if adb_cmd logcat -d --pid="$(adb_shell pidof -s "$PACKAGE")" '*:E' | grep -q 'TypeError:'; then
       [[ "$attempt" == 2 ]] && return 1
       continue
@@ -628,14 +656,14 @@ data_directory_move_reset() {
   adb_shell input tap 610 905
   sleep 8
   local mapping
-  mapping=$(adb_shell cat "/data/user/0/$PACKAGE/files/data/data-location.json" 2>/dev/null || true)
+  mapping=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
   grep -q 'primary%3ADocuments' <<<"$mapping" || return 1
   adb_shell am force-stop "$PACKAGE"
   start_app || return 1
   open_data_settings || return 1
   adb_shell input tap 500 383
   sleep 8
-  mapping=$(adb_shell cat "/data/user/0/$PACKAGE/files/data/data-location.json" 2>/dev/null || true)
+  mapping=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
   grep -q '"directory":"data://"' <<<"$mapping" || return 1
   adb_shell rm -f /sdcard/Documents/profiles.db /sdcard/Documents/settings.db /sdcard/Documents/history.db /sdcard/Documents/playlists.db /sdcard/Documents/search-history.db /sdcard/Documents/subscription-cache.db
 }
@@ -706,7 +734,7 @@ download_quality() {
   adb_cmd logcat -d -v brief >"$ARTIFACT_DIR/download-quality-logcat.txt"
   grep -q 'picker options' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   grep -Eq '2160p|1440p|1080p|720p|480p|360p|240p|144p' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
-  wait_for_logcat 'SABR size preflight complete' || return 1
+  wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -761,6 +789,10 @@ download_sabr_total() {
     sleep 2
   done
   (( completed == 1 )) || { echo '[download-sabr-total] completion timeout'; return 1; }
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed || return 1
   adb_cmd logcat -d -v threadtime >"$ARTIFACT_DIR/download-sabr-total-logcat.txt"
   python3 - "$ARTIFACT_DIR/download-sabr-total-logcat.txt" <<'PY'
 import json
@@ -768,30 +800,26 @@ import re
 import sys
 
 log = open(sys.argv[1], encoding='utf-8').read()
-estimates = [json.loads(value) for value in re.findall(r'SABR size estimate (\{.*?\}) \(webpack', log)]
-assert estimates, 'SABR size estimate is missing'
-estimate = estimates[-1]
-download_id = estimate['id']
-assert estimate.get('maxHeight') == 1440, estimate
+timestamps = [json.loads(value) for value in re.findall(r'SABR timestamp (\{.*?\}) \(webpack', log)]
+selection = next((item for item in reversed(timestamps) if item.get('event') == 'selection'), None)
+assert selection and selection.get('height') == 1440, selection
+preflight = next((item for item in timestamps if item.get('event') == 'preflight-complete' and item.get('id') == selection['id']), None)
+assert preflight and preflight.get('total', 0) > 0, preflight
+download_id = selection['id']
 updates = [json.loads(value) for value in re.findall(r'metadata update (\{.*?\}) \(webpack', log)]
 updates = [item for item in updates if item.get('id') == download_id]
 progress = [item for item in updates if item.get('status') == 'downloading' and item.get('total', 0) > 0]
 assert progress, 'SABR progress totals are missing'
-totals = {item['total'] for item in progress}
-assert totals == {estimate['total']}, f'total changed during download: estimate={estimate["total"]}, updates={sorted(totals)}'
+incomplete = [item for item in progress if item.get('received') != item.get('total')]
+totals = {item['total'] for item in incomplete}
+assert totals == {preflight['total']}, f'total changed during download: preflight={preflight["total"]}, updates={sorted(totals)}'
 completed = [item for item in updates if item.get('status') == 'completed']
 assert completed, 'SABR completion metadata is missing'
 final = completed[-1]
-assert final.get('total') == estimate['total'], f'total changed on completion: {estimate["total"]} -> {final.get("total")}'
-if final.get('totalExact'):
-    assert final.get('received') == final.get('total'), f'exact final bytes mismatch: {final}'
-else:
-    assert final.get('received', 0) >= final.get('total', 0), f'estimated total exceeds final bytes: {final}'
+assert final.get('totalExact') is True, f'completed size is not exact: {final}'
+assert final.get('received') == final.get('total'), f'exact final bytes mismatch: {final}'
 PY
-  open_downloads_cdp || return 1
-  id=$(cdp_latest_download_id_since "$marker")
-  [[ -n "$id" && "$id" != null ]] || return 1
-  cdp_wait_status "$id" completed || return 1
+  [[ $? -eq 0 ]] || return 1
   cdp_cleanup_download "$id"
 }
 
@@ -806,7 +834,7 @@ download_sabr_ui_progress() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
-  wait_for_logcat 'SABR size preflight complete' || return 1
+  wait_for_logcat '"event":"preflight-complete"' || return 1
   adb_shell input tap 535 1540
   echo '[download-sabr-ui-progress] download started, waiting for completion'
   sleep 2
@@ -832,6 +860,10 @@ download_sabr_ui_progress() {
     sleep 2
   done
   (( completed == 1 )) || { echo '[download-sabr-ui-progress] completion timeout'; return 1; }
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed || return 1
   adb_cmd logcat -d -v threadtime > "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt"
   grep -q 'SABR store complete' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
   grep -q 'metadata update.*"status":"completed"' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
@@ -845,10 +877,7 @@ assert speeds, 'smoothed speed samples are missing'
 assert all(max(a, b) <= min(a, b) * 1.6 for a, b in zip(speeds, speeds[1:])), f'speed jumps between samples: {speeds}'
 assert not re.search(r'metadata update .*"status":"completed".*"speedBps":[1-9]', log)
 PY
-  open_downloads_cdp || return 1
-  id=$(cdp_latest_download_id_since "$marker")
-  [[ -n "$id" && "$id" != null ]] || return 1
-  cdp_wait_status "$id" completed || return 1
+  [[ $? -eq 0 ]] || return 1
   cdp_cleanup_download "$id"
 }
 
@@ -943,7 +972,7 @@ download_sabr_export() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
-  wait_for_logcat 'SABR size preflight complete' || return 1
+  wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -1020,7 +1049,7 @@ download_delete() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
-  wait_for_logcat 'SABR size preflight complete' || return 1
+  wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -1054,7 +1083,7 @@ download_external_delete() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
-  wait_for_logcat 'SABR size preflight complete' || return 1
+  wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -1062,8 +1091,6 @@ download_external_delete() {
   uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
   local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
   [[ -n "$uri" && "$uri" != null && -n "$local_path" && "$local_path" != null ]] || return 1
-  adb_cmd unroot >/dev/null 2>&1 || true
-  sleep 2
   assert_personal_profile || return 1
   adb_shell content delete --user "$PERSONAL_USER_ID" --uri "$local_path" >/dev/null || return 1
   ! adb_shell content query --user "$PERSONAL_USER_ID" --uri "$local_path" --projection _id 2>&1 | grep -q 'Row:' || return 1
@@ -1190,10 +1217,20 @@ run_locked_suite() {
 case "$TEST" in
   all)
     case "$SUITE" in
-      all) run_unlocked_suite && run_locked_suite ;;
-      unlocked) run_unlocked_suite ;;
+      all)
+        run_unlocked_suite || true
+        cleanup_run_downloads
+        run_locked_suite || true
+        ;;
+      unlocked)
+        run_unlocked_suite || true
+        cleanup_run_downloads
+        ;;
       locked) run_locked_suite ;;
-      downloads) run_downloads_suite ;;
+      downloads)
+        run_downloads_suite || true
+        cleanup_run_downloads
+        ;;
       *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;
     esac
     ;;
@@ -1237,7 +1274,9 @@ esac
 
 collect_logs
 stop_screen_recording
-printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP" | tee "$ARTIFACT_DIR/summary.txt"
-cat "$ARTIFACT_DIR/summary.txt"
+{
+  printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
+  printf 'TIMINGS %s\n' "${TEST_TIMINGS[*]}"
+} | tee "$ARTIFACT_DIR/summary.txt"
 if ((FAIL > 0)); then exit 1; fi
 exit 0

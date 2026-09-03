@@ -114,11 +114,11 @@ test('SABR storage uses nearest MP4 track above the requested height', () => {
   assert.equal(selectSabrDownloadTrack([high, medium], 240), medium)
 })
 
-test('SABR storage callback keeps exact MP4 ids and never falls back to WebM', () => {
+test('SABR storage callback rejects stale ids above selected height and never falls back to WebM', () => {
   const exact = { type: 'variant', height: 1080, bandwidth: 10, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-exact', originalAudioId: 'audio-exact' }
   const fallback = { type: 'variant', height: 720, bandwidth: 20, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-fallback', originalAudioId: 'audio-fallback' }
   const webm = { type: 'variant', height: 1080, bandwidth: 30, videoMimeType: 'video/webm', audioMimeType: 'audio/webm', originalVideoId: 'video-webm', originalAudioId: 'audio-webm' }
-  assert.deepEqual(Array.from(selectSabrStorageTracks([fallback, exact], { videoTrackId: 'video-exact', audioTrackId: 'audio-exact', maxHeight: 720 })), [exact])
+  assert.deepEqual(Array.from(selectSabrStorageTracks([fallback, exact], { videoTrackId: 'video-exact', audioTrackId: 'audio-exact', maxHeight: 720 })), [fallback])
   assert.deepEqual(Array.from(selectSabrStorageTracks([webm, fallback], { videoTrackId: 'video-webm', audioTrackId: 'audio-webm', maxHeight: 1080 })), [fallback])
   assert.throws(() => selectSabrStorageTracks([webm], { videoTrackId: 'video-webm', audioTrackId: 'audio-webm' }), /SABR download has no MP4 track/)
   assert.ok(source.includes('trackSelectionCallback: selectTracks'))
@@ -155,7 +155,7 @@ test('SABR store reuses one preflight selection and logs store timestamps', asyn
     total: 149.4,
     totalExact: true
   })
-  assert.equal(selected, exact)
+  assert.equal(selected, fallback)
   assert.equal(progress.length, 4)
   assert.equal(Math.round(progress[1] * 100), 43)
   assert.equal(progress[2], 149.4)
@@ -312,7 +312,20 @@ test('download progress handles missing totals and clamps SABR snapshots', () =>
   }))), {
     downloadId: 'one', status: 'downloading', progress: null, received: 5, total: 0, totalExact: false, fileSize: 0, speedBps: 0, error: null
   })
-  assert.equal(getProgressSnapshot({ size: 100 }, 2).progress, 1)
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 100 }, 2, 101, true))), {
+    received: 100, total: 100, totalExact: true, progress: 1
+  })
+})
+
+test('download events preserve completed SABR metadata', () => {
+  const result = mergeDownloadProgress({ downloadId: 'one', title: 'Title' }, {
+    status: 'completed', progress: 1, received: 100, total: 101, totalExact: true,
+    offlineUri: 'offline:test', localPath: 'content://test', fileName: 'test.mp4', fileSize: 99, completedAt: 123
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    downloadId: 'one', title: 'Title', status: 'completed', progress: 1, received: 100, total: 100, totalExact: true,
+    offlineUri: 'offline:test', localPath: 'content://test', fileName: 'test.mp4', fileSize: 99, completedAt: 123, error: null
+  })
 })
 
 test('fallback save dialog requests final mp4 name', () => {

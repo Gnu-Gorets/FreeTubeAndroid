@@ -222,7 +222,7 @@ async function retry(download) {
   router.push(`/watch/${download.videoId}`)
 }
 
-function control(download, action) {
+async function control(download, action) {
   if (download.manifestSrc) {
     if (action === 'cancel' || action === 'pause') {
       if (!hasSabrDownload(download.downloadId)) return
@@ -236,6 +236,7 @@ function control(download, action) {
         android.finishDownloadNotification?.(download.downloadId)
       }
     } else if (action === 'resume' || action === 'retry') {
+      while (hasSabrDownload(download.downloadId)) await new Promise(resolve => setTimeout(resolve, 50))
       download.status = 'queued'
       download.interrupted = true
       updateDownloadMetadata(download.downloadId, { status: 'queued', interrupted: true, error: null })
