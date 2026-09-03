@@ -487,7 +487,6 @@ open_video() {
   ensure_cdp && cdp_wait "Boolean(document.querySelector('video'))"
   adb_shell input tap 400 340
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
-  sleep 3
   screenshot video
 }
 
@@ -505,7 +504,6 @@ open_download_video() {
     fi
     adb_shell input tap 400 340
     adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
-    sleep 3
     screenshot download-video
     return 0
   done
