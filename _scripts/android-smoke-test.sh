@@ -223,36 +223,18 @@ cdp_eval() {
 }
 
 cdp_wait() {
-  local expression="$1" timeout="${2:-$TIMEOUT}" start now
-  start=$(date +%s)
-  while :; do
-    [[ $(cdp_eval "$expression" 2>/dev/null || true) == true ]] && return 0
-    now=$(date +%s)
-    ((now - start >= timeout)) && return 1
-    sleep 1
-  done
+  local expression="$1" timeout="${2:-$TIMEOUT}"
+  [[ $(node "$(dirname "$0")/cdp.mjs" --wait "$expression" "$timeout" 2>/dev/null || true) == true ]]
 }
 
 cdp_wait_status() {
-  local id="$1" status="$2" timeout="${3:-$TIMEOUT}" start now
-  start=$(date +%s)
-  while :; do
-    [[ $(cdp_eval "window.__ftTest?.downloads().some(d => d.id === '$id' && d.status === '$status')" 2>/dev/null || true) == true ]] && return 0
-    now=$(date +%s)
-    ((now - start >= timeout)) && return 1
-    sleep 1
-  done
+  local id="$1" status="$2" timeout="${3:-$TIMEOUT}"
+  cdp_wait "window.__ftTest?.downloads().some(d => d.id === '$id' && d.status === '$status')" "$timeout"
 }
 
 cdp_wait_inactive() {
-  local id="$1" start now
-  start=$(date +%s)
-  while :; do
-    [[ $(cdp_eval "window.__ftTest && !window.__ftTest.active('$id')" 2>/dev/null || true) == true ]] && return 0
-    now=$(date +%s)
-    ((now - start >= TIMEOUT)) && return 1
-    sleep 1
-  done
+  local id="$1"
+  cdp_wait "window.__ftTest && !window.__ftTest.active('$id')"
 }
 
 cdp_latest_download_id_since() {
