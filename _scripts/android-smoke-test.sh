@@ -543,6 +543,15 @@ media_session() {
   adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid'
 }
 
+wait_for_audio_owner() {
+  local owner="$1"
+  for _ in $(seq 1 "$TIMEOUT"); do
+    adb_shell dumpsys audio | grep -q "$owner" && return 0
+    sleep 1
+  done
+  return 1
+}
+
 locked_screen() {
   locked_state || return 1
   no_runtime_errors
@@ -602,15 +611,13 @@ audio_focus() {
     return 0
   fi
   adb_shell am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' -p "$ref" >/dev/null
-  sleep 8
+  wait_for "$ref" || return 1
   adb_shell input tap 390 345
-  sleep 4
-  adb_shell dumpsys audio | grep -q "$ref" || return 1
+  wait_for_audio_owner "$ref" || return 1
   adb_shell am start -n "$ACTIVITY" >/dev/null
-  sleep 3
+  wait_for "$PACKAGE" || return 1
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
-  sleep 3
-  adb_shell dumpsys audio | grep -q "$PACKAGE" || return 1
+  wait_for_audio_owner "$PACKAGE" || return 1
   no_runtime_errors
 }
 
