@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import i18n from './i18n/index'
+import i18n, { loadLocale } from './i18n/index'
 import router from './router/index'
 import store from './store/index'
 import App from './App.vue'
@@ -275,7 +275,7 @@ app
   .use(store)
   .use(i18n)
 
-router.isReady().then(() => {
+Promise.all([router.isReady(), loadLocale('en-US')]).then(() => {
   app.mount('#app')
 })
 

@@ -47,6 +47,7 @@ export async function loadLocale(locale) {
   const response = await fetch(url)
   const data = await response.json()
   i18n.global.setLocaleMessage(locale, data)
+  if (locale === 'en-US') i18n.global.setLocaleMessage('en', data)
 }
 
 // Set by _scripts/ProcessLocalesPlugin.js
