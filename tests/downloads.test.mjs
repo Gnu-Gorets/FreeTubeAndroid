@@ -27,7 +27,7 @@ const context = vm.createContext({
 })
 vm.runInContext(source, context)
 
-const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, recordDownloadMetadata, selectSabrDownloadTrack, updateDownloadMetadata } = context
+const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, updateDownloadMetadata } = context
 
 test('SABR qualities deduplicate variants and use quality labels', () => {
   const manifest = `data:application/sabr+json,${encodeURIComponent(JSON.stringify({
@@ -35,6 +35,7 @@ test('SABR qualities deduplicate variants and use quality labels', () => {
       { mimeType: 'video/mp4', quality: 'hd1080', height: 960, width: 1920 },
       { mimeType: 'video/mp4', quality: 'hd1080', height: 960, width: 1920 },
       { mimeType: 'video/mp4', quality: 'hd720', height: 640, width: 1280 },
+      { mimeType: 'video/webm', quality: 'hd2160', height: 2160, width: 3840 },
       { mimeType: 'audio/mp4', quality: 'AUDIO', height: null }
     ]
   }))}`
@@ -89,11 +90,36 @@ test('SABR storage prefers MP4 audio for Android MP4 export', () => {
   const opus = { type: 'variant', height: 720, bandwidth: 30, videoMimeType: 'video/webm', audioMimeType: 'audio/webm' }
   const aac = { type: 'variant', height: 720, bandwidth: 20, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4' }
   assert.equal(selectSabrDownloadTrack([opus, aac], 720), aac)
+  assert.equal(selectSabrDownloadTrack([opus], 720), null)
+})
+
+test('SABR storage uses nearest MP4 track above the requested height', () => {
+  const medium = { type: 'variant', height: 480, bandwidth: 10, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4' }
+  const high = { type: 'variant', height: 720, bandwidth: 20, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4' }
+  assert.equal(selectSabrDownloadTrack([high, medium], 240), medium)
+})
+
+test('SABR storage callback keeps exact MP4 ids and never falls back to WebM', () => {
+  const exact = { type: 'variant', height: 1080, bandwidth: 10, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-exact', originalAudioId: 'audio-exact' }
+  const fallback = { type: 'variant', height: 720, bandwidth: 20, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-fallback', originalAudioId: 'audio-fallback' }
+  const webm = { type: 'variant', height: 1080, bandwidth: 30, videoMimeType: 'video/webm', audioMimeType: 'audio/webm', originalVideoId: 'video-webm', originalAudioId: 'audio-webm' }
+  assert.deepEqual(Array.from(selectSabrStorageTracks([fallback, exact], { videoTrackId: 'video-exact', audioTrackId: 'audio-exact', maxHeight: 720 })), [exact])
+  assert.deepEqual(Array.from(selectSabrStorageTracks([webm, fallback], { videoTrackId: 'video-webm', audioTrackId: 'audio-webm', maxHeight: 1080 })), [fallback])
+  assert.throws(() => selectSabrStorageTracks([webm], { videoTrackId: 'video-webm', audioTrackId: 'audio-webm' }), /SABR download has no MP4 track/)
+  assert.ok(source.includes('trackSelectionCallback: selectTracks'))
 })
 
 test('invalid SABR manifest returns no quality options', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('not-a-manifest'))), [])
   assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('data:application/sabr+json,%7Bbad'))), [])
+})
+
+test('SABR manifest without MP4 audio returns no quality options', () => {
+  const manifest = `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats: [
+    { mimeType: 'video/mp4', quality: 'hd720', height: 720 },
+    { mimeType: 'audio/webm', quality: 'audio' }
+  ] }))}`
+  assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats(manifest))), [])
 })
 
 test('SABR quality labels deduplicate by quality and height', () => {

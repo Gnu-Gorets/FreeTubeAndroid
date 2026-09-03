@@ -83,9 +83,25 @@ export function selectSabrDownloadTrack(tracks = [], maxHeight) {
   const compatible = variants.filter(track => track.videoMimeType?.startsWith('video/mp4') && track.audioMimeType?.startsWith('audio/mp4'))
   const eligible = compatible.filter(track => track.height <= (maxHeight || Infinity))
   const candidates = eligible.length > 0 ? eligible : compatible
-  const height = Math.max(...candidates.map(track => track.height), 0)
+  const height = eligible.length > 0
+    ? Math.max(...candidates.map(track => track.height))
+    : Math.min(...candidates.map(track => track.height))
   return candidates.filter(track => track.height === height)
     .sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0] ?? null
+}
+
+function selectSabrStorageTracks(tracks = [], selection = {}) {
+  const exact = selection.videoTrackId && selection.audioTrackId
+    ? tracks.find(track => track.type === 'variant' &&
+      Number.isFinite(track.height) &&
+      track.videoMimeType?.startsWith('video/mp4') &&
+      track.audioMimeType?.startsWith('audio/mp4') &&
+      track.originalVideoId === selection.videoTrackId &&
+      track.originalAudioId === selection.audioTrackId)
+    : null
+  const selected = exact || selectSabrDownloadTrack(tracks, selection.maxHeight)
+  if (!selected) throw new Error('SABR download has no MP4 track')
+  return [selected]
 }
 
 const sabrOperations = new Map()
@@ -154,19 +170,13 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped before start')
     await player.load(manifestSrc, null, download.manifestMimeType)
     manifestRef.value = player.getManifest()
-    const tracks = player.getVariantTracks()
-    const selectedTrack = tracks.find(track => track.type === 'variant' && track.originalVideoId === selection.videoTrackId && track.originalAudioId === selection.audioTrackId) || selectSabrDownloadTrack(tracks, selection.maxHeight)
-    if (!selectedTrack) throw new Error('SABR download has no MP4 track')
+    const selectTracks = tracks => selectSabrStorageTracks(tracks, selection)
+    const [selectedTrack] = selectTracks(player.getVariantTracks())
     log('SABR track selected', { id: download.downloadId, total: stableTotal, exact: totalExact, selected: { height: selectedTrack.height, video: selectedTrack.originalVideoId, audio: selectedTrack.originalAudioId } })
     storage = new shaka.offline.Storage(player)
     storage.configure({
       offline: {
-        trackSelectionCallback: tracks => {
-          const match = tracks.find(track => track.type === 'variant' &&
-            track.originalVideoId === selectedTrack.originalVideoId &&
-            track.originalAudioId === selectedTrack.originalAudioId)
-          return [match || selectSabrDownloadTrack(tracks, selection.maxHeight)].filter(Boolean)
-        },
+        trackSelectionCallback: selectTracks,
         progressCallback(content, progress) {
           const now = Date.now()
           const percent = Math.round(progress * 100)
