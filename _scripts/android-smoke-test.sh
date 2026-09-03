@@ -31,7 +31,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete,
+                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-external-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -233,10 +233,8 @@ cdp_cleanup_download() {
 }
 
 open_downloads_cdp() {
-  ensure_cdp || return 1
-  cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
-    [[ $(cdp_eval 'Boolean(window.__ftTest)' 2>/dev/null || true) == true ]] && return 0
+    if ensure_cdp && cdp_eval "location.hash = '#/downloads'; true" >/dev/null && [[ $(cdp_eval 'Boolean(window.__ftTest)' 2>/dev/null || true) == true ]]; then return 0; fi
     sleep 1
   done
   return 1
@@ -908,7 +906,7 @@ download_delete() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
-  local marker id uri stale_id
+  local marker id uri local_path stale_id
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
@@ -924,7 +922,8 @@ download_delete() {
   sleep 2
   [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$stale_id')") == false ]] || return 1
   uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
-  [[ -n "$uri" && "$uri" != null ]] || return 1
+  local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
+  [[ -n "$uri" && "$uri" != null && -n "$local_path" && "$local_path" != null ]] || return 1
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
   cdp_click_download_action "$id" delete || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
@@ -932,6 +931,41 @@ download_delete() {
     sleep 1
   done
   [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] || return 1
+  [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == false ]] || return 1
+  ! adb_shell content query --uri "$local_path" --projection _id 2>&1 | grep -q 'Row:'
+}
+
+download_external_delete() {
+  clean_logs
+  open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id uri local_path
+  marker=$(cdp_eval 'Date.now()')
+  adb_shell input tap 185 830
+  sleep 2
+  adb_shell input tap 575 875
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+  uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
+  local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
+  [[ -n "$uri" && "$uri" != null && -n "$local_path" && "$local_path" != null ]] || return 1
+  adb_cmd unroot >/dev/null 2>&1 || true
+  sleep 2
+  assert_personal_profile || return 1
+  adb_shell content delete --user "$PERSONAL_USER_ID" --uri "$local_path" >/dev/null || return 1
+  ! adb_shell content query --user "$PERSONAL_USER_ID" --uri "$local_path" --projection _id 2>&1 | grep -q 'Row:' || return 1
+  adb_shell input keyevent KEYCODE_HOME
+  sleep 1
+  adb_shell am start --user "$PERSONAL_USER_ID" -n "$ACTIVITY" >/dev/null
+  open_downloads_cdp || return 1
+  [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] || return 1
+  adb_shell am force-stop --user "$PERSONAL_USER_ID" "$PACKAGE"
+  adb_shell am start --user "$PERSONAL_USER_ID" -n "$ACTIVITY" >/dev/null
+  open_downloads_cdp || return 1
+  [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] || return 1
+  cdp_eval "window.__ftTest.removeOffline('$uri')" >/dev/null
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == false ]]
 }
 
@@ -983,6 +1017,7 @@ run_unlocked_suite() {
   run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
   run_test download-delete download_delete
+  run_test download-external-delete download_external_delete
   run_test cleanup cleanup
   run_test recovery recovery
   (( FAIL == 0 ))
@@ -1009,6 +1044,7 @@ run_downloads_suite() {
   run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
   run_test download-delete download_delete
+  run_test download-external-delete download_external_delete
   (( FAIL == 0 ))
 }
 
@@ -1079,6 +1115,7 @@ case "$TEST" in
   download-storage) run_test download-storage download_storage ;;
   download-cancel) run_test download-cancel download_cancel ;;
   download-delete) run_test download-delete download_delete ;;
+  download-external-delete) run_test download-external-delete download_external_delete ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;

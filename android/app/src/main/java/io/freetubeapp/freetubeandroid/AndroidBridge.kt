@@ -665,10 +665,30 @@ class AndroidBridge(
     @JavascriptInterface
     fun deleteFile(uri: String): Boolean {
         return try {
+            val resolvedUri = resolveUri(uri)
             if (uri.startsWith("data://")) java.io.File(dataDirectory, uri.removePrefix("data://")).delete()
-            else DocumentFile.fromSingleUri(activity, resolveUri(uri))?.delete() == true
+            else if (resolvedUri.authority == MediaStore.AUTHORITY) activity.contentResolver.delete(resolvedUri, null, null) > 0
+            else DocumentFile.fromSingleUri(activity, resolvedUri)?.delete() == true
         } catch (error: Exception) {
             Log.w("FreeTubeWebView", "Unable to delete file: $uri", error)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun deleteDownloadFile(uri: String): String = asyncFileOperation {
+        check(deleteFile(uri)) { "Unable to delete download: $uri" }
+        ""
+    }
+
+    @JavascriptInterface
+    fun fileExists(uri: String): Boolean {
+        return try {
+            val resolvedUri = resolveUri(uri)
+            if (uri.startsWith("data://")) java.io.File(dataDirectory, uri.removePrefix("data://")).exists()
+            else if (resolvedUri.authority == MediaStore.AUTHORITY) activity.contentResolver.query(resolvedUri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { it.moveToFirst() } == true
+            else DocumentFile.fromSingleUri(activity, resolvedUri)?.exists() == true
+        } catch (_: Exception) {
             false
         }
     }

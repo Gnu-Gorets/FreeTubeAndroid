@@ -108,6 +108,7 @@
 <script setup>
 import shaka from 'shaka-player'
 import android from 'android'
+import { awaitAsyncResult } from '../../helpers/android/jsinterface'
 import { cancelSabrDownload, hasSabrDownload, isSabrDownloadCanceled, isSabrDownloadPaused, mergeDownloadProgress, mergeNativeDownload, pauseSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 import { filterDownloads } from '../../helpers/android/download-search.mjs'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -149,12 +150,13 @@ function load() {
     const queue = nativeQueue()
     const stored = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
     if (!Array.isArray(stored)) throw new Error('Downloads metadata is not an array')
-    downloads.value = stored.map(download => {
+    downloads.value = stored.flatMap(download => {
       const native = queue.find(item => item.id === download.downloadId)
-      if (native) return mergeNativeDownload(download, native)
-      return download.status === 'downloading' && !download.interrupted && !hasSabrDownload(download.downloadId)
+      if (native) return [mergeNativeDownload(download, native)]
+      if (download.status === 'completed' && download.localPath && window.Android?.fileExists && !window.Android.fileExists(download.localPath)) return []
+      return [download.status === 'downloading' && !download.interrupted && !hasSabrDownload(download.downloadId)
         ? { ...download, status: 'queued', interrupted: true, error: 'Download interrupted' }
-        : download
+        : download]
     })
     localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
     console.warn('[Downloads] list loaded', downloads.value.map(download => ({ id: download.downloadId, status: download.status, selectedFormat: download.selectedFormat, hasThumbnail: Boolean(download.thumbnail), hasOfflineUri: Boolean(download.offlineUri) })))
@@ -224,6 +226,14 @@ async function remove(download) {
     control(download, 'cancel')
     if (!download.manifestSrc) await new Promise(resolve => setTimeout(resolve, 300))
   }
+  if (download.localPath && window.Android?.deleteDownloadFile) {
+    try {
+      await awaitAsyncResult(android.deleteDownloadFile(download.localPath))
+    } catch (error) {
+      console.error('[Downloads] unable to delete public file', { id: download.downloadId, error })
+      return
+    }
+  }
   if (download.offlineUri) {
     const player = new shaka.Player(document.createElement('video'))
     const storage = new shaka.offline.Storage(player)
@@ -235,7 +245,6 @@ async function remove(download) {
       await player.destroy()
     }
   }
-  if (download.localPath) window.Android?.deleteFile(download.localPath)
   downloads.value = downloads.value.filter(item => item.downloadId !== download.downloadId)
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
   console.warn('[Downloads] remove complete', { id: download.downloadId, remaining: downloads.value.length })
@@ -309,6 +318,16 @@ function installTestHook() {
     downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, localPath, fileName, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, localPath, fileName, createdAt })),
     active: id => hasSabrDownload(id),
     offlineContents,
+    removeOffline: async uri => {
+      const player = new shaka.Player(document.createElement('video'))
+      const storage = new shaka.offline.Storage(player)
+      try {
+        if ((await storage.list()).some(content => content.offlineUri === uri)) await storage.remove(uri)
+      } finally {
+        await storage.destroy()
+        await player.destroy()
+      }
+    },
     control: (id, action) => {
       const download = downloads.value.find(item => item.downloadId === id)
       if (!download) return false
@@ -353,11 +372,13 @@ onMounted(() => {
   queueTimer = setInterval(load, 1000)
   window.addEventListener('android-download', handleDownloadEvent)
   window.addEventListener('android-download-control', handleDownloadControl)
+  window.addEventListener('app-resume', load)
 })
 
 onBeforeUnmount(async () => {
   window.removeEventListener('android-download', handleDownloadEvent)
   window.removeEventListener('android-download-control', handleDownloadControl)
+  window.removeEventListener('app-resume', load)
   delete window.__ftTest
   if (queueTimer) clearInterval(queueTimer)
 })

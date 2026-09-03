@@ -155,7 +155,9 @@ test('quality picker keeps multiple options and dispatches selected format', () 
 test('Downloads view exposes cancel, retry, play and delete flows', () => {
   for (const action of ["control(download, 'cancel')", "control(download, 'pause')", "control(download, 'resume')", "control(download, 'retry')"]) assert.ok(downloadsViewSource.includes(action))
   assert.ok(downloadsViewSource.includes("download.status === 'completed'"))
-  assert.ok(downloadsViewSource.includes('window.Android?.deleteFile(download.localPath)'))
+  assert.ok(downloadsViewSource.includes('awaitAsyncResult(android.deleteDownloadFile(download.localPath))'))
+  assert.ok(downloadsViewSource.includes('window.Android?.fileExists'))
+  assert.ok(downloadsViewSource.includes("window.addEventListener('app-resume', load)"))
   assert.ok(downloadsViewSource.includes('stored.some(content => content.offlineUri === download.offlineUri)'))
   assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
 })
@@ -178,6 +180,13 @@ test('WebView debugging is enabled only in debug builds', () => {
 test('public downloads use MediaStore Downloads collection', () => {
   assert.ok(androidBridgeSource.includes('MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)'))
   assert.ok(!androidBridgeSource.includes('MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)'))
+})
+
+test('native bridge deletes and checks MediaStore downloads with ContentResolver', () => {
+  assert.ok(androidBridgeSource.includes('activity.contentResolver.delete(resolvedUri, null, null) > 0'))
+  assert.ok(androidBridgeSource.includes('fun deleteDownloadFile(uri: String): String = asyncFileOperation'))
+  assert.ok(androidBridgeSource.includes('fun fileExists(uri: String): Boolean'))
+  assert.ok(androidBridgeSource.includes('activity.contentResolver.query(resolvedUri'))
 })
 
 test('native finalization separates MediaStore publish from SAF targets', () => {
