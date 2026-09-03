@@ -632,7 +632,6 @@ export_data() {
   open_data_settings || return 1
   # Export Playlists button in Data settings.
   adb_shell input tap 480 1070
-  sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
   close_picker
