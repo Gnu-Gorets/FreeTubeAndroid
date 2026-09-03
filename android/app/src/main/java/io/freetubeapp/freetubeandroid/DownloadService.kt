@@ -33,6 +33,7 @@ class DownloadService : Service() {
         const val ACTION_RESUME = "io.freetubeapp.freetubeandroid.download.RESUME"
         const val ACTION_CANCEL = "io.freetubeapp.freetubeandroid.download.CANCEL"
         const val ACTION_RETRY = "io.freetubeapp.freetubeandroid.download.RETRY"
+        const val ACTION_STATE = "io.freetubeapp.freetubeandroid.download.STATE"
         const val EXTRA_ITEM = "item"
         const val EXTRA_ID = "id"
         private const val CHANNEL = "downloads"
@@ -117,6 +118,21 @@ class DownloadService : Service() {
         prefs().edit().putString(QUEUE, queue.toString()).apply()
     }
 
+    private fun broadcast(item: JSONObject) {
+        sendBroadcast(Intent(ACTION_STATE).setPackage(packageName)
+            .putExtra("id", item.optString("id"))
+            .putExtra("title", item.optString("title"))
+            .putExtra("status", item.optString("status"))
+            .putExtra("phase", item.optString("phase"))
+            .putExtra("progress", item.optDouble("progress", 0.0))
+            .putExtra("received", item.optLong("received", 0))
+            .putExtra("total", item.optLong("total", 0))
+            .putExtra("fileSize", item.optLong("fileSize", 0))
+            .putExtra("speedBps", item.optLong("speedBps", 0))
+            .putExtra("etaSeconds", item.optLong("etaSeconds", 0))
+            .putExtra("error", item.optString("error", "")))
+    }
+
     private fun enqueue(item: JSONObject) {
         val queue = readQueue()
         if ((0 until queue.length()).any { queue.getJSONObject(it).optString("id") == item.optString("id") }) {
@@ -127,6 +143,7 @@ class DownloadService : Service() {
         Log.i(TAG, "queue status id=${item.optString("id")} null->queued")
         queue.put(item)
         writeQueue(queue)
+        broadcast(item)
         executor.execute { process() }
     }
 
@@ -141,6 +158,7 @@ class DownloadService : Service() {
             }
         }
         writeQueue(queue)
+        queue.let { q -> (0 until q.length()).map { q.getJSONObject(it) }.firstOrNull { it.optString("id") == id } }?.let(::broadcast)
         if (status == "paused") connections[id]?.disconnect()
         executor.execute { process() }
     }
@@ -158,6 +176,7 @@ class DownloadService : Service() {
             }
         }
         writeQueue(queue)
+        queue.let { q -> (0 until q.length()).map { q.getJSONObject(it) }.firstOrNull { it.optString("id") == id } }?.let(::broadcast)
         executor.execute { process() }
     }
 
@@ -175,7 +194,10 @@ class DownloadService : Service() {
                     items += item
                 }
             }
-            if (items.isNotEmpty()) writeQueue(queue)
+            if (items.isNotEmpty()) {
+                writeQueue(queue)
+                items.forEach(::broadcast)
+            }
         }
         items.forEach { item ->
             executor.execute {
@@ -186,6 +208,7 @@ class DownloadService : Service() {
                     item.put("status", "completed").put("phase", "completed").put("progress", 1).put("speedBps", 0).put("etaSeconds", 0)
                     item.put("targetUri", rename(item.optString("targetUri"), item.optString("finalName")))
                     publish(item.optString("targetUri"))
+                    item.put("fileSize", length(Uri.parse(item.optString("targetUri"))))
                     notify(item.optString("id"), item.optString("title"), "Download complete", null, false)
                 } catch (error: Exception) {
                     val currentState = readQueue().let { q ->
@@ -423,6 +446,7 @@ class DownloadService : Service() {
         val queue = readQueue()
         for (index in 0 until queue.length()) if (queue.getJSONObject(index).optString("id") == item.optString("id")) queue.put(index, item)
         writeQueue(queue)
+        broadcast(item)
     }
 
     private fun muxMp4(videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {

@@ -119,7 +119,7 @@ export function recordDownloadMetadata(metadata) {
   return downloads
 }
 
-export async function storeSabrDownload(download, onProgress, maxHeight) {
+export async function storeSabrDownload(download, onProgress, maxHeight, expectedTotal = 0) {
   if (!download.manifestSrc || !download.sabrData || !shaka.offline?.Storage) throw new Error('SABR download is unavailable')
   sabrCanceled.delete(download.downloadId)
   sabrPaused.delete(download.downloadId)
@@ -148,7 +148,7 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
     const selectedTrack = selectSabrDownloadTrack(player.getVariantTracks(), maxHeight)
     if (!selectedTrack) throw new Error('SABR download has no selectable track')
     const sizeEstimate = await estimateSabrSize(manifestRef.value, selectedTrack)
-    stableTotal = sizeEstimate.total
+    stableTotal = expectedTotal > 0 ? expectedTotal : sizeEstimate.total
     log('SABR size estimate', {
       id: download.downloadId,
       total: stableTotal,
@@ -214,7 +214,7 @@ export async function storeSabrDownload(download, onProgress, maxHeight) {
 }
 
 export async function recoverSabrDownload(download, onProgress) {
-  const content = await storeSabrDownload(download, onProgress)
+  const content = await storeSabrDownload(download, onProgress, undefined, download.totalExact ? download.total : 0)
   return { ...await exportSabrDownload(content, download.title, download.downloadId), offlineUri: content.offlineUri }
 }
 
@@ -250,6 +250,7 @@ export function mergeNativeDownload(download, native) {
     progress: native.progress,
     received: native.received,
     total: native.total,
+    fileSize: native.fileSize || download.fileSize || 0,
     totalExact: native.total > 0,
     phase: native.phase,
     speedBps: native.speedBps,
@@ -272,6 +273,13 @@ export function getStableProgressSnapshot(content, transportBytes, progress, kno
     ...getProgressSnapshot(content, transportBytes, progress, knownTotal),
     progress: Math.max(0, Math.min(1, progress))
   }
+}
+
+export async function preflightSabrDownload(player, maxHeight) {
+  const manifest = player?.getManifest?.()
+  const selectedTrack = selectSabrDownloadTrack(player?.getVariantTracks?.() || [], maxHeight)
+  if (!manifest || !selectedTrack) throw new Error('SABR download is not ready')
+  return estimateSabrSize(manifest, selectedTrack)
 }
 
 async function estimateSabrSize(manifest, selectedTrack) {
@@ -308,6 +316,7 @@ export function mergeDownloadProgress(download, detail, native = null) {
     progress: detail.progress ?? (detail.total > 0 ? detail.received / detail.total : null),
     received: detail.received,
     total: detail.total,
+    fileSize: detail.fileSize || download.fileSize || 0,
     totalExact: detail.totalExact ?? download.totalExact,
     networkBytes: detail.networkBytes ?? download.networkBytes,
     phase: detail.phase ?? download.phase,
@@ -391,7 +400,7 @@ export async function exportSabrDownload(content, title, downloadId) {
       targetUri = dialog.uri
     }
     const localPath = await awaitAsyncResult(android.muxStoredDownload(videoUri, audioUri, targetUri, fileName))
-    return { fileName, localPath }
+    return { fileName, localPath, fileSize: android.getFileSize?.(localPath) || 0 }
   } catch (error) {
     if (targetUri) android.deleteFile?.(targetUri)
     throw error
@@ -414,6 +423,8 @@ export async function downloadProgressiveVideo(video) {
   }
 
   const fileName = safeFileName(video.title, video.id)
+  const total = video.total || (video.audioUrl && video.videoTotal > 0 && video.audioTotal > 0 ? video.videoTotal + video.audioTotal : video.videoTotal)
+  if (!(total > 0)) throw new Error('Download size is unavailable')
   android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 1))
   const defaultUri = android.createDownloadFile?.(downloadDirectory(), `${fileName}.part`) || ''
   const dialog = defaultUri
@@ -433,7 +444,9 @@ export async function downloadProgressiveVideo(video) {
     engine: 'native',
     selectedFormat: video.selectedFormat || (video.audioUrl ? 'adaptive-mp4' : 'progressive'),
     localPath: dialog.uri,
-    status: 'downloading',
+    status: 'queued',
+    total,
+    totalExact: true,
     createdAt: Date.now()
   }
   const downloads = recordDownloadMetadata(metadata)
@@ -445,6 +458,7 @@ export async function downloadProgressiveVideo(video) {
       audioUrl: video.audioUrl || '',
       videoTotal: video.videoTotal || 0,
       audioTotal: video.audioTotal || 0,
+      total,
       targetUri: dialog.uri,
       finalName: fileName
     }))
@@ -459,6 +473,8 @@ export async function downloadProgressiveVideo(video) {
             progress: item.progress ?? null,
             received: item.received ?? 0,
             total: item.total ?? 0,
+            fileSize: item.fileSize ?? 0,
+            totalExact: item.total > 0,
             speedBps: item.speedBps ?? 0,
             etaSeconds: item.etaSeconds ?? 0,
             error: item.error || null

@@ -682,6 +682,17 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun getFileSize(uri: String): Long {
+        return try {
+            val resolvedUri = resolveUri(uri)
+            if (uri.startsWith("data://")) java.io.File(dataDirectory, uri.removePrefix("data://")).length()
+            else activity.contentResolver.openAssetFileDescriptor(resolvedUri, "r")?.use { it.length.coerceAtLeast(0) } ?: 0
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    @JavascriptInterface
     fun fileExists(uri: String): Boolean {
         return try {
             val resolvedUri = resolveUri(uri)

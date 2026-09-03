@@ -31,7 +31,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-external-delete,
+                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -214,6 +214,25 @@ cdp_latest_download_id_since() {
 cdp_click_download_action() {
   local id="$1" action="$2"
   [[ $(cdp_eval "(() => { const row = [...document.querySelectorAll('[data-download-id]')].find(node => node.dataset.downloadId === '$id'); const button = row?.querySelector('[data-download-action=\"$action\"]'); if (!button) return false; button.click(); return true })()") == true ]]
+}
+
+cdp_click_bulk_action() {
+  local action="$1"
+  [[ $(cdp_eval "(() => { const button = document.querySelector('[data-download-action=\"$action\"]'); if (!button) return false; button.click(); return true })()") == true ]]
+}
+
+cdp_start_sabr_download() {
+  local marker="$1" expected="$2"
+  [[ $(cdp_eval "(() => { const button = document.querySelector('[data-download-action=\"start-download\"] button'); if (!button) return false; button.click(); return true })()") == true ]] || return 1
+  for _ in $(seq 1 "$TIMEOUT"); do
+    if [[ $(cdp_eval "(() => { const buttons = [...document.querySelectorAll('.prompt button')]; const button = buttons.at(-1); if (!button) return false; button.click(); return true })()" 2>/dev/null || true) == true ]]; then break; fi
+    sleep 1
+  done
+  for _ in $(seq 1 "$TIMEOUT"); do
+    [[ $(cdp_eval "JSON.parse(localStorage.getItem('freetube-downloads') || '[]').filter(d => d.createdAt >= $marker).length" 2>/dev/null || true) -ge "$expected" ]] && return 0
+    sleep 1
+  done
+  return 1
 }
 
 cdp_cleanup_download() {
@@ -405,14 +424,24 @@ open_video() {
 }
 
 open_download_video() {
-  adb_shell am force-stop "$PACKAGE"
-  adb_shell am start -a android.intent.action.VIEW -d "$DOWNLOAD_VIDEO_URL" -n "$ACTIVITY" >/dev/null
-  wait_for "$PACKAGE" || return 1
-  sleep 35
-  adb_shell input tap 400 340
-  adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
-  sleep 3
-  screenshot download-video
+  local attempt
+  for attempt in 1 2; do
+    adb_cmd logcat -c
+    adb_shell am force-stop "$PACKAGE"
+    adb_shell am start -a android.intent.action.VIEW -d "$DOWNLOAD_VIDEO_URL" -n "$ACTIVITY" >/dev/null
+    wait_for "$PACKAGE" || return 1
+    sleep 35
+    if adb_cmd logcat -d --pid="$(adb_shell pidof -s "$PACKAGE")" '*:E' | grep -q 'TypeError:'; then
+      [[ "$attempt" == 2 ]] && return 1
+      continue
+    fi
+    adb_shell input tap 400 340
+    adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
+    sleep 3
+    screenshot download-video
+    return 0
+  done
+  return 1
 }
 
 playback() {
@@ -647,6 +676,7 @@ download_quality() {
   grep -q 'picker options' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   grep -Eq '2160p|1440p|1080p|720p|480p|360p|240p|144p' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   adb_shell input tap 575 875
+  wait_for_logcat 'SABR size preflight complete' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -746,6 +776,7 @@ download_sabr_ui_progress() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
+  wait_for_logcat 'SABR size preflight complete' || return 1
   adb_shell input tap 535 1540
   echo '[download-sabr-ui-progress] download started, waiting for completion'
   sleep 2
@@ -877,11 +908,12 @@ download_sabr_export() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
-  local marker id uri local_path file_name media_row
+  local marker id uri local_path file_name file_size media_row media_size
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
+  wait_for_logcat 'SABR size preflight complete' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -889,18 +921,65 @@ download_sabr_export() {
   uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
   local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
   file_name=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.fileName" | tr -d '"')
+  file_size=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.fileSize")
   [[ -n "$uri" && "$uri" != null ]] || return 1
   [[ -n "$local_path" && "$local_path" != null ]] || return 1
   [[ -n "$file_name" && "$file_name" == *.mp4 ]] || return 1
+  [[ "$file_size" =~ ^[1-9][0-9]*$ ]] || return 1
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
   media_row=$(adb_shell content query --uri "$local_path" --projection _display_name:_size:relative_path:is_pending 2>/dev/null) || return 1
   [[ "$media_row" == *'relative_path=Download/FreeTube/'* && "$media_row" == *'is_pending=0'* ]] || return 1
   [[ "$media_row" =~ _size=[1-9][0-9]* ]] || return 1
+  media_size=$(sed -n 's/.*_size=\([0-9][0-9]*\).*/\1/p' <<<"$media_row")
+  [[ "$file_size" == "$media_size" ]] || return 1
   [[ "$media_row" != *'.part.mp4'* && "$media_row" != *'.mp4.part'* ]] || return 1
   cdp_cleanup_download "$id"
 }
 
 download_storage() { download_sabr_export; }
+
+download_bulk_delete() {
+  clean_logs
+  local marker ids id1 id2 id file_size uri local_path media_row
+  local -a uris=() local_paths=()
+  open_download_video || return 1
+  ensure_cdp || return 1
+  marker=$(cdp_eval 'Date.now()')
+  cdp_start_sabr_download "$marker" 1 || return 1
+  cdp_start_sabr_download "$marker" 2 || return 1
+  open_downloads_cdp || return 1
+  ids=$(cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $marker).sort((a, b) => a.createdAt - b.createdAt).map(d => d.id).join('|')" | tr -d '"')
+  IFS='|' read -r id1 id2 <<<"$ids"
+  [[ -n "$id1" && -n "$id2" && "$id1" != "$id2" ]] || return 1
+  for id in "$id1" "$id2"; do
+    cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+    file_size=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.fileSize")
+    uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
+    local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
+    [[ "$file_size" =~ ^[1-9][0-9]*$ && -n "$uri" && "$uri" != null && -n "$local_path" && "$local_path" != null ]] || return 1
+    [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
+    media_row=$(adb_shell content query --uri "$local_path" --projection _size:is_pending 2>/dev/null) || return 1
+    [[ "$media_row" == *"_size=$file_size"* && "$media_row" == *'is_pending=0'* ]] || return 1
+    uris+=("$uri")
+    local_paths+=("$local_path")
+  done
+  cdp_click_bulk_action select-all || return 1
+  for _ in $(seq 1 "$TIMEOUT"); do
+    [[ $(cdp_eval "['$id1', '$id2'].every(id => document.querySelector('[data-download-id=\"' + id + '\"] input[type=checkbox]')?.checked)") == true ]] && break
+    sleep 1
+  done
+  [[ $(cdp_eval "['$id1', '$id2'].every(id => document.querySelector('[data-download-id=\"' + id + '\"] input[type=checkbox]')?.checked)") == true ]] || return 1
+  cdp_click_bulk_action delete-selected || return 1
+  for _ in $(seq 1 "$TIMEOUT"); do
+    [[ $(cdp_eval "['$id1', '$id2'].every(id => !window.__ftTest.downloads().some(d => d.id === id))") == true ]] && break
+    sleep 1
+  done
+  [[ $(cdp_eval "['$id1', '$id2'].every(id => !window.__ftTest.downloads().some(d => d.id === id))") == true ]] || return 1
+  for id in 0 1; do
+    [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => !items.includes('${uris[$id]}'))") == true ]] || return 1
+    ! adb_shell content query --uri "${local_paths[$id]}" --projection _id 2>&1 | grep -q 'Row:' || return 1
+  done
+}
 
 download_delete() {
   clean_logs
@@ -911,6 +990,7 @@ download_delete() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
+  wait_for_logcat 'SABR size preflight complete' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -944,6 +1024,7 @@ download_external_delete() {
   adb_shell input tap 185 830
   sleep 2
   adb_shell input tap 575 875
+  wait_for_logcat 'SABR size preflight complete' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -1017,6 +1098,7 @@ run_unlocked_suite() {
   run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
   run_test download-delete download_delete
+  run_test download-bulk-delete download_bulk_delete
   run_test download-external-delete download_external_delete
   run_test cleanup cleanup
   run_test recovery recovery
@@ -1044,6 +1126,7 @@ run_downloads_suite() {
   run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
   run_test download-delete download_delete
+  run_test download-bulk-delete download_bulk_delete
   run_test download-external-delete download_external_delete
   (( FAIL == 0 ))
 }
@@ -1115,6 +1198,7 @@ case "$TEST" in
   download-storage) run_test download-storage download_storage ;;
   download-cancel) run_test download-cancel download_cancel ;;
   download-delete) run_test download-delete download_delete ;;
+  download-bulk-delete) run_test download-bulk-delete download_bulk_delete ;;
   download-external-delete) run_test download-external-delete download_external_delete ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;

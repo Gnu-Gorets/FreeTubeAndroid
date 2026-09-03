@@ -2,6 +2,23 @@
   <section class="downloadsView">
     <div class="downloadsHeader">
       <h1>{{ t('Downloads.Title') }}</h1>
+      <div class="downloadBulkActions">
+        <button
+          type="button"
+          data-download-action="select-all"
+          @click="selectAll"
+        >
+          {{ selectAllLabel }}
+        </button>
+        <button
+          v-if="selectedDownloadIds.size"
+          type="button"
+          data-download-action="delete-selected"
+          @click="removeMany()"
+        >
+          {{ t('Downloads.Delete') }} {{ selectedDownloadIds.size }}
+        </button>
+      </div>
       <label class="downloadsSearch">
         <span class="visuallyHidden">{{ t('Downloads.Search') }}</span>
         <input
@@ -27,6 +44,12 @@
       class="downloadItem"
       :data-download-id="download.downloadId"
     >
+      <input
+        type="checkbox"
+        :checked="selectedDownloadIds.has(download.downloadId)"
+        :aria-label="download.title"
+        @change="toggleSelected(download.downloadId)"
+      >
       <img
         :src="download.thumbnail || ''"
         alt=""
@@ -35,6 +58,11 @@
       <div class="downloadInfo">
         <h2>{{ download.title }}</h2>
         <p>{{ download.status }}</p>
+        <p
+          v-if="download.status === 'completed' && download.fileSize > 0"
+        >
+          {{ formatBytes(download.fileSize) }}
+        </p>
         <p
           v-if="download.selectedFormat"
         >
@@ -119,6 +147,11 @@ const { t } = useI18n()
 const router = useRouter()
 const downloads = ref([])
 const searchQuery = ref('')
+const selectedDownloadIds = ref(new Set())
+const selectAllLabel = computed(() => {
+  if (selectedDownloadIds.value.size === downloads.value.length) return t('Downloads.Select None')
+  return t('Downloads.Select all')
+})
 const filteredDownloads = computed(() => filterDownloads(downloads.value, searchQuery.value))
 let queueTimer = null
 let sabrRecoveryRunning = false
@@ -219,35 +252,51 @@ function play(download) {
   router.push({ path: `/watch/${download.videoId}`, query: { offline: download.downloadId } })
 }
 
+function toggleSelected(id) {
+  const next = new Set(selectedDownloadIds.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  selectedDownloadIds.value = next
+}
+
+function selectAll() {
+  selectedDownloadIds.value = selectedDownloadIds.value.size === downloads.value.length
+    ? new Set()
+    : new Set(downloads.value.map(download => download.downloadId))
+}
+
+async function removeMany(items = downloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))) {
+  if (!items.length) return
+  const active = items.filter(download => ['queued', 'downloading', 'paused'].includes(download.status))
+  active.forEach(download => control(download, 'cancel'))
+  if (active.some(download => !download.manifestSrc)) await new Promise(resolve => setTimeout(resolve, 300))
+
+  const player = items.some(download => download.offlineUri) ? new shaka.Player(document.createElement('video')) : null
+  const storage = player ? new shaka.offline.Storage(player) : null
+  try {
+    const stored = storage ? await storage.list() : []
+    const results = await Promise.all(items.map(async download => {
+      try {
+        if (download.localPath && window.Android?.deleteDownloadFile) await awaitAsyncResult(android.deleteDownloadFile(download.localPath))
+        const content = stored.find(item => item.offlineUri === download.offlineUri)
+        if (content) await storage.remove(content.offlineUri)
+        return { id: download.downloadId, ok: true }
+      } catch (error) {
+        console.error('[Downloads] unable to delete download', { id: download.downloadId, error })
+        return { id: download.downloadId, ok: false }
+      }
+    }))
+    const deleted = new Set(results.filter(result => result.ok).map(result => result.id))
+    downloads.value = downloads.value.filter(download => !deleted.has(download.downloadId))
+    selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => !deleted.has(id)))
+    localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
+  } finally {
+    await storage?.destroy()
+    await player?.destroy()
+  }
+}
+
 async function remove(download) {
-  console.warn('[Downloads] remove start', { id: download.downloadId, hasOfflineUri: Boolean(download.offlineUri), status: download.status })
-  const active = ['queued', 'downloading', 'paused'].includes(download.status)
-  if (active) {
-    control(download, 'cancel')
-    if (!download.manifestSrc) await new Promise(resolve => setTimeout(resolve, 300))
-  }
-  if (download.localPath && window.Android?.deleteDownloadFile) {
-    try {
-      await awaitAsyncResult(android.deleteDownloadFile(download.localPath))
-    } catch (error) {
-      console.error('[Downloads] unable to delete public file', { id: download.downloadId, error })
-      return
-    }
-  }
-  if (download.offlineUri) {
-    const player = new shaka.Player(document.createElement('video'))
-    const storage = new shaka.offline.Storage(player)
-    try {
-      const stored = await storage.list()
-      if (stored.some(content => content.offlineUri === download.offlineUri)) await storage.remove(download.offlineUri)
-    } finally {
-      await storage.destroy()
-      await player.destroy()
-    }
-  }
-  downloads.value = downloads.value.filter(item => item.downloadId !== download.downloadId)
-  localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
-  console.warn('[Downloads] remove complete', { id: download.downloadId, remaining: downloads.value.length })
+  await removeMany([download])
 }
 
 async function recoverSabrDownloads() {
@@ -256,8 +305,8 @@ async function recoverSabrDownloads() {
   try {
     let download
     while ((download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData))) {
-      Object.assign(download, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
-      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, total: 0, speedBps: 0, etaSeconds: 0 })
+      Object.assign(download, { status: 'downloading', progress: 0, received: 0, speedBps: 0, etaSeconds: 0 })
+      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, speedBps: 0, etaSeconds: 0 })
       try {
         const recovered = await recoverSabrDownload(download, (content, progress, total, networkBytes, totalExact) => {
           if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
@@ -315,7 +364,7 @@ function installTestHook() {
     }
   }
   window.__ftTest = {
-    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, localPath, fileName, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, offlineUri, localPath, fileName, createdAt })),
+    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, fileSize, offlineUri, localPath, fileName, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, fileSize, offlineUri, localPath, fileName, createdAt })),
     active: id => hasSabrDownload(id),
     offlineContents,
     removeOffline: async uri => {
@@ -369,7 +418,7 @@ onMounted(() => {
       setTimeout(() => handleDownloadControl({ detail: pending }), 0)
     }
   } catch {}
-  queueTimer = setInterval(load, 1000)
+  queueTimer = setInterval(load, 3000)
   window.addEventListener('android-download', handleDownloadEvent)
   window.addEventListener('android-download-control', handleDownloadControl)
   window.addEventListener('app-resume', load)

@@ -114,6 +114,7 @@
           <FtIconButton
             v-if="USING_ANDROID && !isUpcoming && !isOffline"
             :title="t('Video.Download')"
+            data-download-action="start-download"
             theme="secondary"
             :icon="['fas', 'download']"
             @click="downloadVideo"

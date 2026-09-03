@@ -3,6 +3,9 @@ package io.freetubeapp.freetubeandroid
 import android.app.Activity
 import android.graphics.Color
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -19,6 +22,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 
 class MainActivity : Activity() {
@@ -32,6 +36,27 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var androidBridge: AndroidBridge
     private var pendingDeepLink: Intent? = null
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != DownloadService.ACTION_STATE) return
+            val detail = JSONObject().apply {
+                put("id", intent.getStringExtra("id"))
+                put("status", intent.getStringExtra("status"))
+                put("phase", intent.getStringExtra("phase"))
+                put("progress", intent.getDoubleExtra("progress", 0.0))
+                put("received", intent.getLongExtra("received", 0))
+                put("total", intent.getLongExtra("total", 0))
+                put("fileSize", intent.getLongExtra("fileSize", 0))
+                put("speedBps", intent.getLongExtra("speedBps", 0))
+                put("etaSeconds", intent.getLongExtra("etaSeconds", 0))
+                put("error", intent.getStringExtra("error") ?: "")
+            }
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('android-download', {detail: $detail}))",
+                null
+            )
+        }
+    }
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,6 +142,7 @@ class MainActivity : Activity() {
         webView.settings.mediaPlaybackRequiresUserGesture = false
         androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
         webView.addJavascriptInterface(androidBridge, "Android")
+        ContextCompat.registerReceiver(this, downloadReceiver, IntentFilter(DownloadService.ACTION_STATE), ContextCompat.RECEIVER_NOT_EXPORTED)
         DownloadService.resumeIfNeeded(this)
         webView.loadUrl("file:///android_asset/index.html")
     }
@@ -208,6 +234,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         Log.i("FreeTubeLifecycle", "onDestroy finishing=$isFinishing changingConfigurations=$isChangingConfigurations")
+        unregisterReceiver(downloadReceiver)
         androidBridge.cancelMediaNotification()
         webView.destroy()
         super.onDestroy()

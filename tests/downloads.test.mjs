@@ -134,7 +134,7 @@ test('download progress handles missing totals and clamps SABR snapshots', () =>
   assert.deepEqual(JSON.parse(JSON.stringify(mergeDownloadProgress({ downloadId: 'one' }, {
     status: 'downloading', received: 5, total: 0, speedBps: 0
   }))), {
-    downloadId: 'one', status: 'downloading', progress: null, received: 5, total: 0, speedBps: 0, error: null
+    downloadId: 'one', status: 'downloading', progress: null, received: 5, total: 0, fileSize: 0, speedBps: 0, error: null
   })
   assert.equal(getStableProgressSnapshot({ size: 100 }, 1000, 2).progress, 1)
 })
@@ -158,7 +158,7 @@ test('Downloads view exposes cancel, retry, play and delete flows', () => {
   assert.ok(downloadsViewSource.includes('awaitAsyncResult(android.deleteDownloadFile(download.localPath))'))
   assert.ok(downloadsViewSource.includes('window.Android?.fileExists'))
   assert.ok(downloadsViewSource.includes("window.addEventListener('app-resume', load)"))
-  assert.ok(downloadsViewSource.includes('stored.some(content => content.offlineUri === download.offlineUri)'))
+  assert.ok(downloadsViewSource.includes('stored.find(item => item.offlineUri === download.offlineUri)'))
   assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
 })
 
@@ -208,6 +208,26 @@ test('direct download keeps selected quality and source sizes', () => {
   assert.ok(watchSource.includes('selectedFormat: formats.label'))
   assert.ok(watchSource.includes('videoTotal: Number(formats.video.contentLength'))
   assert.ok(source.includes("selectedFormat: video.selectedFormat ||"))
+  assert.ok(source.includes("throw new Error('Download size is unavailable')"))
+})
+
+test('downloads use canonical native statuses and exact final file size', () => {
+  assert.ok(androidBridgeSource.includes('fun getFileSize(uri: String): Long'))
+  assert.ok(downloadServiceSource.includes('ACTION_STATE'))
+  assert.ok(downloadServiceSource.includes('putExtra("status"'))
+  assert.ok(downloadServiceSource.includes('item.put("fileSize", length('))
+  assert.ok(source.includes('preflightSabrDownload'))
+  assert.ok(watchSource.includes('total: preflight.total'))
+  assert.ok(watchSource.includes('fileSize: exported.fileSize || 0'))
+})
+
+test('Downloads view supports fast bulk selection and deletion', () => {
+  assert.ok(downloadsViewSource.includes('selectedDownloadIds'))
+  assert.ok(downloadsViewSource.includes('data-download-action="select-all"'))
+  assert.ok(downloadsViewSource.includes('data-download-action="delete-selected"'))
+  assert.ok(downloadsViewSource.includes('@click="removeMany()"'))
+  assert.ok(downloadsViewSource.includes('Promise.all(items.map'))
+  assert.ok(downloadsViewSource.includes('stored.find(item => item.offlineUri === download.offlineUri)'))
 })
 
 test('native queue progress replaces stale UI progress fields', () => {
@@ -215,7 +235,7 @@ test('native queue progress replaces stale UI progress fields', () => {
     status: 'downloading', progress: 0.4, received: 40, total: 100, speedBps: 30, etaSeconds: 2, error: null
   })
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-    downloadId: 'one', status: 'downloading', progress: 0.4, received: 40, total: 100, totalExact: true, speedBps: 30, etaSeconds: 2, error: null
+    downloadId: 'one', status: 'downloading', progress: 0.4, received: 40, total: 100, fileSize: 0, totalExact: true, speedBps: 30, etaSeconds: 2, error: null
   })
 })
 
@@ -239,7 +259,7 @@ test('SABR progress event updates bytes, speed and percent immediately', () => {
     status: 'downloading', progress: 0.25, received: 25, total: 100, speedBps: 50, etaSeconds: 2
   })
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-    downloadId: 'sabr', status: 'downloading', progress: 0.25, received: 25, total: 100, speedBps: 50, etaSeconds: 2, error: null
+    downloadId: 'sabr', status: 'downloading', progress: 0.25, received: 25, total: 100, fileSize: 0, speedBps: 50, etaSeconds: 2, error: null
   })
 })
 

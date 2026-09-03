@@ -3442,6 +3442,8 @@ export default defineComponent({
 
     expose({
       hasLoaded,
+      getManifest: () => player?.getManifest(),
+      getVariantTracks: () => player?.getVariantTracks() || [],
 
       isPaused,
       pause,
