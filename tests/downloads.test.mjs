@@ -179,6 +179,22 @@ test('Watch passes one complete SABR selection and logs its outer timestamps', (
   for (const event of ['selection', 'preflight-complete', 'processing-start', 'completed']) assert.ok(watchSource.includes(`logSabrTimestamp(downloadId, '${event}'`))
 })
 
+test('SABR persists and announces processing before export, then completes after publish', () => {
+  const stored = watchSource.indexOf('content = await storeSabrDownload')
+  const offlineUriChecked = watchSource.indexOf("if (!content?.offlineUri) throw new Error('Offline storage returned no URI')", stored)
+  const processing = watchSource.indexOf("status: 'processing'", offlineUriChecked)
+  const processingNotification = watchSource.indexOf("status: 'processing', ...finalSnapshot", processing)
+  const exportStarted = watchSource.indexOf('await exportSabrDownload(content, this.videoTitle, downloadId)', processingNotification)
+  const completed = watchSource.indexOf("status: 'completed'", exportStarted)
+  assert.ok(stored < offlineUriChecked && offlineUriChecked < processing && processing < processingNotification && processingNotification < exportStarted && exportStarted < completed)
+
+  const processingBlock = watchSource.slice(processing, processingNotification)
+  for (const field of ["phase: 'processing'", '...finalSnapshot', 'offlineUri: content.offlineUri', 'speedBps: 0', 'error: null']) assert.ok(processingBlock.includes(field))
+  const completedBlock = watchSource.slice(completed, watchSource.indexOf("logSabrTimestamp(downloadId, 'completed'", completed))
+  for (const field of ['localPath: exported.localPath', 'fileSize: exported.fileSize || 0']) assert.ok(completedBlock.includes(field))
+  assert.ok(watchSource.includes("status: 'failed', phase: 'failed', offlineUri: content?.offlineUri"))
+})
+
 test('invalid SABR manifest returns no quality options', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('not-a-manifest'))), [])
   assert.deepEqual(JSON.parse(JSON.stringify(getSabrDownloadFormats('data:application/sabr+json,%7Bbad'))), [])
@@ -320,6 +336,15 @@ test('Downloads view exposes cancel, retry, play and delete flows', () => {
   assert.ok(downloadsViewSource.includes("window.addEventListener('app-resume', load)"))
   assert.ok(downloadsViewSource.includes('stored.find(item => item.offlineUri === download.offlineUri)'))
   assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
+})
+
+test('Downloads preserves processing and disables unsafe controls during export', () => {
+  const load = downloadsViewSource.slice(downloadsViewSource.indexOf('function load()'), downloadsViewSource.indexOf('async function retry('))
+  assert.ok(load.includes("download.status === 'downloading'"))
+  assert.equal(load.includes("download.status === 'processing'"), false)
+  assert.ok(downloadsViewSource.includes(':disabled="download.status === \'processing\'"'))
+  assert.ok(downloadsViewSource.includes('v-if="download.status === \'downloading\'"'))
+  assert.ok(downloadsViewSource.includes('v-if="download.status === \'paused\'"'))
 })
 
 test('debug Downloads hook targets records and inspects offline storage', () => {

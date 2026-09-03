@@ -1488,6 +1488,8 @@ export default defineComponent({
           speedBps: 0,
           error: null
         })
+        const processingNotification = getDownloadNotificationPayload({ downloadId, title: this.videoTitle, status: 'processing', ...finalSnapshot })
+        android.updateDownloadNotification?.(processingNotification.downloadId, processingNotification.title, 'processing', processingNotification.progress, 0, finalSnapshot.received, finalSnapshot.total)
         const exported = await exportSabrDownload(content, this.videoTitle, downloadId)
         updateDownloadMetadata(downloadId, {
           status: 'completed',
