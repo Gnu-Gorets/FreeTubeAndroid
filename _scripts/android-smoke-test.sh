@@ -380,29 +380,29 @@ ensure_ui_scale_100() {
   adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
   adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
   wait_for "$PACKAGE" || return 1
-  sleep 5
+  ensure_cdp && cdp_wait "Boolean(document.querySelector('.navButton'))" || return 1
   # Open Settings through persistent mobile bottom navigation.
   adb_shell input tap 615 1540
-  sleep 5
+  cdp_wait "location.hash === '#/settings'" || return 1
   # Handle current 70% layout, then normalize after possible reload.
   adb_shell input tap 18 98
-  sleep 1
+  cdp_wait "document.body.innerText.length > 0" || return 1
   adb_shell input tap 55 280
-  sleep 3
+  cdp_wait "document.body.innerText.length > 0" || return 1
   adb_shell input tap 18 98
-  sleep 2
+  cdp_wait "document.body.innerText.length > 0" || return 1
   adb_shell input tap 80 234
-  sleep 2
+  cdp_wait "document.body.innerText.length > 0" || return 1
   adb_shell input tap 385 588
-  sleep 5
+  cdp_wait "document.body.innerText.length > 0" || return 1
   # At 100% Settings uses full-screen mobile section menu.
   adb_shell input tap 63 245
-  sleep 2
+  cdp_wait "document.body.innerText.length > 0" || return 1
   adb_shell input tap 300 444
-  sleep 2
+  cdp_wait "document.body.innerText.length > 0" || return 1
   # Theme UI Scale slider: 50..300%, 100% is x=198 at 100% layout.
   adb_shell input tap 198 934
-  sleep 5
+  cdp_wait "document.body.innerText.length > 0" || return 1
   screenshot ui-scale-100
   UI_SCALE_SET=1
 }
@@ -620,12 +620,12 @@ open_data_settings() {
   adb_shell input tap 615 1540
   ensure_cdp && cdp_wait "location.hash === '#/settings'" || return 1
   adb_shell input keyevent KEYCODE_BACK
-  sleep 1
+  cdp_wait "document.readyState === 'complete'" || return 1
   adb_shell input tap 615 1540
-  sleep 3
+  cdp_wait "location.hash === '#/settings'" || return 1
   # At UI scale 100% Settings uses full-screen mobile section menu.
   adb_shell input tap 300 1084
-  sleep 3
+  cdp_wait "Boolean(document.querySelector('.data-directory'))" || return 1
 }
 
 export_data() {
