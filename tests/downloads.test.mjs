@@ -26,11 +26,12 @@ const context = vm.createContext({
   },
   shaka: { offline: { Storage: true } },
   setupSabrScheme: () => {},
-  android: {}
+  android: {},
+  process: { env: { IS_ANDROID: true } }
 })
 vm.runInContext(source, context)
 
-const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
+const { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
 
 function sabrManifest(formats) {
   return `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats }))}`
@@ -368,6 +369,64 @@ test('direct download keeps selected quality and source sizes', () => {
   assert.ok(watchSource.includes('videoTotal: Number(formats.video.contentLength'))
   assert.ok(source.includes("selectedFormat: video.selectedFormat ||"))
   assert.ok(!source.includes("throw new Error('Download size is unavailable')"))
+})
+
+test('direct download queues honest initial totals, including unknown sizes', async () => {
+  async function queue(video) {
+    let item
+    Object.assign(context.android, {
+      downloadUrl: () => true,
+      muxDownload: () => true,
+      createDownloadFile: () => 'content://download',
+      enqueueNativeDownload: json => { item = JSON.parse(json); return false }
+    })
+    storage.delete('freetube-downloads')
+    await assert.rejects(downloadProgressiveVideo({ id: 'id', title: 'Title', videoUrl: 'https://video', ...video }), /Unable to queue download/)
+    return { item, metadata: JSON.parse(storage.get('freetube-downloads'))[0] }
+  }
+
+  const unknown = await queue({ videoTotal: 0 })
+  assert.deepEqual(unknown.item, {
+    id: unknown.metadata.downloadId,
+    title: 'Title',
+    videoUrl: 'https://video',
+    audioUrl: '',
+    videoTotal: 0,
+    audioTotal: 0,
+    total: 0,
+    totalExact: false,
+    targetUri: 'content://download',
+    finalName: 'Title.mp4'
+  })
+  assert.deepEqual({ received: unknown.metadata.received, total: unknown.metadata.total, totalExact: unknown.metadata.totalExact, progress: unknown.metadata.progress }, {
+    received: 0, total: 0, totalExact: false, progress: null
+  })
+
+  const partialAdaptive = await queue({ audioUrl: 'https://audio', videoTotal: 100, audioTotal: 0, total: 999 })
+  assert.deepEqual({ videoTotal: partialAdaptive.item.videoTotal, audioTotal: partialAdaptive.item.audioTotal, total: partialAdaptive.item.total, totalExact: partialAdaptive.item.totalExact }, {
+    videoTotal: 100, audioTotal: 0, total: 0, totalExact: false
+  })
+
+  const knownAdaptive = await queue({ audioUrl: 'https://audio', videoTotal: 100, audioTotal: 25 })
+  assert.deepEqual({ total: knownAdaptive.metadata.total, totalExact: knownAdaptive.metadata.totalExact, progress: knownAdaptive.metadata.progress }, {
+    total: 125, totalExact: true, progress: null
+  })
+})
+
+test('native GET totals stay explicit across Kotlin and renderer boundaries', () => {
+  const mainActivitySource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
+  assert.match(downloadServiceSource, /val total = if \(request\.contentLengthLong > 0\) receivedStart \+ request\.contentLengthLong else 0L/)
+  assert.match(downloadServiceSource, /item\.put\("total", total\)\s+\.put\("totalExact", total > 0\)[\s\S]{0,300}saveItem\(item\)/)
+  assert.ok(downloadServiceSource.includes('phase == "audio" && componentTotal > 0 -> completedBytes + componentTotal'))
+  assert.ok(downloadServiceSource.includes('val aggregateStart = completedBytes + receivedStart'))
+  assert.equal(downloadServiceSource.includes('else if (phase == "video")'), false)
+  assert.ok(downloadServiceSource.includes('progress ?: JSONObject.NULL'))
+  assert.ok(downloadServiceSource.includes('builder.setProgress(0, 0, true)'))
+  assert.ok(downloadServiceSource.includes('.putExtra("totalExact", item.optBoolean("totalExact", false))'))
+  assert.ok(mainActivitySource.includes('put("totalExact", intent.getBooleanExtra("totalExact", false))'))
+
+  const inexact = mergeNativeDownload({}, { status: 'downloading', received: 40, total: 100, totalExact: false })
+  assert.equal(inexact.totalExact, false)
 })
 
 test('downloads use canonical native statuses and exact final file size', () => {

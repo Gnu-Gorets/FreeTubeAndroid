@@ -464,8 +464,12 @@ export async function downloadProgressiveVideo(video) {
   }
 
   const fileName = safeFileName(video.title, video.id)
-  const total = video.total || (video.audioUrl && video.videoTotal > 0 && video.audioTotal > 0 ? video.videoTotal + video.audioTotal : video.videoTotal)
-  const totalExact = total > 0 && (!video.audioUrl || (video.videoTotal > 0 && video.audioTotal > 0))
+  const positiveBytes = value => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : 0
+  const videoTotal = positiveBytes(video.videoTotal)
+  const audioTotal = positiveBytes(video.audioTotal)
+  const suppliedTotal = positiveBytes(video.total)
+  const total = video.audioUrl ? (videoTotal > 0 && audioTotal > 0 ? videoTotal + audioTotal : 0) : suppliedTotal || videoTotal
+  const totalExact = total > 0
   android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 1))
   const defaultUri = android.createDownloadFile?.(downloadDirectory(), `${fileName}.part`) || ''
   const dialog = defaultUri
@@ -489,7 +493,7 @@ export async function downloadProgressiveVideo(video) {
     received: 0,
     total,
     totalExact,
-    progress: total > 0 ? 0 : null,
+    progress: null,
     createdAt: Date.now()
   }
   const downloads = recordDownloadMetadata(metadata)
@@ -499,9 +503,10 @@ export async function downloadProgressiveVideo(video) {
       title: video.title,
       videoUrl: video.videoUrl,
       audioUrl: video.audioUrl || '',
-      videoTotal: video.videoTotal || 0,
-      audioTotal: video.audioTotal || 0,
+      videoTotal,
+      audioTotal,
       total,
+      totalExact,
       targetUri: dialog.uri,
       finalName: fileName
     }))

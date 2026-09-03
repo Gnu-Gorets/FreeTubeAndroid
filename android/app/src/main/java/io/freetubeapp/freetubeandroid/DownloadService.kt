@@ -140,7 +140,7 @@ class DownloadService : Service() {
             Log.w(TAG, "enqueue ignored duplicate id=${item.optString("id")}")
             return
         }
-        item.put("status", "queued").put("progress", 0).put("totalExact", item.optBoolean("totalExact", false))
+        item.put("status", "queued").put("progress", JSONObject.NULL).put("totalExact", item.optBoolean("totalExact", false))
         Log.i(TAG, "queue status id=${item.optString("id")} null->queued")
         queue.put(item)
         writeQueue(queue)
@@ -325,8 +325,14 @@ class DownloadService : Service() {
             val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
             if (existing > 0 && !append) Log.w(TAG, "resume rejected id=${item.optString("id")} existing=$existing code=$response; restarting")
             val receivedStart = if (append) existing else 0L
-            val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
-            if (total > 0) item.put("total", total).put("totalExact", true).put("progress", 0).put("received", receivedStart).also { saveItem(item) }
+            val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else 0L
+            item.put("total", total)
+                .put("totalExact", total > 0)
+                .put("progress", if (total > 0) receivedStart.toDouble() / total else JSONObject.NULL)
+                .put("received", receivedStart)
+                .put("speedBps", 0)
+                .put("etaSeconds", 0)
+            saveItem(item)
             openTarget(target.toString(), if (append) "wa" else "wt").use { output ->
                 request.inputStream.use { input ->
                     val buffer = ByteArray(64 * 1024)
@@ -344,17 +350,17 @@ class DownloadService : Service() {
                         val now = System.nanoTime()
                         val elapsed = (now - lastTime) / 1_000_000_000.0
                         val speed = if (elapsed > 0) ((received - lastBytes) / elapsed).toLong() else 0L
-                        val progress = if (total > 0) received.toDouble() / total else 0.0
+                        val progress = total.takeIf { it > 0 }?.let { (received.toDouble() / it).coerceIn(0.0, 1.0) }
                         if (speed > 0 && lastLoggedSpeed > 0 && (speed > lastLoggedSpeed * 2 || speed * 2 < lastLoggedSpeed)) Log.w(TAG, "speed jump id=${item.optString("id")} $lastLoggedSpeed->$speed received=$received")
                         if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$received total=$total")
                         if (received > lastBytes) lastProgressTime = now
                         lastLoggedSpeed = speed
-                        item.put("progress", progress).put("received", received).put("total", total.coerceAtLeast(0)).put("totalExact", total > 0).put("speedBps", speed)
+                        item.put("progress", progress ?: JSONObject.NULL).put("received", received).put("total", total).put("totalExact", total > 0).put("speedBps", speed)
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
                         lastBytes = received
                         lastTime = now
                         saveItem(item)
-                        notify(item.optString("id"), item.optString("title"), "Downloading ${"%.0f".format(progress * 100)}%", progress, true)
+                        notify(item.optString("id"), item.optString("title"), progress?.let { "Downloading ${"%.0f".format(it * 100)}%" } ?: "Downloading", progress, true)
                     }
                     if (total > 0 && received != total) throw IOException("Incomplete download: $received/$total")
                 }
@@ -381,15 +387,21 @@ class DownloadService : Service() {
             val append = existing > 0 && response == HttpURLConnection.HTTP_PARTIAL
             if (existing > 0 && !append) Log.w(TAG, "resume rejected id=${item.optString("id")} existing=$existing code=$response; restarting")
             val receivedStart = if (append) existing else 0L
+            val aggregateStart = completedBytes + receivedStart
             val componentTotal = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
             val total = when {
                 expectedTotal > 0 -> expectedTotal
                 phase == "audio" && componentTotal > 0 -> completedBytes + componentTotal
-                else -> -1L
+                else -> 0L
             }
-            if (total > 0) item.put("total", total).put("totalExact", true).put("received", completedBytes).also { saveItem(item) }
-            else if (phase == "video") item.put("total", 0).put("totalExact", false).also { saveItem(item) }
             item.put("phase", phase)
+                .put("total", total)
+                .put("totalExact", total > 0)
+                .put("progress", if (total > 0) aggregateStart.toDouble() / total else JSONObject.NULL)
+                .put("received", aggregateStart)
+                .put("speedBps", 0)
+                .put("etaSeconds", 0)
+            saveItem(item)
             java.io.FileOutputStream(target, append).use { output ->
                 request.inputStream.use { input ->
                     val buffer = ByteArray(64 * 1024)
@@ -408,17 +420,17 @@ class DownloadService : Service() {
                         val elapsed = (now - lastTime) / 1_000_000_000.0
                         val speed = if (elapsed > 0) ((received - lastBytes) / elapsed).toLong() else 0L
                         val aggregateReceived = completedBytes + received
-                        val progress = if (total > 0) (aggregateReceived.toDouble() / total).coerceIn(0.0, 1.0) else 0.0
+                        val progress = total.takeIf { it > 0 }?.let { (aggregateReceived.toDouble() / it).coerceIn(0.0, 1.0) }
                         if (speed > 0 && lastLoggedSpeed > 0 && (speed > lastLoggedSpeed * 2 || speed * 2 < lastLoggedSpeed)) Log.w(TAG, "speed jump id=${item.optString("id")} $lastLoggedSpeed->$speed received=$aggregateReceived")
                         if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$aggregateReceived total=$total")
                         if (received > lastBytes) lastProgressTime = now
                         lastLoggedSpeed = speed
-                        item.put("progress", progress).put("received", aggregateReceived).put("total", total.coerceAtLeast(0)).put("totalExact", total > 0).put("speedBps", speed)
+                        item.put("progress", progress ?: JSONObject.NULL).put("received", aggregateReceived).put("total", total).put("totalExact", total > 0).put("speedBps", speed)
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - aggregateReceived).coerceAtLeast(0) / speed).toLong())
                         lastBytes = received
                         lastTime = now
                         saveItem(item)
-                        notify(item.optString("id"), item.optString("title"), "Downloading ${"%.0f".format(progress * 100)}%", progress, true)
+                        notify(item.optString("id"), item.optString("title"), progress?.let { "Downloading ${"%.0f".format(it * 100)}%" } ?: "Downloading", progress, true)
                     }
                     if (componentTotal > 0 && received != componentTotal) throw IOException("Incomplete download: $received/$componentTotal")
                 }
@@ -545,6 +557,7 @@ class DownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(ongoing)
         if (progress != null) builder.setProgress(100, (progress * 100).toInt().coerceIn(0, 100), false)
+        else if (ongoing && current != null) builder.setProgress(0, 0, true)
         if (current == null) return builder.build()
         if (current.optString("status") == "downloading") builder.addAction(action("Pause", ACTION_PAUSE, current.optString("id")))
         if (current.optString("status") == "paused") builder.addAction(action("Resume", ACTION_RESUME, current.optString("id")))
