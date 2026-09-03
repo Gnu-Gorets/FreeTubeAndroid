@@ -127,6 +127,7 @@ class DownloadService : Service() {
             .putExtra("progress", item.optDouble("progress", 0.0))
             .putExtra("received", item.optLong("received", 0))
             .putExtra("total", item.optLong("total", 0))
+            .putExtra("totalExact", item.optBoolean("totalExact", false))
             .putExtra("fileSize", item.optLong("fileSize", 0))
             .putExtra("speedBps", item.optLong("speedBps", 0))
             .putExtra("etaSeconds", item.optLong("etaSeconds", 0))
@@ -139,7 +140,7 @@ class DownloadService : Service() {
             Log.w(TAG, "enqueue ignored duplicate id=${item.optString("id")}")
             return
         }
-        item.put("status", "queued").put("progress", 0)
+        item.put("status", "queued").put("progress", 0).put("totalExact", item.optBoolean("totalExact", false))
         Log.i(TAG, "queue status id=${item.optString("id")} null->queued")
         queue.put(item)
         writeQueue(queue)
@@ -325,6 +326,7 @@ class DownloadService : Service() {
             if (existing > 0 && !append) Log.w(TAG, "resume rejected id=${item.optString("id")} existing=$existing code=$response; restarting")
             val receivedStart = if (append) existing else 0L
             val total = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
+            if (total > 0) item.put("total", total).put("totalExact", true).put("progress", 0).put("received", receivedStart).also { saveItem(item) }
             openTarget(target.toString(), if (append) "wa" else "wt").use { output ->
                 request.inputStream.use { input ->
                     val buffer = ByteArray(64 * 1024)
@@ -347,7 +349,7 @@ class DownloadService : Service() {
                         if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$received total=$total")
                         if (received > lastBytes) lastProgressTime = now
                         lastLoggedSpeed = speed
-                        item.put("progress", progress).put("received", received).put("total", total).put("speedBps", speed)
+                        item.put("progress", progress).put("received", received).put("total", total.coerceAtLeast(0)).put("totalExact", total > 0).put("speedBps", speed)
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
                         lastBytes = received
                         lastTime = now
@@ -382,9 +384,11 @@ class DownloadService : Service() {
             val componentTotal = if (request.contentLengthLong > 0) receivedStart + request.contentLengthLong else -1L
             val total = when {
                 expectedTotal > 0 -> expectedTotal
-                componentTotal > 0 -> completedBytes + componentTotal
+                phase == "audio" && componentTotal > 0 -> completedBytes + componentTotal
                 else -> -1L
             }
+            if (total > 0) item.put("total", total).put("totalExact", true).put("received", completedBytes).also { saveItem(item) }
+            else if (phase == "video") item.put("total", 0).put("totalExact", false).also { saveItem(item) }
             item.put("phase", phase)
             java.io.FileOutputStream(target, append).use { output ->
                 request.inputStream.use { input ->
@@ -409,7 +413,7 @@ class DownloadService : Service() {
                         if (received == lastBytes && now - lastProgressTime > 5_000_000_000L) Log.w(TAG, "no progress id=${item.optString("id")} received=$aggregateReceived total=$total")
                         if (received > lastBytes) lastProgressTime = now
                         lastLoggedSpeed = speed
-                        item.put("progress", progress).put("received", aggregateReceived).put("total", total).put("speedBps", speed)
+                        item.put("progress", progress).put("received", aggregateReceived).put("total", total.coerceAtLeast(0)).put("totalExact", total > 0).put("speedBps", speed)
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - aggregateReceived).coerceAtLeast(0) / speed).toLong())
                         lastBytes = received
                         lastTime = now

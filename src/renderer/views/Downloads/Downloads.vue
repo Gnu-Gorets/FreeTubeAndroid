@@ -123,6 +123,7 @@
           <button
             type="button"
             data-download-action="delete"
+            :disabled="download.status === 'processing'"
             @click="remove(download)"
           >
             {{ t('Downloads.Delete') }}
@@ -164,7 +165,7 @@ function formatBytes(value) {
 }
 
 function formatProgress(download) {
-  const percent = `${Math.round(download.progress * 100)}%`
+  const percent = download.total > 0 ? `${Math.round((download.progress ?? download.received / download.total) * 100)}%` : '—'
   const bytes = `${formatBytes(download.received)} / ${download.totalExact === false ? '~' : ''}${formatBytes(download.total)}`
   const speed = download.speedBps > 0 ? ` · ${formatBytes(download.speedBps)}/s` : ''
   return `${percent} · ${bytes}${speed}`
@@ -265,6 +266,7 @@ function selectAll() {
 }
 
 async function removeMany(items = downloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))) {
+  items = [...items]
   if (!items.length) return
   const active = items.filter(download => ['queued', 'downloading', 'paused'].includes(download.status))
   active.forEach(download => control(download, 'cancel'))
@@ -274,17 +276,18 @@ async function removeMany(items = downloads.value.filter(download => selectedDow
   const storage = player ? new shaka.offline.Storage(player) : null
   try {
     const stored = storage ? await storage.list() : []
-    const results = await Promise.all(items.map(async download => {
+    const results = []
+    for (const download of items) {
       try {
         if (download.localPath && window.Android?.deleteDownloadFile) await awaitAsyncResult(android.deleteDownloadFile(download.localPath))
         const content = stored.find(item => item.offlineUri === download.offlineUri)
         if (content) await storage.remove(content.offlineUri)
-        return { id: download.downloadId, ok: true }
+        results.push({ id: download.downloadId, ok: true })
       } catch (error) {
         console.error('[Downloads] unable to delete download', { id: download.downloadId, error })
-        return { id: download.downloadId, ok: false }
+        results.push({ id: download.downloadId, ok: false })
       }
-    }))
+    }
     const deleted = new Set(results.filter(result => result.ok).map(result => result.id))
     downloads.value = downloads.value.filter(download => !deleted.has(download.downloadId))
     selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => !deleted.has(id)))
@@ -304,6 +307,16 @@ async function recoverSabrDownloads() {
   sabrRecoveryRunning = true
   try {
     let download
+    while ((download = downloads.value.find(item => item.status === 'processing' && item.offlineUri))) {
+      try {
+        const recovered = await recoverSabrDownload(download)
+        Object.assign(download, recovered, { status: 'completed', phase: 'completed', progress: 1, error: null, interrupted: false })
+        updateDownloadMetadata(download.downloadId, { ...recovered, status: 'completed', phase: 'completed', progress: 1, error: null, interrupted: false, completedAt: Date.now() })
+      } catch (error) {
+        updateDownloadMetadata(download.downloadId, { status: 'failed', phase: 'failed', error: error.message || 'SABR export failed', offlineUri: download.offlineUri })
+        Object.assign(download, { status: 'failed', phase: 'failed', error: error.message || 'SABR export failed' })
+      }
+    }
     while ((download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData))) {
       Object.assign(download, { status: 'downloading', progress: 0, received: 0, speedBps: 0, etaSeconds: 0 })
       updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, speedBps: 0, etaSeconds: 0 })
@@ -402,7 +415,8 @@ function handleDownloadEvent(event) {
   if (!download) return
 
   const native = nativeQueue().find(item => item.id === detail.id)
-  Object.assign(download, mergeDownloadProgress(download, detail, native))
+  const changes = Object.fromEntries(Object.entries(detail).filter(([, value]) => value !== undefined))
+  Object.assign(download, mergeDownloadProgress(download, changes, native))
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
 }
 

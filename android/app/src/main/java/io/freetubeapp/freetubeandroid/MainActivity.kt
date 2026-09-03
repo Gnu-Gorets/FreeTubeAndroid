@@ -46,6 +46,7 @@ class MainActivity : Activity() {
                 put("progress", intent.getDoubleExtra("progress", 0.0))
                 put("received", intent.getLongExtra("received", 0))
                 put("total", intent.getLongExtra("total", 0))
+                put("totalExact", intent.getBooleanExtra("totalExact", false))
                 put("fileSize", intent.getLongExtra("fileSize", 0))
                 put("speedBps", intent.getLongExtra("speedBps", 0))
                 put("etaSeconds", intent.getLongExtra("etaSeconds", 0))

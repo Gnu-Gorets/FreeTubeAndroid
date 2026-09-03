@@ -76,9 +76,9 @@ test('adaptive formats share one best audio track', () => {
 })
 
 test('SABR storage and size estimation select same highest-bandwidth track', () => {
-  const low = { type: 'variant', height: 1080, bandwidth: 10, originalVideoId: 'video-low', originalAudioId: 'audio' }
-  const high = { type: 'variant', height: 1080, bandwidth: 20, originalVideoId: 'video-high', originalAudioId: 'audio' }
-  const tooLarge = { type: 'variant', height: 1440, bandwidth: 30, originalVideoId: 'video-1440', originalAudioId: 'audio' }
+  const low = { type: 'variant', height: 1080, bandwidth: 10, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-low', originalAudioId: 'audio' }
+  const high = { type: 'variant', height: 1080, bandwidth: 20, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-high', originalAudioId: 'audio' }
+  const tooLarge = { type: 'variant', height: 1440, bandwidth: 30, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-1440', originalAudioId: 'audio' }
   const text = { type: 'text', language: 'en' }
   assert.equal(selectSabrDownloadTrack([low, tooLarge, text, high], 1080), high)
   assert.equal(selectSabrDownloadTrack([low, tooLarge, text, high], 1440), tooLarge)
@@ -86,8 +86,8 @@ test('SABR storage and size estimation select same highest-bandwidth track', () 
 })
 
 test('SABR storage prefers MP4 audio for Android MP4 export', () => {
-  const opus = { type: 'variant', height: 720, bandwidth: 30, audioMimeType: 'audio/webm' }
-  const aac = { type: 'variant', height: 720, bandwidth: 20, audioMimeType: 'audio/mp4' }
+  const opus = { type: 'variant', height: 720, bandwidth: 30, videoMimeType: 'video/webm', audioMimeType: 'audio/webm' }
+  const aac = { type: 'variant', height: 720, bandwidth: 20, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4' }
   assert.equal(selectSabrDownloadTrack([opus, aac], 720), aac)
 })
 
@@ -208,7 +208,7 @@ test('direct download keeps selected quality and source sizes', () => {
   assert.ok(watchSource.includes('selectedFormat: formats.label'))
   assert.ok(watchSource.includes('videoTotal: Number(formats.video.contentLength'))
   assert.ok(source.includes("selectedFormat: video.selectedFormat ||"))
-  assert.ok(source.includes("throw new Error('Download size is unavailable')"))
+  assert.ok(!source.includes("throw new Error('Download size is unavailable')"))
 })
 
 test('downloads use canonical native statuses and exact final file size', () => {
@@ -226,13 +226,13 @@ test('Downloads view supports fast bulk selection and deletion', () => {
   assert.ok(downloadsViewSource.includes('data-download-action="select-all"'))
   assert.ok(downloadsViewSource.includes('data-download-action="delete-selected"'))
   assert.ok(downloadsViewSource.includes('@click="removeMany()"'))
-  assert.ok(downloadsViewSource.includes('Promise.all(items.map'))
+  assert.ok(downloadsViewSource.includes('for (const download of items)') && downloadsViewSource.includes('await storage.remove'))
   assert.ok(downloadsViewSource.includes('stored.find(item => item.offlineUri === download.offlineUri)'))
 })
 
 test('native queue progress replaces stale UI progress fields', () => {
   const result = mergeNativeDownload({ downloadId: 'one', progress: 0.1, received: 10, speedBps: 1 }, {
-    status: 'downloading', progress: 0.4, received: 40, total: 100, speedBps: 30, etaSeconds: 2, error: null
+    status: 'downloading', progress: 0.4, received: 40, total: 100, totalExact: true, speedBps: 30, etaSeconds: 2, error: null
   })
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
     downloadId: 'one', status: 'downloading', progress: 0.4, received: 40, total: 100, fileSize: 0, totalExact: true, speedBps: 30, etaSeconds: 2, error: null
@@ -240,9 +240,9 @@ test('native queue progress replaces stale UI progress fields', () => {
 })
 
 test('SABR progress uses stored bytes instead of transport overhead', () => {
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 0 }, 200, 0.1))), { received: 0, total: 0 })
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 200, 0.5))), { received: 500, total: 1000 })
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 700 }, 900, 0.6, 2000))), { received: 700, total: 2000 })
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 0 }, 200, 0.1))), { received: 0, total: 0, totalExact: false })
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 200, 0.5))), { received: 500, total: 1000, totalExact: false })
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 700 }, 900, 0.6, 2000))), { received: 700, total: 2000, totalExact: false })
 })
 
 test('SABR known total stays fixed through completion', () => {
