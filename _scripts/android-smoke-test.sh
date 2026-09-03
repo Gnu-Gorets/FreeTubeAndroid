@@ -643,7 +643,6 @@ data_directory_cancel() {
   local mapping_before mapping_after
   mapping_before=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
   adb_shell input tap 215 383
-  sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   close_picker || return 1
   mapping_after=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
