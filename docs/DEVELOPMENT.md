@@ -6,6 +6,7 @@
 - JDK 17 for Android builds.
 - Android SDK with API 36 and Android build tools 36.0.0.
 - `adb` on `PATH` for Android installation, logs, and smoke tests.
+- `ffmpeg` on `PATH` for 720p/15 fps Android screen recordings.
 
 ## JavaScript setup
 
@@ -105,7 +106,7 @@ adb shell am get-current-user
 _scripts/android-smoke-test.sh --serial ZY32KFTHMV --suite unlocked
 ```
 
-The smoke script also checks that active Android user is the personal profile `0` and installs the APK for `user 0`. It does not change Android system display scale. It returns `77` when `adb` or a device is unavailable. Its artifacts are written under ignored `tmp/android-smoke/`.
+The smoke script also checks that active Android user is the personal profile `0`, installs the APK for `user 0`, and records the run at 720p/15 fps as `screen.mp4`. It does not change Android system display scale. It returns `77` when `adb` or a device is unavailable. Its artifacts are written under ignored `tmp/android-smoke/`.
 
 The smoke test can run a smaller test or suite when debugging:
 
@@ -113,6 +114,16 @@ The smoke test can run a smaller test or suite when debugging:
 _scripts/android-smoke-test.sh --test cold-start
 _scripts/android-smoke-test.sh --suite locked
 ```
+
+## Android manual test recording
+
+Record manual tests at 720p/15 fps and press Ctrl-C when finished:
+
+```bash
+_scripts/android-screen-record.sh --serial ZY32KFTHMV
+```
+
+Recordings are written under ignored `tmp/android-screen-record/`. Use `--output PATH` to choose another file.
 
 ## Change workflow
 

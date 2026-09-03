@@ -18,6 +18,7 @@ PASS=0
 FAIL=0
 SKIP=0
 UI_SCALE_SET=0
+SCREEN_RECORD_PID=""
 
 usage() {
   cat <<'EOF'
@@ -62,6 +63,22 @@ adb_cmd() {
 }
 
 adb_shell() { adb_cmd shell "$@"; }
+start_screen_recording() {
+  "$(dirname "$0")/android-screen-record.sh" --serial "$SERIAL" --output "$ARTIFACT_DIR/screen.mp4" >"$ARTIFACT_DIR/screen-record.log" 2>&1 &
+  SCREEN_RECORD_PID=$!
+  sleep 2
+  if ! kill -0 "$SCREEN_RECORD_PID" 2>/dev/null; then
+    wait "$SCREEN_RECORD_PID" 2>/dev/null || true
+    SCREEN_RECORD_PID=""
+    echo "WARN: screen recording did not start; see $ARTIFACT_DIR/screen-record.log" >&2
+  fi
+}
+stop_screen_recording() {
+  [[ -n "$SCREEN_RECORD_PID" ]] || return
+  kill -TERM "$SCREEN_RECORD_PID" 2>/dev/null || true
+  wait "$SCREEN_RECORD_PID" 2>/dev/null || true
+  SCREEN_RECORD_PID=""
+}
 assert_personal_profile() {
   local current_user
   current_user=$(adb_shell am get-current-user 2>/dev/null || true)
@@ -171,6 +188,10 @@ fi
 assert_personal_profile || exit 77
 adb_cmd root >/dev/null 2>&1 || true
 sleep 2
+trap stop_screen_recording EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+start_screen_recording
 
 ensure_cdp() {
   local pid
@@ -219,6 +240,16 @@ cdp_click_download_action() {
 cdp_click_bulk_action() {
   local action="$1"
   [[ $(cdp_eval "(() => { const button = document.querySelector('[data-download-action=\"$action\"]'); if (!button) return false; button.click(); return true })()") == true ]]
+}
+
+cdp_click_prompt_option() {
+  local label="$1" result
+  for _ in $(seq 1 "$TIMEOUT"); do
+    result=$(cdp_eval "(() => { const button = [...document.querySelectorAll('.prompt button')].find(node => node.textContent.trim() === '$label'); if (!button) return false; button.click(); return true })()" 2>/dev/null || true)
+    [[ "$result" == true ]] && return 0
+    sleep 1
+  done
+  return 1
 }
 
 cdp_start_sabr_download() {
@@ -668,14 +699,13 @@ download_quality() {
   ensure_cdp || return 1
   local marker id format
   marker=$(cdp_eval 'Date.now()')
-  adb_shell input tap 185 830
-  sleep 3
+  cdp_click_bulk_action start-download || return 1
+  cdp_click_prompt_option '360p (SABR)' || return 1
   screenshot download-quality
   # WebView text is not exposed reliably to UIAutomator. Check renderer log instead.
   adb_cmd logcat -d -v brief >"$ARTIFACT_DIR/download-quality-logcat.txt"
   grep -q 'picker options' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
   grep -Eq '2160p|1440p|1080p|720p|480p|360p|240p|144p' "$ARTIFACT_DIR/download-quality-logcat.txt" || return 1
-  adb_shell input tap 575 875
   wait_for_logcat 'SABR size preflight complete' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
@@ -1206,6 +1236,7 @@ case "$TEST" in
 esac
 
 collect_logs
+stop_screen_recording
 printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP" | tee "$ARTIFACT_DIR/summary.txt"
 cat "$ARTIFACT_DIR/summary.txt"
 if ((FAIL > 0)); then exit 1; fi
