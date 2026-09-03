@@ -420,7 +420,9 @@ start_app() {
 open_search_results() {
   start_app || return 1
   ensure_cdp || return 1
-  [[ $(cdp_eval "(() => { document.querySelector('.navSearchButton')?.click(); return true })()") == true ]] || return 1
+  [[ $(cdp_eval "(() => { const logo = document.querySelector('.logo'); if (!logo) return false; logo.click(); return true })()") == true ]] || return 1
+  cdp_wait "Boolean(document.querySelector('.navSearchButton'))" || return 1
+  [[ $(cdp_eval "(() => { document.querySelector('.navSearchButton').click(); return true })()") == true ]] || return 1
   cdp_wait "Boolean(document.querySelector('.searchInput input'))" || return 1
   cdp_eval "document.querySelector('.searchInput input').focus(); true" >/dev/null || return 1
   adb_shell input text linux
@@ -689,11 +691,7 @@ persistence() {
 }
 
 cleanup() {
-  if ! playback; then
-    echo "SKIP: cleanup setup playback failed"
-    SKIP=$((SKIP + 1))
-    return 0
-  fi
+  playback || return 1
   adb_shell input keyevent KEYCODE_BACK
   sleep 2
   if adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active='; then
@@ -1196,7 +1194,11 @@ run_locked_suite() {
     fi
     echo "PASS preflight"
     PASS=$((PASS + 1))
-    playback || return
+    if ! playback; then
+      echo "FAIL locked-setup"
+      FAIL=$((FAIL + 1))
+      return 1
+    fi
     adb_shell input keyevent KEYCODE_POWER
     sleep 8
   else
