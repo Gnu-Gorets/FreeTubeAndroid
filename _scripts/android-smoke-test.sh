@@ -651,7 +651,6 @@ data_directory_cancel() {
 data_directory_move_reset() {
   open_data_settings || return 1
   adb_shell input tap 215 383
-  sleep 3
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   # DocumentsUI reopens last tree location; normalize to Documents before selecting it.
   adb_shell input tap 280 204
