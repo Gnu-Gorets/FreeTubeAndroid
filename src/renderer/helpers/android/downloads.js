@@ -8,6 +8,10 @@ import { getDownloadNotificationPayload } from './download-notification.mjs'
 
 const log = (...args) => console.warn('[Downloads]', ...args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg))
 
+export function logSabrTimestamp(downloadId, event, details = {}) {
+  log('SABR timestamp', { id: downloadId, event, timestamp: Date.now(), ...details })
+}
+
 const QUALITY_HEIGHTS = { large: 480, medium: 360, small: 240, tiny: 144 }
 
 function qualityHeight(format) {
@@ -149,14 +153,15 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
   sabrPaused.delete(download.downloadId)
   sabrStarting.add(download.downloadId)
   await acquireSabrSlot()
+  logSabrTimestamp(download.downloadId, 'slot-acquired')
   const scheme = `sabr-${download.downloadId.replaceAll('-', '')}`
   const manifestSrc = `${download.manifestSrc}#${scheme.slice(5)}`
-  log('SABR store start', { id: download.downloadId, maxHeight: selection.maxHeight })
   const video = document.createElement('video')
   const player = new shaka.Player(video)
   const manifestRef = { value: null }
   let storage = null
   let lastLoggedPercent = -1
+  let firstProgressLogged = false
   let transportBytes = 0
   let stableTotal = Number(selection.total) > 0 ? Number(selection.total) : 0
   let totalExact = selection.totalExact === true
@@ -169,6 +174,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
   try {
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped before start')
     await player.load(manifestSrc, null, download.manifestMimeType)
+    logSabrTimestamp(download.downloadId, 'offline-player-loaded')
     manifestRef.value = player.getManifest()
     const selectTracks = tracks => selectSabrStorageTracks(tracks, selection)
     const [selectedTrack] = selectTracks(player.getVariantTracks())
@@ -178,6 +184,10 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
       offline: {
         trackSelectionCallback: selectTracks,
         progressCallback(content, progress) {
+          if (!firstProgressLogged) {
+            firstProgressLogged = true
+            logSabrTimestamp(download.downloadId, 'first-progress')
+          }
           const now = Date.now()
           const percent = Math.round(progress * 100)
           const snapshot = getStableProgressSnapshot(content, transportBytes, progress, stableTotal, totalExact)
@@ -204,9 +214,11 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
       }
     })
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped before storage')
+    logSabrTimestamp(download.downloadId, 'store-started')
     const operation = storage.store(manifestSrc, {}, download.manifestMimeType)
     sabrOperations.set(download.downloadId, operation)
     const content = await operation.promise
+    logSabrTimestamp(download.downloadId, 'store-complete')
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped')
     log('SABR store complete', { id: download.downloadId, hasOfflineUri: Boolean(content?.offlineUri), size: content?.size || 0, estimatedTotal: stableTotal, totalExact })
     if (!content?.offlineUri || !(content?.size > 0)) {

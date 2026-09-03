@@ -46,7 +46,7 @@ import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { getDownloadNotificationPayload } from '../../helpers/android/download-notification.mjs'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, exportSabrDownload, getDownloadFormats, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, exportSabrDownload, getDownloadFormats, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1398,15 +1398,22 @@ export default defineComponent({
 
     async downloadSabr(maxHeight, selectedFormat) {
       const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`
-      console.warn('[Downloads] SABR download selected', { id: downloadId, height: maxHeight, videoId: this.videoId })
+      logSabrTimestamp(downloadId, 'selection', { height: maxHeight, videoId: this.videoId })
       let preflight
       try {
         preflight = await preflightSabrDownload(this.$refs.player, this.manifestSrc, maxHeight)
-        console.warn('[Downloads] SABR size preflight complete', { id: downloadId, total: preflight.total, exact: preflight.totalExact })
+        logSabrTimestamp(downloadId, 'preflight-complete', { total: preflight.total, exact: preflight.totalExact })
       } catch (error) {
         console.error('[Downloads] SABR size preflight failed', error?.message || String(error), error?.stack)
         showToast(this.t('Video.Download unavailable'))
         return
+      }
+      const selection = {
+        maxHeight,
+        videoTrackId: preflight.videoId,
+        audioTrackId: preflight.audioId,
+        total: preflight.total,
+        totalExact: preflight.totalExact
       }
       recordDownloadMetadata({
         downloadId,
@@ -1424,10 +1431,7 @@ export default defineComponent({
         phase: 'video',
         progress: 0,
         received: 0,
-        total: preflight.total,
-        totalExact: preflight.totalExact,
-        videoTrackId: preflight.videoId,
-        audioTrackId: preflight.audioId,
+        ...selection,
         createdAt: Date.now()
       })
       let lastProgress = 0
@@ -1445,12 +1449,7 @@ export default defineComponent({
           downloadId,
           manifestSrc: this.manifestSrc,
           manifestMimeType: this.manifestMimeType,
-          sabrData: this.sabrData,
-          maxHeight,
-          videoTrackId: preflight.videoId,
-          audioTrackId: preflight.audioId,
-          total: preflight.total,
-          totalExact: preflight.totalExact
+          sabrData: this.sabrData
         },
         (storedContent, progress, snapshotTotal, networkBytes, totalExact) => {
           if (isSabrDownloadPaused(downloadId) || isSabrDownloadCanceled(downloadId)) return
@@ -1479,14 +1478,9 @@ export default defineComponent({
           updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, networkBytes, totalExact, speedBps })
           const notification = getDownloadNotificationPayload({ downloadId, title: this.videoTitle, status: 'downloading', progress, speedBps, received, total })
           android.updateDownloadNotification?.(notification.downloadId, notification.title, 'downloading', notification.progress, speedBps, received, total)
-        }, {
-          maxHeight,
-          videoTrackId: preflight.videoId,
-          audioTrackId: preflight.audioId,
-          total: preflight.total,
-          totalExact: preflight.totalExact
-        })
+        }, selection)
         if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
+        logSabrTimestamp(downloadId, 'processing-start')
         updateDownloadMetadata(downloadId, {
           status: 'processing',
           phase: 'processing',
@@ -1499,7 +1493,6 @@ export default defineComponent({
           error: null
         })
         const exported = await exportSabrDownload(content, this.videoTitle, downloadId)
-        console.warn('[Downloads] SABR download completed', { id: downloadId, height: maxHeight, fileName: exported.fileName })
         updateDownloadMetadata(downloadId, {
           status: 'completed',
           progress: 1,
@@ -1516,6 +1509,7 @@ export default defineComponent({
           error: null,
           completedAt: Date.now()
         })
+        logSabrTimestamp(downloadId, 'completed', { height: maxHeight, fileName: exported.fileName })
         android.finishDownloadNotification?.(downloadId)
         showToast(this.t('Video.Download complete'))
       } catch (error) {

@@ -6,7 +6,7 @@ import vm from 'node:vm'
 const source = fs.readFileSync(new URL('../src/renderer/helpers/android/downloads.js', import.meta.url), 'utf8')
   .replace(/^import .*$/gm, '')
   .replace(/^export /gm, '')
-  .replace(/const log = .*$/m, 'const log = () => {}')
+  .replace(/const log = .*$/m, 'const log = (...args) => globalThis.downloadLogs?.push(args)')
   .replace(/const requestSaveDialog = .*$/m, 'const requestSaveDialog = () => {}')
   .replace(/const setupSabrScheme = .*$/m, 'const setupSabrScheme = () => {}')
 const downloadServiceSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
@@ -15,19 +15,22 @@ const watchSource = fs.readFileSync(new URL('../src/renderer/views/Watch/Watch.j
 const downloadsViewSource = fs.readFileSync(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
 
 const storage = new Map()
+const downloadLogs = []
 const context = vm.createContext({
   console,
   document: {},
+  downloadLogs,
   localStorage: {
     getItem: key => storage.get(key) || null,
     setItem: (key, value) => storage.set(key, String(value))
   },
   shaka: { offline: { Storage: true } },
+  setupSabrScheme: () => {},
   android: {}
 })
 vm.runInContext(source, context)
 
-const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, updateDownloadMetadata } = context
+const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
 
 function sabrManifest(formats) {
   return `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats }))}`
@@ -118,6 +121,58 @@ test('SABR storage callback keeps exact MP4 ids and never falls back to WebM', (
   assert.deepEqual(Array.from(selectSabrStorageTracks([webm, fallback], { videoTrackId: 'video-webm', audioTrackId: 'audio-webm', maxHeight: 1080 })), [fallback])
   assert.throws(() => selectSabrStorageTracks([webm], { videoTrackId: 'video-webm', audioTrackId: 'audio-webm' }), /SABR download has no MP4 track/)
   assert.ok(source.includes('trackSelectionCallback: selectTracks'))
+})
+
+test('SABR store reuses one preflight selection and logs store timestamps', async () => {
+  const fallback = { type: 'variant', height: 480, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-fallback', originalAudioId: 'audio-fallback' }
+  const exact = { type: 'variant', height: 720, videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4', originalVideoId: 'video-exact', originalAudioId: 'audio-exact' }
+  let selected
+  class Player {
+    async load() {}
+    getManifest() { return {} }
+    getVariantTracks() { return [fallback, exact] }
+    async destroy() {}
+  }
+  class Storage {
+    configure(config) { this.offline = config.offline }
+    store() {
+      selected = this.offline.trackSelectionCallback([fallback, exact])[0]
+      this.offline.progressCallback({ size: 10 }, 0.5)
+      return { promise: Promise.resolve({ offlineUri: 'offline:test', size: 20 }) }
+    }
+    async destroy() {}
+  }
+  context.document.createElement = () => ({})
+  context.shaka.Player = Player
+  context.shaka.offline.Storage = Storage
+  downloadLogs.length = 0
+  let progress
+  await storeSabrDownload({ downloadId: 'store-test', manifestSrc: 'manifest', manifestMimeType: 'mime', sabrData: {} }, (...args) => { progress = args }, {
+    maxHeight: 480,
+    videoTrackId: 'video-exact',
+    audioTrackId: 'audio-exact',
+    total: 20,
+    totalExact: true
+  })
+  assert.equal(selected, exact)
+  assert.deepEqual(Array.from(progress.slice(1)), [0.5, 20, 0, true])
+  assert.deepEqual(downloadLogs.filter(([message]) => message === 'SABR timestamp').map(([, detail]) => detail.event), [
+    'slot-acquired',
+    'offline-player-loaded',
+    'store-started',
+    'first-progress',
+    'store-complete'
+  ])
+  assert.equal(downloadLogs.filter(([message]) => message === 'SABR timestamp').every(([, detail]) => Number.isFinite(detail.timestamp)), true)
+  assert.equal(source.slice(source.indexOf('export async function storeSabrDownload'), source.indexOf('export async function recoverSabrDownload')).includes('estimateSabrSize('), false)
+  assert.ok(source.includes('await player.load(manifestSrc, null, download.manifestMimeType)'))
+})
+
+test('Watch passes one complete SABR selection and logs its outer timestamps', () => {
+  assert.ok(watchSource.includes('const selection = {'))
+  for (const field of ['maxHeight', 'videoTrackId: preflight.videoId', 'audioTrackId: preflight.audioId', 'total: preflight.total', 'totalExact: preflight.totalExact']) assert.ok(watchSource.includes(field))
+  assert.ok(watchSource.includes('}, selection)'))
+  for (const event of ['selection', 'preflight-complete', 'processing-start', 'completed']) assert.ok(watchSource.includes(`logSabrTimestamp(downloadId, '${event}'`))
 })
 
 test('invalid SABR manifest returns no quality options', () => {
