@@ -441,7 +441,9 @@ no_runtime_errors() {
   collect_logs
   pid=$(adb_shell pidof -s "$PACKAGE" 2>/dev/null || true)
   [[ -n "$pid" ]] || return 1
-  adb_cmd logcat -d --pid="$pid" '*:E' >"$ARTIFACT_DIR/runtime-errors.txt"
+  ensure_cdp || return 1
+  # Chromium reports normal destruction of short-lived BotGuard renderers as a crash.
+  adb_cmd logcat -d --pid="$pid" '*:E' | grep -v 'aw_browser_terminator.cc(165).*code -1' >"$ARTIFACT_DIR/runtime-errors.txt" || true
   ! grep -E 'FATAL EXCEPTION|TypeError:|AndroidRuntime: FATAL' "$ARTIFACT_DIR/runtime-errors.txt" >/dev/null
 }
 
