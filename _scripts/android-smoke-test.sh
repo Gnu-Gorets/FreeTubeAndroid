@@ -1113,10 +1113,8 @@ download_cancel() {
   ensure_cdp || return 1
   local marker id contents_before
   marker=$(cdp_eval 'Date.now()')
-  adb_shell input tap 185 830
-  sleep 2
-  # Select 720p from quality picker before opening Downloads.
-  adb_shell input tap 160 875
+  cdp_click_bulk_action start-download || return 1
+  cdp_click_prompt_option '1440p (SABR)' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
