@@ -165,7 +165,7 @@ function formatBytes(value) {
 }
 
 function formatProgress(download) {
-  const percent = download.total > 0 ? `${Math.round((download.progress ?? download.received / download.total) * 100)}%` : '—'
+  const percent = download.progress == null ? '—' : `${Math.round(download.progress * 100)}%`
   const bytes = `${formatBytes(download.received)} / ${download.totalExact === false ? '~' : ''}${formatBytes(download.total)}`
   const speed = download.speedBps > 0 ? ` · ${formatBytes(download.speedBps)}/s` : ''
   return `${percent} · ${bytes}${speed}`
@@ -310,29 +310,30 @@ async function recoverSabrDownloads() {
     while ((download = downloads.value.find(item => item.status === 'processing' && item.offlineUri))) {
       try {
         const recovered = await recoverSabrDownload(download)
-        Object.assign(download, recovered, { status: 'completed', phase: 'completed', progress: 1, error: null, interrupted: false })
-        updateDownloadMetadata(download.downloadId, { ...recovered, status: 'completed', phase: 'completed', progress: 1, error: null, interrupted: false, completedAt: Date.now() })
+        Object.assign(download, recovered, { status: 'completed', phase: 'completed', error: null, interrupted: false })
+        updateDownloadMetadata(download.downloadId, { ...recovered, status: 'completed', phase: 'completed', error: null, interrupted: false, completedAt: Date.now() })
       } catch (error) {
         updateDownloadMetadata(download.downloadId, { status: 'failed', phase: 'failed', error: error.message || 'SABR export failed', offlineUri: download.offlineUri })
         Object.assign(download, { status: 'failed', phase: 'failed', error: error.message || 'SABR export failed' })
       }
     }
     while ((download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData))) {
-      Object.assign(download, { status: 'downloading', progress: 0, received: 0, speedBps: 0, etaSeconds: 0 })
-      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress: 0, received: 0, speedBps: 0, etaSeconds: 0 })
+      const progress = download.total > 0 ? 0 : null
+      Object.assign(download, { status: 'downloading', progress, received: 0, speedBps: 0, etaSeconds: 0 })
+      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: 0, speedBps: 0, etaSeconds: 0 })
       try {
-        const recovered = await recoverSabrDownload(download, (content, progress, total, networkBytes, totalExact) => {
+        const recovered = await recoverSabrDownload(download, (content, progress, total, totalExact) => {
           if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
-          Object.assign(download, { progress, received: content?.size || 0, total: total || 0, networkBytes, totalExact })
-          updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total, networkBytes, totalExact })
+          Object.assign(download, { progress, received: content?.size || 0, total: total || 0, totalExact })
+          updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total, totalExact })
         })
-        Object.assign(download, recovered, { status: 'completed', progress: 1, received: download.received, interrupted: false })
+        Object.assign(download, recovered, { status: 'completed', interrupted: false })
         updateDownloadMetadata(download.downloadId, {
           status: 'completed',
-          progress: 1,
+          progress: download.progress,
           received: download.received,
           total: download.total,
-          totalExact: download.totalExact && download.received === download.total,
+          totalExact: download.totalExact,
           offlineUri: download.offlineUri,
           localPath: download.localPath,
           fileName: download.fileName,

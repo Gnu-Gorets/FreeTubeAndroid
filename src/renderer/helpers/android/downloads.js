@@ -190,7 +190,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
           }
           const now = Date.now()
           const percent = Math.round(progress * 100)
-          const snapshot = getStableProgressSnapshot(content, transportBytes, progress, stableTotal, totalExact)
+          const snapshot = getProgressSnapshot(content, progress, stableTotal, totalExact)
           if (snapshot.total > stableTotal) stableTotal = snapshot.total
           if (!snapshot.totalExact) totalExact = false
           const elapsed = (now - lastTelemetryAt) / 1000
@@ -208,7 +208,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
             log('SABR store progress', { id: download.downloadId, percent })
           }
           if (!sabrPaused.has(download.downloadId) && !sabrCanceled.has(download.downloadId)) {
-            onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total, transportBytes, snapshot.totalExact)
+            onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total, snapshot.totalExact)
           }
         }
       }
@@ -243,7 +243,8 @@ export async function recoverSabrDownload(download, onProgress) {
     return { ...await exportSabrDownload(download, download.title, download.downloadId), offlineUri: download.offlineUri }
   }
   const content = await storeSabrDownload(download, onProgress, download)
-  return { ...await exportSabrDownload(content, download.title, download.downloadId), offlineUri: content.offlineUri }
+  const snapshot = getProgressSnapshot(content, 1, download.total, download.totalExact)
+  return { ...await exportSabrDownload(content, download.title, download.downloadId), ...snapshot, offlineUri: content.offlineUri }
 }
 
 export function hasSabrDownload(downloadId) {
@@ -271,15 +272,13 @@ export function isSabrDownloadPaused(downloadId) {
 }
 
 export function mergeNativeDownload(download, native) {
+  const snapshot = getProgressSnapshot({ size: native.received }, 0, native.total, native.totalExact)
   return {
     ...download,
     status: native.status,
     localPath: native.targetUri || download.localPath,
-    progress: native.total > 0 ? Math.min(Math.max(native.received / native.total, 0), 1) : null,
-    received: native.received ?? 0,
-    total: native.total ?? 0,
+    ...snapshot,
     fileSize: native.fileSize || download.fileSize || 0,
-    totalExact: native.totalExact === true,
     phase: native.phase,
     speedBps: native.speedBps,
     etaSeconds: native.etaSeconds,
@@ -287,17 +286,21 @@ export function mergeNativeDownload(download, native) {
   }
 }
 
-export function getProgressSnapshot(content, _transportBytes, progress, knownTotal = 0, totalExact = false) {
+export function getProgressSnapshot(content, shakaProgress, knownTotal = 0, totalExact = false) {
   const received = Math.max(Number(content?.size) || 0, 0)
-  let total = Number(knownTotal) > 0 ? Number(knownTotal) : (progress > 0 ? Math.round(received / progress) : 0)
-  let exact = totalExact === true
-  if (total > 0 && received > total) { total = received; exact = false }
-  return { received, total, totalExact: exact }
-}
-
-export function getStableProgressSnapshot(content, transportBytes, progress, knownTotal = 0, totalExact = false) {
-  const snapshot = getProgressSnapshot(content, transportBytes, progress, knownTotal, totalExact)
-  return { ...snapshot, progress: snapshot.total > 0 ? snapshot.received / snapshot.total : null }
+  const known = Number(knownTotal)
+  const rawProgress = Number(shakaProgress)
+  const hasKnownTotal = Number.isFinite(known) && known > 0
+  const canEstimate = !hasKnownTotal && Number.isFinite(rawProgress) && rawProgress > 0 && received > 0
+  const total = hasKnownTotal
+    ? Math.max(known, received)
+    : canEstimate ? Math.max(received, Math.round(received / rawProgress)) : 0
+  return {
+    received,
+    total,
+    totalExact: hasKnownTotal && received <= known && totalExact === true,
+    progress: total > 0 ? Math.min(received / total, 1) : null
+  }
 }
 
 export async function preflightSabrDownload(player, manifestSrc, maxHeight) {
@@ -343,15 +346,17 @@ async function estimateSabrSize(manifest, selectedTrack) {
 
 export function mergeDownloadProgress(download, detail, native = null) {
   if (native) return mergeNativeDownload(download, native)
+  const snapshot = getProgressSnapshot(
+    { size: detail.received ?? download.received },
+    detail.progress ?? download.progress,
+    detail.total ?? download.total,
+    detail.totalExact ?? download.totalExact
+  )
   return {
     ...download,
     status: detail.status,
-    progress: detail.total > 0 ? Math.min(Math.max(detail.received / detail.total, 0), 1) : null,
-    received: detail.received ?? 0,
-    total: detail.total ?? 0,
+    ...snapshot,
     fileSize: detail.fileSize || download.fileSize || 0,
-    totalExact: detail.totalExact ?? download.totalExact,
-    networkBytes: detail.networkBytes ?? download.networkBytes,
     phase: detail.phase ?? download.phase,
     speedBps: detail.speedBps,
     etaSeconds: detail.etaSeconds,
@@ -365,7 +370,7 @@ export function updateDownloadMetadata(downloadId, changes) {
   if (!download) return
   const statusChanged = changes.status && changes.status !== download.status
   Object.assign(download, changes)
-  if (statusChanged || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, networkBytes: changes.networkBytes, totalExact: changes.totalExact, speedBps: changes.speedBps })
+  if (statusChanged || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
   if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
     window.dispatchEvent(new CustomEvent('android-download', { detail: { id: downloadId, ...changes } }))
@@ -506,17 +511,7 @@ export async function downloadProgressiveVideo(video) {
         try {
           const item = JSON.parse(android.getNativeDownloadQueue?.() || '[]').find(entry => entry.id === downloadId)
           if (!item) return
-          Object.assign(metadata, {
-            status: item.status,
-            progress: item.progress ?? null,
-            received: item.received ?? 0,
-            total: item.total ?? 0,
-            fileSize: item.fileSize ?? 0,
-            totalExact: item.totalExact === true,
-            speedBps: item.speedBps ?? 0,
-            etaSeconds: item.etaSeconds ?? 0,
-            error: item.error || null
-          })
+          Object.assign(metadata, mergeNativeDownload(metadata, item))
           if (item.status === 'completed') {
             metadata.fileName = fileName
             metadata.completedAt ??= Date.now()
@@ -537,9 +532,7 @@ export async function downloadProgressiveVideo(video) {
     const onEvent = (event) => {
       if (event.detail?.id !== downloadId) return
       if (event.detail.status === 'progress') {
-        metadata.progress = event.detail.total > 0 ? event.detail.received / event.detail.total : null
-        metadata.received = event.detail.received
-        metadata.total = event.detail.total
+        Object.assign(metadata, getProgressSnapshot({ size: event.detail.received }, 0, event.detail.total, event.detail.totalExact ?? metadata.totalExact))
         const notification = getDownloadNotificationPayload({ downloadId, title: video.title, status: metadata.status || 'downloading', progress: metadata.progress ?? 0, speedBps: metadata.speedBps || 0, received: metadata.received || 0, total: metadata.total || 0 })
         android.updateDownloadNotification?.(notification.downloadId, notification.title, metadata.status || 'downloading', notification.progress, metadata.speedBps || 0, metadata.received || 0, metadata.total || 0)
         localStorage.setItem('freetube-downloads', JSON.stringify(downloads))

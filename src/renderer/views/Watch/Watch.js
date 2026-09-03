@@ -46,7 +46,7 @@ import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { getDownloadNotificationPayload } from '../../helpers/android/download-notification.mjs'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, exportSabrDownload, getDownloadFormats, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, exportSabrDownload, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1429,16 +1429,15 @@ export default defineComponent({
         engine: 'sabr',
         status: 'downloading',
         phase: 'video',
-        progress: 0,
+        progress: selection.total > 0 ? 0 : null,
         received: 0,
         ...selection,
         createdAt: Date.now()
       })
-      let lastProgress = 0
+      let lastProgress = selection.total > 0 ? 0 : null
       let lastReceived = 0
-      let lastTotal = 0
-      let lastNetworkBytes = 0
-      let lastTotalExact = false
+      let lastTotal = selection.total
+      let lastTotalExact = selection.totalExact
       let lastSpeedBps = 0
       const speedSamples = []
       let content = null
@@ -1451,7 +1450,7 @@ export default defineComponent({
           manifestMimeType: this.manifestMimeType,
           sabrData: this.sabrData
         },
-        (storedContent, progress, snapshotTotal, networkBytes, totalExact) => {
+        (storedContent, progress, snapshotTotal, totalExact) => {
           if (isSabrDownloadPaused(downloadId) || isSabrDownloadCanceled(downloadId)) return
           const now = Date.now()
           const received = storedContent?.size || 0
@@ -1470,24 +1469,21 @@ export default defineComponent({
           lastProgress = progress
           lastReceived = received
           lastTotal = total
-          lastNetworkBytes = networkBytes
           lastTotalExact = totalExact
           lastSpeedBps = speedBps
           lastProgressAt = now
           lastBytes = received
-          updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, networkBytes, totalExact, speedBps })
+          updateDownloadMetadata(downloadId, { status: 'downloading', progress, received, total, totalExact, speedBps })
           const notification = getDownloadNotificationPayload({ downloadId, title: this.videoTitle, status: 'downloading', progress, speedBps, received, total })
           android.updateDownloadNotification?.(notification.downloadId, notification.title, 'downloading', notification.progress, speedBps, received, total)
         }, selection)
         if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
+        const finalSnapshot = getProgressSnapshot(content, 1, lastTotal, lastTotalExact)
         logSabrTimestamp(downloadId, 'processing-start')
         updateDownloadMetadata(downloadId, {
           status: 'processing',
           phase: 'processing',
-          progress: 1,
-          received: content.size || 0,
-          total: lastTotal || preflight.total,
-          totalExact: lastTotalExact || preflight.totalExact,
+          ...finalSnapshot,
           offlineUri: content.offlineUri,
           speedBps: 0,
           error: null
@@ -1495,15 +1491,11 @@ export default defineComponent({
         const exported = await exportSabrDownload(content, this.videoTitle, downloadId)
         updateDownloadMetadata(downloadId, {
           status: 'completed',
-          progress: 1,
+          ...finalSnapshot,
           offlineUri: content.offlineUri,
           localPath: exported.localPath,
           fileName: exported.fileName,
           fileSize: exported.fileSize || 0,
-          received: content.size || 0,
-          total: preflight.total,
-          networkBytes: lastNetworkBytes,
-          totalExact: lastTotalExact || preflight.totalExact,
           phase: 'completed',
           speedBps: 0,
           error: null,

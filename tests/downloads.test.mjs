@@ -30,7 +30,7 @@ const context = vm.createContext({
 })
 vm.runInContext(source, context)
 
-const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, getStableProgressSnapshot, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
+const { getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
 
 function sabrManifest(formats) {
   return `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats }))}`
@@ -137,8 +137,8 @@ test('SABR store reuses one preflight selection and logs store timestamps', asyn
     configure(config) { this.offline = config.offline }
     store() {
       selected = this.offline.trackSelectionCallback([fallback, exact])[0]
-      this.offline.progressCallback({ size: 10 }, 0.5)
-      return { promise: Promise.resolve({ offlineUri: 'offline:test', size: 20 }) }
+      this.offline.progressCallback({ size: 63.9 }, 0.78)
+      return { promise: Promise.resolve({ offlineUri: 'offline:test', size: 149.4 }) }
     }
     async destroy() {}
   }
@@ -151,11 +151,14 @@ test('SABR store reuses one preflight selection and logs store timestamps', asyn
     maxHeight: 480,
     videoTrackId: 'video-exact',
     audioTrackId: 'audio-exact',
-    total: 20,
+    total: 149.4,
     totalExact: true
   })
   assert.equal(selected, exact)
-  assert.deepEqual(Array.from(progress.slice(1)), [0.5, 20, 0, true])
+  assert.equal(progress.length, 4)
+  assert.equal(Math.round(progress[1] * 100), 43)
+  assert.equal(progress[2], 149.4)
+  assert.equal(progress[3], true)
   assert.deepEqual(downloadLogs.filter(([message]) => message === 'SABR timestamp').map(([, detail]) => detail.event), [
     'slot-acquired',
     'offline-player-loaded',
@@ -290,9 +293,9 @@ test('download progress handles missing totals and clamps SABR snapshots', () =>
   assert.deepEqual(JSON.parse(JSON.stringify(mergeDownloadProgress({ downloadId: 'one' }, {
     status: 'downloading', received: 5, total: 0, speedBps: 0
   }))), {
-    downloadId: 'one', status: 'downloading', progress: null, received: 5, total: 0, fileSize: 0, speedBps: 0, error: null
+    downloadId: 'one', status: 'downloading', progress: null, received: 5, total: 0, totalExact: false, fileSize: 0, speedBps: 0, error: null
   })
-  assert.equal(getStableProgressSnapshot({ size: 100 }, 1000, 2).progress, 1)
+  assert.equal(getProgressSnapshot({ size: 100 }, 2).progress, 1)
 })
 
 test('fallback save dialog requests final mp4 name', () => {
@@ -395,19 +398,44 @@ test('native queue progress replaces stale UI progress fields', () => {
   })
 })
 
-test('SABR progress uses stored bytes instead of transport overhead', () => {
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 0 }, 200, 0.1))), { received: 0, total: 0, totalExact: false })
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 200, 0.5))), { received: 500, total: 1000, totalExact: false })
-  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 700 }, 900, 0.6, 2000))), { received: 700, total: 2000, totalExact: false })
+test('SABR progress is derived only from normalized stored bytes and total', () => {
+  const inconsistentRawProgress = getProgressSnapshot({ size: 63.9 }, 0.78, 149.4, true)
+  assert.equal(inconsistentRawProgress.received, 63.9)
+  assert.equal(inconsistentRawProgress.total, 149.4)
+  assert.equal(inconsistentRawProgress.totalExact, true)
+  assert.equal(Math.round(inconsistentRawProgress.progress * 100), 43)
+
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 0.5))), {
+    received: 500, total: 1000, totalExact: false, progress: 0.5
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 0))), {
+    received: 500, total: 0, totalExact: false, progress: null
+  })
 })
 
-test('SABR known total stays fixed through completion', () => {
-  const first = getStableProgressSnapshot({ size: 100 }, 100, 0.1, 1000)
-  const second = getStableProgressSnapshot({ size: 1000 }, 1500, 1, first.total)
+test('SABR exact total stays fixed until stored bytes overflow it', () => {
+  const first = getProgressSnapshot({ size: 100 }, 0.78, 1000, true)
+  const second = getProgressSnapshot({ size: 1000 }, 1, first.total, first.totalExact)
   assert.equal(first.total, 1000)
+  assert.equal(first.totalExact, true)
   assert.equal(second.total, 1000)
   assert.equal(second.received, 1000)
   assert.equal(second.progress, 1)
+
+  const overflow = getProgressSnapshot({ size: 1001 }, 0.78, second.total, second.totalExact)
+  assert.equal(overflow.total, 1001)
+  assert.equal(overflow.totalExact, false)
+  assert.equal(overflow.progress, 1)
+})
+
+test('SABR transport bytes stay diagnostic and Downloads renders normalized progress', () => {
+  assert.ok(source.includes('networkBytes: transportBytes'))
+  assert.equal(watchSource.includes('networkBytes'), false)
+  assert.equal(downloadsViewSource.includes('networkBytes'), false)
+  assert.ok(downloadsViewSource.includes('Math.round(download.progress * 100)'))
+  assert.equal(downloadsViewSource.includes('download.received / download.total'), false)
+  assert.ok(watchSource.includes('const finalSnapshot = getProgressSnapshot(content, 1, lastTotal, lastTotalExact)'))
+  assert.equal(watchSource.includes('progress: 1'), false)
 })
 
 test('SABR progress event updates bytes, speed and percent immediately', () => {
@@ -415,7 +443,7 @@ test('SABR progress event updates bytes, speed and percent immediately', () => {
     status: 'downloading', progress: 0.25, received: 25, total: 100, speedBps: 50, etaSeconds: 2
   })
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-    downloadId: 'sabr', status: 'downloading', progress: 0.25, received: 25, total: 100, fileSize: 0, speedBps: 50, etaSeconds: 2, error: null
+    downloadId: 'sabr', status: 'downloading', progress: 0.25, received: 25, total: 100, totalExact: false, fileSize: 0, speedBps: 50, etaSeconds: 2, error: null
   })
 })
 
