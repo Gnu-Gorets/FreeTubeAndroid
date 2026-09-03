@@ -618,7 +618,7 @@ open_data_settings() {
   start_app || return 1
   # Reopen Settings after cold start or Activity recreation. First close any stale modal.
   adb_shell input tap 615 1540
-  sleep 1
+  ensure_cdp && cdp_wait "location.hash === '#/settings'" || return 1
   adb_shell input keyevent KEYCODE_BACK
   sleep 1
   adb_shell input tap 615 1540
