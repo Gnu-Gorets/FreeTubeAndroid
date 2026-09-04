@@ -35,7 +35,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
+                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-quality-repeats, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -1093,6 +1093,49 @@ PY
   for id in "${download_ids[@]}"; do cdp_cleanup_download "$id" || return 1; done
 }
 
+download_sabr_quality_repeats() {
+  local quality repeat marker id sample_file
+  sample_file="$ARTIFACT_DIR/download-sabr-quality-repeats.jsonl"
+  : >"$sample_file"
+  for quality in '1440p (SABR)' '1080p (SABR)' '720p (SABR)' '480p (SABR)' '360p (SABR)'; do
+    for repeat in 1 2 3; do
+      CURRENT_TEST="download-sabr-quality-repeats-$quality-$repeat"
+      progress "starting $quality repeat $repeat/3"
+      clean_logs
+      open_download_video || return 1
+      ensure_cdp || return 1
+      marker=$(cdp_eval 'Date.now()')
+      cdp_start_sabr_download_quality "$marker" 1 "$quality" || return 1
+      open_downloads_cdp || return 1
+      id=$(cdp_latest_download_id_since "$marker")
+      [[ -n "$id" && "$id" != null ]] || return 1
+      screenshot "download-sabr-quality-repeats-${quality%% *}-$repeat"
+      for second in $(seq 0 2 "$DOWNLOAD_TIMEOUT"); do
+        cdp_eval "(() => { const d = window.__ftTest.downloads().find(item => item.id === '$id'); const bar = document.querySelector('[data-download-id=\\\"$id\\\"] progress'); return {quality:'$quality',repeat:$repeat,id:'$id',second:$second,hash:location.hash,status:d?.status,progress:d?.progress ?? null,received:d?.received ?? 0,total:d?.total ?? 0,totalExact:d?.totalExact ?? false,barValue:bar ? bar.value : null,barMax:bar ? bar.max : null,barComplete:Boolean(bar && bar.value >= bar.max)} })()" >>"$sample_file" || return 1
+        status=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.status" | tr -d '"')
+        [[ "$status" == completed ]] && break
+        sleep 2
+      done
+      cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+      cdp_eval "(() => { const d = window.__ftTest.downloads().find(item => item.id === '$id'); const bar = document.querySelector('[data-download-id=\\\"$id\\\"] progress'); return {...d,quality:'$quality',repeat:$repeat,hash:location.hash,barValue:bar ? bar.value : null,barMax:bar ? bar.max : null,barComplete:Boolean(bar && bar.value >= bar.max),terminal:true} })()" >>"$sample_file" || return 1
+      cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')" >"$ARTIFACT_DIR/download-sabr-quality-repeats-$repeat-${quality%% *}-complete.json" || return 1
+      cdp_cleanup_download "$id" || return 1
+    done
+  done
+  python3 - "$sample_file" <<'PY'
+import json
+import sys
+
+samples = [json.loads(line) for line in open(sys.argv[1], encoding='utf-8') if line.strip()]
+assert len({(item['quality'], item['repeat']) for item in samples}) == 15, samples
+for item in samples:
+    assert not item['barComplete'] or item['status'] == 'completed', item
+completed = [item for item in samples if item.get('terminal') and item['status'] == 'completed']
+assert len(completed) == 15, completed
+assert all(item['received'] == item['total'] and item['totalExact'] is True for item in completed), completed
+PY
+}
+
 download_sabr_ui_progress() {
   echo '[download-sabr-ui-progress] opening video'
   clean_logs
@@ -1558,6 +1601,7 @@ case "$TEST" in
   download-sabr-total) run_test download-sabr-total download_sabr_total ;;
   download-sabr-quality-totals) run_test download-sabr-quality-totals download_sabr_quality_totals ;;
   download-sabr-quality-pair) run_test download-sabr-quality-pair download_sabr_quality_pair ;;
+  download-sabr-quality-repeats) run_test download-sabr-quality-repeats download_sabr_quality_repeats ;;
   download-sabr-1080) run_test download-sabr-1080 download_sabr_1080 ;;
   download-sabr-ui-progress) run_test download-sabr-ui-progress download_sabr_ui_progress ;;
   download-sabr-pause-resume) run_test download-sabr-pause-resume download_sabr_pause_resume ;;

@@ -393,7 +393,7 @@ function installTestHook() {
     }
   }
   window.__ftTest = {
-    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, fileSize, offlineUri, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, fileSize, offlineUri, createdAt })),
+    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, progress, received, total, totalExact, fileSize, offlineUri, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, progress, received, total, totalExact, fileSize, offlineUri, createdAt })),
     active: id => hasSabrDownload(id),
     offlineContents,
     removeOffline: async uri => {
