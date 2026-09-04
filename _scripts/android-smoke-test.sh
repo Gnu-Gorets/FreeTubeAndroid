@@ -378,7 +378,7 @@ ensure_ui_scale_100() {
   (( UI_SCALE_SET == 1 )) && return 0
   adb_shell am force-stop "$PACKAGE"
   adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
-  adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
+  adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   wait_for "$PACKAGE" || return 1
   ensure_cdp && cdp_wait "Boolean(document.querySelector('.navButton'))" || return 1
   # Open Settings through persistent mobile bottom navigation.
@@ -410,7 +410,7 @@ ensure_ui_scale_100() {
 start_app() {
   ensure_ui_scale_100 || return 1
   adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
-  adb_shell am start -n "$ACTIVITY" >/dev/null || return 1
+  adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   wait_for "$PACKAGE" || return 1
   ensure_cdp && cdp_wait "document.readyState === 'complete'"
 }
