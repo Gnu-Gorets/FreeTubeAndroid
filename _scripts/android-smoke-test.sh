@@ -901,7 +901,7 @@ download_sabr_telemetry() {
   adb_shell input tap 185 830
   sleep 2
   progress "selecting telemetry download quality"
-  adb_shell input tap 220 940
+  cdp_click_prompt_option '360p (SABR)' || return 1
   progress "download started; waiting for SABR store completion"
   wait_for_logcat 'SABR store complete' || return 1
   progress "SABR store completed; collecting telemetry log"
@@ -929,7 +929,7 @@ download_sabr_total() {
   adb_shell input tap 185 830
   sleep 2
   # Select 1440p SABR, the regression quality where total changed from 216.8 MB to 218.2 MB.
-  adb_shell input tap 360 808
+  cdp_click_prompt_option '1440p (SABR)' || return 1
   sleep 2
   screenshot download-sabr-total-start
   local completed=0
@@ -1159,7 +1159,7 @@ download_sabr_ui_progress() {
   local tap_sent_ms tap_done_ms
   tap_sent_ms=$(date +%s%3N)
   progress "quality option tap sent at ${tap_sent_ms}ms"
-  adb_shell input tap 360 808
+  cdp_click_prompt_option '1440p (SABR)' || return 1
   tap_done_ms=$(date +%s%3N)
   progress "quality option tap completed at ${tap_done_ms}ms"
   printf 'quality_option_tap_sent_ms=%s\nquality_option_tap_completed_ms=%s\n' "$tap_sent_ms" "$tap_done_ms" >"$ARTIFACT_DIR/download-latency.txt"
@@ -1231,7 +1231,7 @@ download_sabr_pause_resume() {
   adb_shell input tap 185 830
   sleep 2
   # Select 720p to leave enough time for pause action before completion.
-  adb_shell input tap 160 875
+  cdp_click_prompt_option '720p (SABR)' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
@@ -1252,7 +1252,7 @@ download_notification() {
   adb_shell input tap 185 830
   sleep 2
   # Select 720p from quality picker.
-  adb_shell input tap 160 875
+  cdp_click_prompt_option '720p (SABR)' || return 1
   wait_for_notification 'channel=downloads' || return 1
   adb_shell dumpsys notification --noredact >"$ARTIFACT_DIR/download-notification-during.txt"
   grep -q '"Pause"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
@@ -1278,7 +1278,7 @@ download_notification_title() {
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  adb_shell input tap 160 875
+  cdp_click_prompt_option '720p (SABR)' || return 1
   wait_for_notification 'channel=downloads' || return 1
   local dump
   dump=$(adb_shell dumpsys notification --noredact)
@@ -1312,7 +1312,7 @@ download_sabr_export() {
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  adb_shell input tap 575 875
+  cdp_click_prompt_option '1440p (SABR)' || return 1
   wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
@@ -1389,7 +1389,7 @@ download_delete() {
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  adb_shell input tap 575 875
+  cdp_click_prompt_option '1440p (SABR)' || return 1
   wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
