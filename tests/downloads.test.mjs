@@ -495,10 +495,10 @@ test('native downloads use canonical statuses and exact final file size', () => 
 
 test('Downloads view supports filtered bulk selection and stale selection cleanup', () => {
   assert.ok(downloadsViewSource.includes('const selectableDownloads = computed(() => filteredDownloads.value)'))
-  assert.ok(downloadsViewSource.includes('items.length > 0 && items.every(download => selectedDownloads.value.has(download))'))
-  assert.ok(downloadsViewSource.includes('selectedDownloads.value = new Set([...selectedDownloads.value].filter(download => downloads.value.includes(download)))'))
-  assert.ok(downloadsViewSource.includes('items.forEach(download => selected.delete(download))'))
-  assert.ok(downloadsViewSource.includes('items.forEach(download => selected.add(download))'))
+  assert.ok(downloadsViewSource.includes('items.length > 0 && items.every(download => selected.has(download.downloadId))'))
+  assert.ok(downloadsViewSource.includes('selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => downloadIds.has(id)))'))
+  assert.ok(downloadsViewSource.includes('items.forEach(download => selected.delete(download.downloadId))'))
+  assert.ok(downloadsViewSource.includes('items.forEach(download => selected.add(download.downloadId))'))
 })
 
 test('Downloads skips malformed metadata records without hiding valid records', () => {
@@ -506,17 +506,17 @@ test('Downloads skips malformed metadata records without hiding valid records', 
   assert.ok(downloadsViewSource.includes("console.warn('[Downloads] skipping invalid metadata record')"))
 })
 
-test('Downloads selection and rendering use record identity', () => {
+test('Downloads selection and rendering use stable download ids', () => {
   assert.ok(downloadsViewSource.includes(':key="download"'))
-  assert.ok(downloadsViewSource.includes(':checked="selectedDownloads.has(download)"'))
-  assert.ok(downloadsViewSource.includes('selectedDownloads.value.has(download)'))
-  assert.ok(downloadsViewSource.includes('downloads.value.filter(download => !deleted.has(download))'))
+  assert.ok(downloadsViewSource.includes(':checked="selectedDownloadIds.has(download.downloadId)"'))
+  assert.ok(downloadsViewSource.includes('selectedDownloadIds.value.has(download.downloadId)'))
+  assert.ok(downloadsViewSource.includes('downloads.value.filter(download => !deleted.has(download.downloadId))'))
 })
 
 test('Downloads selection controls handle empty and selected states', () => {
   assert.ok(downloadsViewSource.includes(':disabled="selectableDownloads.length === 0"'))
   assert.ok(downloadsViewSource.includes("t('Downloads.Clear selection')"))
-  assert.ok(downloadsViewSource.includes('items.length > 0 && items.every(download => selectedDownloads.value.has(download))'))
+  assert.ok(downloadsViewSource.includes('items.length > 0 && items.every(download => selectedDownloadIds.value.has(download.downloadId))'))
 })
 
 test('Downloads thumbnails have a fallback and mobile list clears bottom navigation', () => {
@@ -533,7 +533,7 @@ test('Downloads action hover is limited to hover-capable devices', () => {
 })
 
 test('Downloads view supports fast bulk selection and deletion', () => {
-  assert.ok(downloadsViewSource.includes('selectedDownloads'))
+  assert.ok(downloadsViewSource.includes('selectedDownloadIds'))
   assert.ok(downloadsViewSource.includes('data-download-action="select-all"'))
   assert.ok(downloadsViewSource.includes('data-download-action="delete-selected"'))
   assert.ok(downloadsViewSource.includes('@click="removeMany()"'))
@@ -623,4 +623,11 @@ test('metadata update changes only matching download', () => {
     { downloadId: 'one', status: 'failed', error: 'network' },
     { downloadId: 'two', status: 'completed' }
   ])
+})
+
+test('Downloads selection uses stable ids across metadata reloads', () => {
+  assert.ok(downloadsViewSource.includes('const selectedDownloadIds = ref(new Set())'))
+  assert.ok(downloadsViewSource.includes('selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => downloadIds.has(id)))'))
+  assert.ok(downloadsViewSource.includes(':checked="selectedDownloadIds.has(download.downloadId)"'))
+  assert.equal(downloadsViewSource.includes('downloads.value.includes(download)'), false)
 })
