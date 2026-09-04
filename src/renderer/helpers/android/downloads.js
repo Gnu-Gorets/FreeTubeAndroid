@@ -167,7 +167,6 @@ export function recordDownloadMetadata(metadata) {
 
 export async function storeSabrDownload(download, onProgress, selection = {}) {
   if (!download.manifestSrc || !download.sabrData || !shaka.offline?.Storage) throw new Error('SABR download is unavailable')
-  sabrCanceled.delete(download.downloadId)
   sabrPaused.delete(download.downloadId)
   sabrStarting.add(download.downloadId)
   const slotWeight = await acquireSabrSlot(sabrWeight(selection.maxHeight))

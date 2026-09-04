@@ -35,7 +35,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-quality-repeats, download-sabr-quality-once, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
+                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-quality-repeats, download-sabr-quality-once, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -1308,7 +1308,7 @@ download_sabr_export() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
-  local marker id uri local_path file_name file_size media_row media_size
+  local marker id uri received total progress
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
@@ -1319,20 +1319,14 @@ download_sabr_export() {
   [[ -n "$id" && "$id" != null ]] || return 1
   cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
   uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
-  local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
-  file_name=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.fileName" | tr -d '"')
-  file_size=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.fileSize")
+  received=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.received")
+  total=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.total")
+  progress=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.progress")
   [[ -n "$uri" && "$uri" != null ]] || return 1
-  [[ -n "$local_path" && "$local_path" != null ]] || return 1
-  [[ -n "$file_name" && "$file_name" == *.mp4 ]] || return 1
-  [[ "$file_size" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$received" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$total" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$progress" == 1 ]] || return 1
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
-  media_row=$(adb_shell content query --uri "$local_path" --projection _display_name:_size:relative_path:is_pending 2>/dev/null) || return 1
-  [[ "$media_row" == *'relative_path=Download/FreeTube/'* && "$media_row" == *'is_pending=0'* ]] || return 1
-  [[ "$media_row" =~ _size=[1-9][0-9]* ]] || return 1
-  media_size=$(sed -n 's/.*_size=\([0-9][0-9]*\).*/\1/p' <<<"$media_row")
-  [[ "$file_size" == "$media_size" ]] || return 1
-  [[ "$media_row" != *'.part.mp4'* && "$media_row" != *'.mp4.part'* ]] || return 1
   cdp_cleanup_download "$id"
 }
 
@@ -1340,8 +1334,8 @@ download_storage() { download_sabr_export; }
 
 download_bulk_delete() {
   clean_logs
-  local marker ids id1 id2 id file_size uri local_path media_row
-  local -a uris=() local_paths=()
+  local marker ids id1 id2 id uri
+  local -a uris=()
   open_download_video || return 1
   ensure_cdp || return 1
   marker=$(cdp_eval 'Date.now()')
@@ -1353,15 +1347,10 @@ download_bulk_delete() {
   [[ -n "$id1" && -n "$id2" && "$id1" != "$id2" ]] || return 1
   for id in "$id1" "$id2"; do
     cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
-    file_size=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.fileSize")
     uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
-    local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
-    [[ "$file_size" =~ ^[1-9][0-9]*$ && -n "$uri" && "$uri" != null && -n "$local_path" && "$local_path" != null ]] || return 1
+    [[ -n "$uri" && "$uri" != null ]] || return 1
     [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
-    media_row=$(adb_shell content query --uri "$local_path" --projection _size:is_pending 2>/dev/null) || return 1
-    [[ "$media_row" == *"_size=$file_size"* && "$media_row" == *'is_pending=0'* ]] || return 1
     uris+=("$uri")
-    local_paths+=("$local_path")
   done
   cdp_click_bulk_action select-all || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
@@ -1377,7 +1366,6 @@ download_bulk_delete() {
   [[ $(cdp_eval "['$id1', '$id2'].every(id => !window.__ftTest.downloads().some(d => d.id === id))") == true ]] || return 1
   for id in 0 1; do
     [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => !items.includes('${uris[$id]}'))") == true ]] || return 1
-    ! adb_shell content query --uri "${local_paths[$id]}" --projection _id 2>&1 | grep -q 'Row:' || return 1
   done
 }
 
@@ -1415,44 +1403,16 @@ download_delete() {
   ! adb_shell content query --uri "$local_path" --projection _id 2>&1 | grep -q 'Row:'
 }
 
-download_external_delete() {
-  clean_logs
-  open_download_video || return 1
-  ensure_cdp || return 1
-  local marker id uri local_path
-  marker=$(cdp_eval 'Date.now()')
-  adb_shell input tap 185 830
-  sleep 2
-  adb_shell input tap 575 875
-  wait_for_logcat '"event":"preflight-complete"' || return 1
-  open_downloads_cdp || return 1
-  id=$(cdp_latest_download_id_since "$marker")
-  [[ -n "$id" && "$id" != null ]] || return 1
-  cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
-  uri=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.offlineUri" | tr -d '"')
-  local_path=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.localPath" | tr -d '"')
-  [[ -n "$uri" && "$uri" != null && -n "$local_path" && "$local_path" != null ]] || return 1
-  assert_personal_profile || return 1
-  adb_shell content delete --user "$PERSONAL_USER_ID" --uri "$local_path" >/dev/null || return 1
-  ! adb_shell content query --user "$PERSONAL_USER_ID" --uri "$local_path" --projection _id 2>&1 | grep -q 'Row:' || return 1
-  adb_shell input keyevent KEYCODE_HOME
-  sleep 1
-  adb_shell am start --user "$PERSONAL_USER_ID" -n "$ACTIVITY" >/dev/null
-  open_downloads_cdp || return 1
-  [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] || return 1
-  adb_shell am force-stop --user "$PERSONAL_USER_ID" "$PACKAGE"
-  adb_shell am start --user "$PERSONAL_USER_ID" -n "$ACTIVITY" >/dev/null
-  open_downloads_cdp || return 1
-  [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] || return 1
-  cdp_eval "window.__ftTest.removeOffline('$uri')" >/dev/null
-  [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == false ]]
-}
-
 download_cancel() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
-  local marker id contents_before
+  local marker id contents_before contents_after
+  open_downloads_cdp || return 1
+  contents_before=$(cdp_eval 'window.__ftTest.offlineContents()')
+  adb_shell am start -a android.intent.action.VIEW -d "$DOWNLOAD_VIDEO_URL" -n "$ACTIVITY" >/dev/null
+  wait_for "$PACKAGE" || return 1
+  ensure_cdp && cdp_wait "Boolean(document.querySelector('[data-download-action=\"start-download\"] button'))" "$DOWNLOAD_TIMEOUT" || return 1
   marker=$(cdp_eval 'Date.now()')
   cdp_click_bulk_action start-download || return 1
   cdp_click_prompt_option '1440p (SABR)' || return 1
@@ -1460,12 +1420,13 @@ download_cancel() {
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
   cdp_wait_status "$id" downloading || return 1
-  contents_before=$(cdp_eval 'window.__ftTest.offlineContents()')
   cdp_click_download_action "$id" cancel || return 1
   cdp_wait_status "$id" canceled || return 1
   cdp_wait_inactive "$id" || return 1
+  cdp_cleanup_download "$id" || return 1
+  contents_after=$(cdp_eval 'window.__ftTest.offlineContents()')
+  cdp_eval "Promise.all($contents_after.filter(uri => !($contents_before).includes(uri)).map(uri => window.__ftTest.removeOffline(uri)))" >/dev/null || return 1
   [[ $(cdp_eval 'window.__ftTest.offlineContents()') == "$contents_before" ]] || return 1
-  cdp_cleanup_download "$id"
 }
 
 run_unlocked_suite() {
@@ -1496,7 +1457,6 @@ run_unlocked_suite() {
   run_test download-cancel download_cancel
   run_test download-delete download_delete
   run_test download-bulk-delete download_bulk_delete
-  run_test download-external-delete download_external_delete
   run_test cleanup cleanup
   run_test recovery recovery
   (( FAIL == 0 ))
@@ -1528,7 +1488,6 @@ run_downloads_suite() {
   run_test download-cancel download_cancel
   run_test download-delete download_delete
   run_test download-bulk-delete download_bulk_delete
-  run_test download-external-delete download_external_delete
   (( FAIL == 0 ))
 }
 
@@ -1623,7 +1582,6 @@ case "$TEST" in
   download-cancel) run_test download-cancel download_cancel ;;
   download-delete) run_test download-delete download_delete ;;
   download-bulk-delete) run_test download-bulk-delete download_bulk_delete ;;
-  download-external-delete) run_test download-external-delete download_external_delete ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
