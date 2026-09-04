@@ -494,11 +494,23 @@ test('native downloads use canonical statuses and exact final file size', () => 
 })
 
 test('Downloads view supports filtered bulk selection and stale selection cleanup', () => {
-  assert.ok(downloadsViewSource.includes('const selectableDownloadIds = computed(() => filteredDownloads.value.map(download => download.downloadId))'))
-  assert.ok(downloadsViewSource.includes('ids.length > 0 && ids.every(id => selectedDownloadIds.value.has(id))'))
-  assert.ok(downloadsViewSource.includes('selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => downloadIds.has(id)))'))
-  assert.ok(downloadsViewSource.includes('ids.forEach(id => selected.delete(id))'))
-  assert.ok(downloadsViewSource.includes('ids.forEach(id => selected.add(id))'))
+  assert.ok(downloadsViewSource.includes('const selectableDownloads = computed(() => filteredDownloads.value)'))
+  assert.ok(downloadsViewSource.includes('items.length > 0 && items.every(download => selectedDownloads.value.has(download))'))
+  assert.ok(downloadsViewSource.includes('selectedDownloads.value = new Set([...selectedDownloads.value].filter(download => downloads.value.includes(download)))'))
+  assert.ok(downloadsViewSource.includes('items.forEach(download => selected.delete(download))'))
+  assert.ok(downloadsViewSource.includes('items.forEach(download => selected.add(download))'))
+})
+
+test('Downloads skips malformed metadata records without hiding valid records', () => {
+  assert.ok(downloadsViewSource.includes("if (!download || typeof download !== 'object' || Array.isArray(download) || !download.downloadId)"))
+  assert.ok(downloadsViewSource.includes("console.warn('[Downloads] skipping invalid metadata record')"))
+})
+
+test('Downloads selection and rendering use record identity', () => {
+  assert.ok(downloadsViewSource.includes(':key="download"'))
+  assert.ok(downloadsViewSource.includes(':checked="selectedDownloads.has(download)"'))
+  assert.ok(downloadsViewSource.includes('selectedDownloads.value.has(download)'))
+  assert.ok(downloadsViewSource.includes('downloads.value.filter(download => !deleted.has(download))'))
 })
 
 test('Downloads action hover uses readable theme colors', () => {
@@ -507,7 +519,7 @@ test('Downloads action hover uses readable theme colors', () => {
 })
 
 test('Downloads view supports fast bulk selection and deletion', () => {
-  assert.ok(downloadsViewSource.includes('selectedDownloadIds'))
+  assert.ok(downloadsViewSource.includes('selectedDownloads'))
   assert.ok(downloadsViewSource.includes('data-download-action="select-all"'))
   assert.ok(downloadsViewSource.includes('data-download-action="delete-selected"'))
   assert.ok(downloadsViewSource.includes('@click="removeMany()"'))

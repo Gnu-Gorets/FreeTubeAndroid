@@ -11,12 +11,12 @@
           {{ selectAllLabel }}
         </button>
         <button
-          v-if="selectedDownloadIds.size"
+          v-if="selectedDownloads.size"
           type="button"
           data-download-action="delete-selected"
           @click="removeMany()"
         >
-          {{ t('Downloads.Delete') }} {{ selectedDownloadIds.size }}
+          {{ t('Downloads.Delete') }} {{ selectedDownloads.size }}
         </button>
       </div>
       <label class="downloadsSearch">
@@ -40,16 +40,16 @@
     </p>
     <article
       v-for="download in filteredDownloads"
-      :key="download.offlineUri || download.localPath || download.downloadId"
+      :key="download"
       class="downloadItem"
       :data-download-id="download.downloadId"
     >
       <input
         class="downloadSelect"
         type="checkbox"
-        :checked="selectedDownloadIds.has(download.downloadId)"
+        :checked="selectedDownloads.has(download)"
         :aria-label="download.title"
-        @change="toggleSelected(download.downloadId)"
+        @change="toggleSelected(download)"
       >
       <img
         :src="download.thumbnail || ''"
@@ -135,12 +135,12 @@ const { t } = useI18n()
 const router = useRouter()
 const downloads = ref([])
 const searchQuery = ref('')
-const selectedDownloadIds = ref(new Set())
+const selectedDownloads = ref(new Set())
 const filteredDownloads = computed(() => filterDownloads(downloads.value, searchQuery.value))
-const selectableDownloadIds = computed(() => filteredDownloads.value.map(download => download.downloadId))
+const selectableDownloads = computed(() => filteredDownloads.value)
 const selectAllLabel = computed(() => {
-  const ids = selectableDownloadIds.value
-  return ids.length > 0 && ids.every(id => selectedDownloadIds.value.has(id))
+  const items = selectableDownloads.value
+  return items.length > 0 && items.every(download => selectedDownloads.value.has(download))
     ? t('Downloads.Select None')
     : t('Downloads.Select all')
 })
@@ -191,6 +191,10 @@ function load() {
     const stored = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
     if (!Array.isArray(stored)) throw new Error('Downloads metadata is not an array')
     downloads.value = stored.flatMap(download => {
+      if (!download || typeof download !== 'object' || Array.isArray(download) || !download.downloadId) {
+        console.warn('[Downloads] skipping invalid metadata record')
+        return []
+      }
       const native = queue.find(item => item.id === download.downloadId)
       if (native) return [mergeNativeDownload(download, native)]
       if (download.status === 'completed' && download.localPath && window.Android?.fileExists && !window.Android.fileExists(download.localPath)) return []
@@ -198,8 +202,7 @@ function load() {
         ? { ...download, status: 'queued', interrupted: true, error: 'Download interrupted' }
         : download]
     })
-    const downloadIds = new Set(downloads.value.map(download => download.downloadId))
-    selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => downloadIds.has(id)))
+    selectedDownloads.value = new Set([...selectedDownloads.value].filter(download => downloads.value.includes(download)))
     localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
     console.warn('[Downloads] list loaded', downloads.value.map(download => ({ id: download.downloadId, status: download.status, selectedFormat: download.selectedFormat, hasThumbnail: Boolean(download.thumbnail), hasOfflineUri: Boolean(download.offlineUri) })))
   } catch (error) {
@@ -263,20 +266,20 @@ function play(download) {
 }
 
 function toggleSelected(id) {
-  const next = new Set(selectedDownloadIds.value)
+  const next = new Set(selectedDownloads.value)
   next.has(id) ? next.delete(id) : next.add(id)
-  selectedDownloadIds.value = next
+  selectedDownloads.value = next
 }
 
 function selectAll() {
-  const ids = selectableDownloadIds.value
-  const selected = new Set(selectedDownloadIds.value)
-  if (ids.length > 0 && ids.every(id => selected.has(id))) ids.forEach(id => selected.delete(id))
-  else ids.forEach(id => selected.add(id))
-  selectedDownloadIds.value = selected
+  const items = selectableDownloads.value
+  const selected = new Set(selectedDownloads.value)
+  if (items.length > 0 && items.every(download => selected.has(download))) items.forEach(download => selected.delete(download))
+  else items.forEach(download => selected.add(download))
+  selectedDownloads.value = selected
 }
 
-async function removeMany(items = downloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))) {
+async function removeMany(items = downloads.value.filter(download => selectedDownloads.value.has(download))) {
   items = [...items]
   if (!items.length) return
   const active = items.filter(download => ['queued', 'downloading', 'paused'].includes(download.status))
@@ -293,15 +296,15 @@ async function removeMany(items = downloads.value.filter(download => selectedDow
         if (download.localPath && window.Android?.deleteDownloadFile) await awaitAsyncResult(android.deleteDownloadFile(download.localPath))
         const content = stored.find(item => item.offlineUri === download.offlineUri)
         if (content) await storage.remove(content.offlineUri)
-        results.push({ id: download.downloadId, ok: true })
+        results.push({ download, ok: true })
       } catch (error) {
         console.error('[Downloads] unable to delete download', { id: download.downloadId, error })
         results.push({ id: download.downloadId, ok: false })
       }
     }
-    const deleted = new Set(results.filter(result => result.ok).map(result => result.id))
-    downloads.value = downloads.value.filter(download => !deleted.has(download.downloadId))
-    selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => !deleted.has(id)))
+    const deleted = new Set(results.filter(result => result.ok).map(result => result.download))
+    downloads.value = downloads.value.filter(download => !deleted.has(download))
+    selectedDownloads.value = new Set([...selectedDownloads.value].filter(download => !deleted.has(download)))
     localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
   } finally {
     await storage?.destroy()
