@@ -35,7 +35,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
+                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -549,6 +549,7 @@ preflight() {
   assert_personal_profile || return 1
   [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
   adb_cmd install -r --user "$PERSONAL_USER_ID" "$APK" >/dev/null || return 1
+  adb_shell am force-stop --user "$PERSONAL_USER_ID" "$PACKAGE"
   local pkg
   pkg=$(adb_shell dumpsys package "$PACKAGE") || return 1
   grep -q 'targetSdk=36' <<<"$pkg" || { echo "targetSdk 36 not found"; return 1; }
@@ -824,6 +825,37 @@ downloads_page() {
   dump_ui downloads-page || { sleep 1; dump_ui downloads-page || return 1; }
   [[ -s "$ARTIFACT_DIR/downloads-page.png" ]] || return 1
   no_runtime_errors
+}
+
+downloads_selection_ui() {
+  clean_logs
+  start_app || return 1
+  open_downloads_cdp || return 1
+  cdp_eval "window.__ftSmokeDownloadsBackup = localStorage.getItem('freetube-downloads'); localStorage.setItem('freetube-downloads', '[]'); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  sleep 1
+  cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
+  cdp_wait "document.querySelector('.downloadsView') && document.querySelectorAll('.downloadItem').length === 0" || return 1
+  screenshot downloads-selection-empty
+  dump_ui downloads-selection-empty || return 1
+  [[ $(cdp_eval 'document.querySelector("[data-download-action=select-all]")?.disabled') == true ]] || return 1
+  cdp_eval "localStorage.setItem('freetube-downloads', JSON.stringify(Array.from({length:8}, (_, i) => ({downloadId:'smoke-selection-'+i, videoId:'smoke-selection-'+i, title:'Selection UI smoke fixture '+i, status:'completed', selectedFormat:'360p', thumbnail:i === 0 ? '' : undefined, createdAt:Date.now()+i})))); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  sleep 1
+  cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
+  cdp_wait "document.querySelectorAll('.downloadItem').length === 8" || return 1
+  cdp_wait "[...document.querySelectorAll('.downloadThumbnail')].every(image => image.naturalWidth > 0)" || return 1
+  [[ $(cdp_eval "(() => { const view = document.querySelector('.downloadsView'); const nav = document.querySelector('.sideNav'); view.scrollTop = view.scrollHeight; const last = document.querySelector('.downloadItem:last-of-type').getBoundingClientRect(); return last.bottom <= nav.getBoundingClientRect().top })()") == true ]] || return 1
+  cdp_eval "document.querySelector('.downloadsView').scrollTop = 0; true" >/dev/null || return 1
+  sleep 1
+  dump_ui downloads-selection-before-select || return 1
+  tap_ui_text 'Select all' || return 1
+  cdp_wait "document.querySelector('[data-download-action=\"select-all\"]')?.textContent.trim() === 'Clear selection' && document.querySelectorAll('.downloadSelect:checked').length === 8" || return 1
+  dump_ui downloads-selection-before-clear || return 1
+  cdp_eval "document.querySelector('[data-download-action=\"select-all\"]')?.click(); true" >/dev/null || return 1
+  cdp_wait "document.querySelector('[data-download-action=\"select-all\"]')?.textContent.trim() === 'Select all' && document.querySelectorAll('.downloadSelect:checked').length === 0" || return 1
+  [[ $(cdp_eval 'getComputedStyle(document.querySelector("[data-download-action=select-all]")).backgroundColor') != 'rgb(229, 57, 53)' ]] || return 1
+  cdp_eval "localStorage.setItem('freetube-downloads', window.__ftSmokeDownloadsBackup || '[]'); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  sleep 1
+  cdp_eval "location.hash = '#/downloads'; delete window.__ftSmokeDownloadsBackup; true" >/dev/null || return 1
 }
 
 download_quality() {
@@ -1317,6 +1349,7 @@ run_unlocked_suite() {
   run_test data-directory-cancel data_directory_cancel
   run_test data-directory-move-reset data_directory_move_reset
   run_test downloads-page downloads_page
+  run_test downloads-selection-ui downloads_selection_ui
   run_test download-quality download_quality
   run_test download-sabr-telemetry download_sabr_telemetry
   run_test download-sabr-pause-resume download_sabr_pause_resume
@@ -1341,6 +1374,7 @@ run_downloads_suite() {
   echo "PASS preflight"
   PASS=$((PASS + 1))
   run_test downloads-page downloads_page
+  run_test downloads-selection-ui downloads_selection_ui
   run_test download-quality download_quality
   run_test download-sabr-telemetry download_sabr_telemetry
   run_test download-sabr-total download_sabr_total
@@ -1431,6 +1465,7 @@ case "$TEST" in
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
   downloads-page) run_test downloads-page downloads_page ;;
+  downloads-selection-ui) run_test downloads-selection-ui downloads_selection_ui ;;
   download-quality) run_test download-quality download_quality ;;
   download-sabr-telemetry) run_test download-sabr-telemetry download_sabr_telemetry ;;
   download-sabr-total) run_test download-sabr-total download_sabr_total ;;

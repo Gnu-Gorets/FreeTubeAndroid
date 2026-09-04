@@ -6,6 +6,7 @@
         <button
           type="button"
           data-download-action="select-all"
+          :disabled="selectableDownloads.length === 0"
           @click="selectAll"
         >
           {{ selectAllLabel }}
@@ -52,9 +53,10 @@
         @change="toggleSelected(download)"
       >
       <img
-        :src="download.thumbnail || ''"
+        :src="download.thumbnail || thumbnailPlaceholder"
         alt=""
         class="downloadThumbnail"
+        @error="handleThumbnailError"
       >
       <div class="downloadInfo">
         <h2>{{ download.title }}</h2>
@@ -124,6 +126,7 @@
 <script setup>
 import shaka from 'shaka-player'
 import android from 'android'
+import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
 import { awaitAsyncResult } from '../../helpers/android/jsinterface'
 import { cancelSabrDownload, hasSabrDownload, isSabrDownloadCanceled, isSabrDownloadPaused, mergeDownloadProgress, mergeNativeDownload, pauseSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 import { filterDownloads } from '../../helpers/android/download-search.mjs'
@@ -141,11 +144,16 @@ const selectableDownloads = computed(() => filteredDownloads.value)
 const selectAllLabel = computed(() => {
   const items = selectableDownloads.value
   return items.length > 0 && items.every(download => selectedDownloads.value.has(download))
-    ? t('Downloads.Select None')
+    ? t('Downloads.Clear selection')
     : t('Downloads.Select all')
 })
 let queueTimer = null
 let sabrRecoveryRunning = false
+
+function handleThumbnailError(event) {
+  if (event.target.src.endsWith(thumbnailPlaceholder)) return
+  event.target.src = thumbnailPlaceholder
+}
 
 function formatBytes(value) {
   if (!Number.isFinite(value) || value <= 0) return '0 B'
@@ -570,16 +578,24 @@ onBeforeUnmount(async () => {
   cursor: pointer;
 }
 
-.downloadActions button:hover,
-.downloadBulkActions button:hover {
-  color: var(--text-with-main-color);
-  background: var(--primary-color-hover);
+@media (hover: hover) {
+  .downloadActions button:hover,
+  .downloadBulkActions button:hover {
+    color: var(--text-with-main-color);
+    background: var(--primary-color-hover);
+  }
 }
 
 @media only screen and (width <= 680px) {
   .downloadsView {
     height: calc(100dvh - 92px);
     padding: 8px;
+  }
+
+  .downloadsView::after {
+    display: block;
+    block-size: 60px;
+    content: '';
   }
 
   .downloadsHeader {
