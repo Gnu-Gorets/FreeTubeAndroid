@@ -219,9 +219,11 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
     const operation = storage.store(manifestSrc, {}, download.manifestMimeType)
     sabrOperations.set(download.downloadId, operation)
     const content = await operation.promise
-    logSabrTimestamp(download.downloadId, 'store-complete')
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped')
-    log('SABR store complete', { id: download.downloadId, hasOfflineUri: Boolean(content?.offlineUri), size: content?.size || 0, estimatedTotal: stableTotal, totalExact })
+    const finalSnapshot = getProgressSnapshot(content, 1, stableTotal, totalExact)
+    log('SABR telemetry', { id: download.downloadId, received: finalSnapshot.received, total: finalSnapshot.total, networkBytes: transportBytes, totalExact: finalSnapshot.totalExact, progress: finalSnapshot.progress, speedBps: 0, speedJump: false, mismatch: false })
+    logSabrTimestamp(download.downloadId, 'store-complete')
+    log('SABR store complete', { id: download.downloadId, hasOfflineUri: Boolean(content?.offlineUri), size: content?.size || 0, estimatedTotal: stableTotal, totalExact: finalSnapshot.totalExact })
     if (!content?.offlineUri || !(content?.size > 0)) {
       console.error(`[SABR] storage returned invalid content: ${JSON.stringify(content)}`)
       throw new Error('Offline storage returned no URI')
