@@ -836,8 +836,17 @@ downloads_selection_ui() {
   cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
   cdp_wait "document.querySelector('.downloadsView') && document.querySelectorAll('.downloadItem').length === 0" || return 1
   screenshot downloads-selection-empty
-  dump_ui downloads-selection-empty || return 1
-  [[ $(cdp_eval 'document.querySelector("[data-download-action=select-all]")?.disabled') == true ]] || return 1
+  dump_ui downloads-selection-empty || { sleep 1; dump_ui downloads-selection-empty || return 1; }
+  [[ $(cdp_eval 'Boolean(document.querySelector("[data-download-action=select-all]"))') == false ]] || return 1
+  cdp_eval "localStorage.setItem('freetube-downloads', JSON.stringify([{downloadId:'smoke-selection-1', videoId:'smoke-selection-1', title:'Selection UI smoke fixture 1', status:'completed', selectedFormat:'360p', createdAt:Date.now()}])); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  sleep 1
+  cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
+  cdp_wait "document.querySelectorAll('.downloadItem').length === 1 && Boolean(document.querySelector('[data-download-action=select-all]'))" || return 1
+  [[ $(cdp_eval 'document.querySelector("[data-download-action=select-all]")?.disabled') == false ]] || return 1
+  cdp_click_bulk_action select-all || return 1
+  cdp_wait "document.querySelectorAll('.downloadSelect:checked').length === 1" || return 1
+  cdp_click_bulk_action select-all || return 1
+  cdp_wait "document.querySelectorAll('.downloadSelect:checked').length === 0" || return 1
   cdp_eval "localStorage.setItem('freetube-downloads', JSON.stringify(Array.from({length:8}, (_, i) => ({downloadId:'smoke-selection-'+i, videoId:'smoke-selection-'+i, title:'Selection UI smoke fixture '+i, status:'completed', selectedFormat:'360p', thumbnail:i === 0 ? '' : undefined, createdAt:Date.now()+i})))); location.hash = '#/subscriptions'; true" >/dev/null || return 1
   sleep 1
   cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1

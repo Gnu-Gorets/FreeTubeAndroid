@@ -4,9 +4,9 @@
       <h1>{{ t('Downloads.Title') }}</h1>
       <div class="downloadBulkActions">
         <button
+          v-if="selectableDownloads.length > 0"
           type="button"
           data-download-action="select-all"
-          :disabled="selectableDownloads.length === 0"
           @click="selectAll"
         >
           {{ selectAllLabel }}

@@ -371,7 +371,7 @@ test('Downloads view exposes cancel, retry, play and delete flows', () => {
 test('Downloads allows immediate offline-only deletion', () => {
   const load = downloadsViewSource.slice(downloadsViewSource.indexOf('function load()'), downloadsViewSource.indexOf('async function retry('))
   assert.ok(load.includes("download.status === 'downloading'"))
-  assert.ok(downloadsViewSource.includes(':disabled="selectableDownloads.length === 0"'))
+  assert.ok(downloadsViewSource.includes('v-if="selectableDownloads.length > 0"'))
   assert.ok(downloadsViewSource.includes('v-if="download.status === \'completed\'"'))
   assert.ok(downloadsViewSource.includes('stored.find(item => item.offlineUri === download.offlineUri)'))
 })
@@ -514,7 +514,8 @@ test('Downloads selection and rendering use stable download ids', () => {
 })
 
 test('Downloads selection controls handle empty and selected states', () => {
-  assert.ok(downloadsViewSource.includes(':disabled="selectableDownloads.length === 0"'))
+  assert.ok(downloadsViewSource.includes('v-if="selectableDownloads.length > 0"'))
+  assert.equal(downloadsViewSource.includes(':disabled="selectableDownloads.length === 0"'), false)
   assert.ok(downloadsViewSource.includes("t('Downloads.Clear selection')"))
   assert.ok(downloadsViewSource.includes('items.length > 0 && items.every(download => selectedDownloadIds.value.has(download.downloadId))'))
 })
