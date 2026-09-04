@@ -983,33 +983,37 @@ download_sabr_ui_progress() {
   ensure_cdp || return 1
   local marker id
   marker=$(cdp_eval 'Date.now()')
-  echo '[download-sabr-ui-progress] selecting 360p SABR'
+  echo '[download-sabr-ui-progress] selecting 1440p SABR'
   adb_shell input tap 185 830
   sleep 2
   local tap_sent_ms tap_done_ms
   tap_sent_ms=$(date +%s%3N)
   progress "quality option tap sent at ${tap_sent_ms}ms"
-  adb_shell input tap 575 875
+  adb_shell input tap 360 808
   tap_done_ms=$(date +%s%3N)
   progress "quality option tap completed at ${tap_done_ms}ms"
   printf 'quality_option_tap_sent_ms=%s\nquality_option_tap_completed_ms=%s\n' "$tap_sent_ms" "$tap_done_ms" >"$ARTIFACT_DIR/download-latency.txt"
   wait_for_logcat '"event":"preflight-complete"' || return 1
   adb_shell input tap 535 1540
-  echo '[download-sabr-ui-progress] download started, waiting for completion'
-  sleep 2
+  cdp_wait "JSON.parse(localStorage.getItem('freetube-downloads') || '[]').some(d => d.createdAt >= $marker)" "$TIMEOUT" || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  open_downloads_cdp || return 1
+  cdp_wait "Boolean(document.querySelector('[data-download-id=\"$id\"] .downloadMeta'))" "$DOWNLOAD_TIMEOUT" || return 1
+  echo '[download-sabr-ui-progress] download started on Downloads page, waiting for completion'
   screenshot download-sabr-ui-progress
   dump_ui download-sabr-ui-progress || true
   test -s "$ARTIFACT_DIR/download-sabr-ui-progress.png" || return 1
-  local progress_line speed_line progress_layout
-  progress_line=$(cdp_eval "document.querySelector('[data-download-id] .downloadProgressDetails')?.textContent || ''" | tr -d '"')
-  speed_line=$(cdp_eval "document.querySelector('[data-download-id] .downloadSpeed')?.textContent || ''" | tr -d '"')
-  echo "[download-sabr-ui-progress] progress_line=$progress_line speed_line=$speed_line"
-  [[ "$progress_line" != *'MB/s'* && "$speed_line" == *'MB/s'* ]] || return 1
-  progress_layout=$(cdp_eval "(() => { const node = document.querySelector('[data-download-id] .downloadProgressDetails'); if (!node) return false; const style = getComputedStyle(node); return node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().height <= parseFloat(style.fontSize) * 1.8 })()")
-  echo "[download-sabr-ui-progress] progress_layout=$progress_layout"
-  [[ "$progress_layout" == true ]] || return 1
+  local metrics_line metrics_layout
+  [[ $(cdp_eval "location.hash === '#/downloads' && Boolean(document.querySelector('.downloadsView'))") == true ]] || return 1
+  metrics_line=$(cdp_eval "document.querySelector('[data-download-id=\"$id\"] .downloadMeta')?.textContent || ''" | tr -d '"')
+  echo "[download-sabr-ui-progress] metrics_line=$metrics_line"
+  [[ "$metrics_line" == *'MB/s'* ]] || return 1
+  metrics_layout=$(cdp_eval "(() => { const node = document.querySelector('[data-download-id=\"$id\"] .downloadMeta'); if (!node) return false; const style = getComputedStyle(node); return node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().height <= parseFloat(style.fontSize) * 1.8 })()")
+  echo "[download-sabr-ui-progress] metrics_layout=$metrics_layout"
+  [[ "$metrics_layout" == true ]] || return 1
   if grep -q 'downloading' "$ARTIFACT_DIR/download-sabr-ui-progress.xml"; then
-    grep -Eq '[0-9]+% · [1-9][0-9.]* (KB|MB|GB) / [1-9][0-9.]* (KB|MB|GB)' "$ARTIFACT_DIR/download-sabr-ui-progress.xml" || return 1
+    grep -Eq '[0-9]+% · [1-9][0-9.]*(/[1-9][0-9.]*)? (KB|MB|GB).*MB/s' "$ARTIFACT_DIR/download-sabr-ui-progress.xml" || return 1
     ! grep -Eq '0 B|—' "$ARTIFACT_DIR/download-sabr-ui-progress.xml" || return 1
   fi
   completed=0

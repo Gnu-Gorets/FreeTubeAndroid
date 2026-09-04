@@ -45,6 +45,7 @@
       :data-download-id="download.downloadId"
     >
       <input
+        class="downloadSelect"
         type="checkbox"
         :checked="selectedDownloadIds.has(download.downloadId)"
         :aria-label="download.title"
@@ -57,28 +58,8 @@
       >
       <div class="downloadInfo">
         <h2>{{ download.title }}</h2>
-        <p>{{ download.status }}</p>
-        <p
-          v-if="download.status === 'completed' && download.fileSize > 0"
-        >
-          {{ formatBytes(download.fileSize) }}
-        </p>
-        <p
-          v-if="download.selectedFormat"
-        >
-          {{ download.selectedFormat }}
-        </p>
-        <p
-          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
-          class="downloadProgressDetails"
-        >
-          {{ formatProgress(download) }}
-        </p>
-        <p
-          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
-          class="downloadSpeed"
-        >
-          {{ formatSpeed(download.speedBps || 0) }}
+        <p class="downloadMeta">
+          {{ formatDownloadMeta(download) }}
         </p>
         <progress
           v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
@@ -172,8 +153,21 @@ function formatBytes(value) {
 
 function formatProgress(download) {
   const percent = download.progress == null ? '—' : `${Math.round(download.progress * 100)}%`
-  const bytes = `${formatBytes(download.received)} / ${download.totalExact === false ? '~' : ''}${formatBytes(download.total)}`
-  return `${percent} · ${bytes}`
+  const bytes = `${formatBytes(download.received)}/${download.totalExact === false ? '~' : ''}${formatBytes(download.total)}`
+  const format = download.selectedFormat?.replace(/\s+\(.+\)$/, '') || ''
+  return `${percent} · ${bytes}${format ? ` · ${format}` : ''} · ${formatSpeed(download.speedBps || 0)}`
+}
+
+function formatDownloadMeta(download) {
+  const parts = [download.status]
+  const hasProgress = download.status === 'downloading' && download.received > 0 && download.total > 0
+  if (hasProgress) return formatProgress(download)
+  if (download.status === 'completed') {
+    const size = download.fileSize || download.received || download.total
+    if (size > 0) parts.push(formatBytes(size))
+  }
+  if (download.selectedFormat) parts.push(download.selectedFormat)
+  return parts.join(' · ')
 }
 
 function formatSpeed(value) {
@@ -493,41 +487,82 @@ onBeforeUnmount(async () => {
 }
 
 .downloadItem {
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: 24px 160px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
   margin: 16px 0;
   padding: 12px;
   background: var(--card-background-color);
+  border: 1px solid var(--secondary-text-color);
+  border-radius: 6px;
+}
+
+.downloadSelect {
+  inline-size: 20px;
+  block-size: 20px;
+  margin-block-start: 2px;
 }
 
 .downloadThumbnail {
-  width: 160px;
-  height: 90px;
+  display: block;
+  inline-size: 160px;
+  aspect-ratio: 16 / 9;
   object-fit: cover;
+  border-radius: 4px;
 }
 
 .downloadInfo {
-  min-width: 0;
-  flex: 1;
+  min-inline-size: 0;
 }
 
 .downloadInfo h2 {
-  margin: 0 0 8px;
+  display: -webkit-box;
+  margin: 0 0 6px;
+  overflow: hidden;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.downloadProgressDetails,
-.downloadSpeed {
-  min-height: 1.5em;
-  margin-block: 1em;
+.downloadMeta {
+  min-inline-size: 0;
+  margin: 0 0 10px;
   overflow: hidden;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
+.downloadInfo progress {
+  display: block;
+  inline-size: 100%;
+  margin-block-end: 10px;
+}
+
 .downloadActions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.downloadActions button,
+.downloadBulkActions button {
+  min-block-size: 40px;
+  padding: 8px 14px;
+  color: var(--primary-text-color);
+  font: inherit;
+  background: var(--card-background-color);
+  border: 1px solid var(--secondary-text-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.downloadActions button:hover,
+.downloadBulkActions button:hover {
+  background: var(--secondary-text-color);
 }
 
 @media only screen and (width <= 680px) {
@@ -546,8 +581,27 @@ onBeforeUnmount(async () => {
     box-sizing: border-box;
   }
 
+  .downloadItem {
+    grid-template-columns: 24px 112px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .downloadThumbnail {
+    inline-size: 112px;
+  }
+
   .downloadInfo {
-    flex-basis: 100%;
+    min-inline-size: 0;
+  }
+
+  .downloadBulkActions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .downloadBulkActions button {
+    flex: 1;
   }
 }
 
