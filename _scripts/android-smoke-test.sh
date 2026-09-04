@@ -922,8 +922,7 @@ updates = [json.loads(value) for value in re.findall(r'metadata update (\{.*?\})
 updates = [item for item in updates if item.get('id') == download_id]
 progress = [item for item in updates if item.get('status') == 'downloading' and item.get('total', 0) > 0]
 assert progress, 'SABR progress totals are missing'
-incomplete = [item for item in progress if item.get('received') != item.get('total')]
-totals = {item['total'] for item in incomplete}
+totals = {item['total'] for item in progress}
 assert totals == {preflight['total']}, f'total changed during download: preflight={preflight["total"]}, updates={sorted(totals)}'
 completed = [item for item in updates if item.get('status') == 'completed']
 assert completed, 'SABR completion metadata is missing'
@@ -1001,6 +1000,14 @@ download_sabr_ui_progress() {
   screenshot download-sabr-ui-progress
   dump_ui download-sabr-ui-progress || true
   test -s "$ARTIFACT_DIR/download-sabr-ui-progress.png" || return 1
+  local progress_line speed_line progress_layout
+  progress_line=$(cdp_eval "document.querySelector('[data-download-id] .downloadProgressDetails')?.textContent || ''" | tr -d '"')
+  speed_line=$(cdp_eval "document.querySelector('[data-download-id] .downloadSpeed')?.textContent || ''" | tr -d '"')
+  echo "[download-sabr-ui-progress] progress_line=$progress_line speed_line=$speed_line"
+  [[ "$progress_line" != *'MB/s'* && "$speed_line" == *'MB/s'* ]] || return 1
+  progress_layout=$(cdp_eval "(() => { const node = document.querySelector('[data-download-id] .downloadProgressDetails'); if (!node) return false; const style = getComputedStyle(node); return node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().height <= parseFloat(style.fontSize) * 1.8 })()")
+  echo "[download-sabr-ui-progress] progress_layout=$progress_layout"
+  [[ "$progress_layout" == true ]] || return 1
   if grep -q 'downloading' "$ARTIFACT_DIR/download-sabr-ui-progress.xml"; then
     grep -Eq '[0-9]+% · [1-9][0-9.]* (KB|MB|GB) / [1-9][0-9.]* (KB|MB|GB)' "$ARTIFACT_DIR/download-sabr-ui-progress.xml" || return 1
     ! grep -Eq '0 B|—' "$ARTIFACT_DIR/download-sabr-ui-progress.xml" || return 1
@@ -1376,6 +1383,10 @@ run_locked_suite() {
   run_test locked-force-stop locked_force_stop
   (( FAIL == 0 ))
 }
+
+if [[ "$TEST" != preflight ]]; then
+  preflight || { echo 'FAIL: APK preflight failed'; exit 1; }
+fi
 
 case "$TEST" in
   all)

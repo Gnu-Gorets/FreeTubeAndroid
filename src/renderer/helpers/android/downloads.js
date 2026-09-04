@@ -189,15 +189,17 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
           }
           const now = Date.now()
           const percent = Math.round(progress * 100)
-          const snapshot = getProgressSnapshot(content, progress, stableTotal, totalExact)
+          const snapshot = getProgressSnapshot(content, progress, stableTotal, totalExact, false)
           if (snapshot.total > stableTotal) stableTotal = snapshot.total
+          const progressTotal = Math.max(stableTotal, snapshot.total)
+          const progressValue = progressTotal > 0 ? Math.min(snapshot.received / progressTotal, 1) : snapshot.progress
           if (!snapshot.totalExact) totalExact = false
           const elapsed = (now - lastTelemetryAt) / 1000
           const speedBps = elapsed > 0 ? Math.max(0, Math.round((snapshot.received - lastTelemetryReceived) / elapsed)) : 0
           const speedJump = speedBps > 0 && lastTelemetrySpeed > 0 && (speedBps > lastTelemetrySpeed * 2 || speedBps * 2 < lastTelemetrySpeed)
           const mismatch = snapshot.progress < 0 || snapshot.progress > 1
           if (speedJump || mismatch || now - lastTelemetryAt >= 5000 || percent === 0 || percent === 100) {
-            log('SABR telemetry', { id: download.downloadId, received: snapshot.received, total: snapshot.total, networkBytes: transportBytes, totalExact: snapshot.totalExact, progress: snapshot.progress, speedBps, speedJump, mismatch })
+            log('SABR telemetry', { id: download.downloadId, received: snapshot.received, total: progressTotal, networkBytes: transportBytes, totalExact: snapshot.totalExact, progress: progressValue, speedBps, speedJump, mismatch })
             lastTelemetryAt = now
             lastTelemetryReceived = snapshot.received
             lastTelemetrySpeed = speedBps
@@ -207,7 +209,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
             log('SABR store progress', { id: download.downloadId, percent })
           }
           if (!sabrPaused.has(download.downloadId) && !sabrCanceled.has(download.downloadId)) {
-            onProgress?.({ ...content, size: snapshot.received }, snapshot.progress, snapshot.total, snapshot.totalExact)
+            onProgress?.({ ...content, size: snapshot.received }, progressValue, progressTotal, snapshot.totalExact)
           }
         }
       }
@@ -283,11 +285,11 @@ export function mergeNativeDownload(download, native) {
   }
 }
 
-export function getProgressSnapshot(content, shakaProgress, knownTotal = 0, totalExact = false) {
+export function getProgressSnapshot(content, shakaProgress, knownTotal = 0, totalExact = false, terminal = true) {
   const received = Math.max(Number(content?.size) || 0, 0)
   const known = Number(knownTotal)
   const rawProgress = Number(shakaProgress)
-  if (rawProgress >= 1 && received > 0) return { received, total: received, totalExact: true, progress: 1 }
+  if (terminal && rawProgress >= 1 && received > 0) return { received, total: received, totalExact: true, progress: 1 }
   const hasKnownTotal = Number.isFinite(known) && known > 0
   const canEstimate = !hasKnownTotal && Number.isFinite(rawProgress) && rawProgress > 0 && received > 0
   const total = hasKnownTotal
@@ -362,7 +364,8 @@ export function mergeDownloadProgress(download, detail, native = null) {
     { size: detail.received ?? download.received },
     detail.progress ?? download.progress,
     detail.total ?? download.total,
-    detail.totalExact ?? download.totalExact
+    detail.totalExact ?? download.totalExact,
+    detail.status !== 'downloading'
   )
   return {
     ...download,
@@ -381,6 +384,10 @@ export function updateDownloadMetadata(downloadId, changes) {
   const downloads = readDownloadMetadata()
   const download = downloads.find(item => item.downloadId === downloadId)
   if (!download) return
+  if (changes.status === 'downloading' && changes.total > 0 && download.total > changes.total) {
+    const received = Number(changes.received) || 0
+    changes = { ...changes, total: download.total, progress: Math.min(received / download.total, 1) }
+  }
   const statusChanged = changes.status && changes.status !== download.status
   Object.assign(download, changes)
   if (statusChanged || changes.phase || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, phase: changes.phase, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })

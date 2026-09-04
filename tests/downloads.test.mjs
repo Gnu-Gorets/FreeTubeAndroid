@@ -528,9 +528,12 @@ test('SABR progress is derived only from normalized stored bytes and total', () 
 
 test('SABR exact total stays fixed until stored bytes overflow it', () => {
   const first = getProgressSnapshot({ size: 100 }, 0.78, 1000, true)
+  const earlyCompletion = getProgressSnapshot({ size: 900 }, 1, first.total, first.totalExact, false)
   const second = getProgressSnapshot({ size: 1000 }, 1, first.total, first.totalExact)
   assert.equal(first.total, 1000)
   assert.equal(first.totalExact, true)
+  assert.equal(earlyCompletion.total, 1000)
+  assert.equal(earlyCompletion.progress, 0.9)
   assert.equal(second.total, 1000)
   assert.equal(second.received, 1000)
   assert.equal(second.progress, 1)

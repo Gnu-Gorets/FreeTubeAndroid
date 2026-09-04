@@ -70,8 +70,15 @@
         </p>
         <p
           v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
+          class="downloadProgressDetails"
         >
           {{ formatProgress(download) }}
+        </p>
+        <p
+          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
+          class="downloadSpeed"
+        >
+          {{ formatSpeed(download.speedBps || 0) }}
         </p>
         <progress
           v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
@@ -166,8 +173,11 @@ function formatBytes(value) {
 function formatProgress(download) {
   const percent = download.progress == null ? '—' : `${Math.round(download.progress * 100)}%`
   const bytes = `${formatBytes(download.received)} / ${download.totalExact === false ? '~' : ''}${formatBytes(download.total)}`
-  const speed = download.speedBps > 0 ? ` · ${formatBytes(download.speedBps)}/s` : ''
-  return `${percent} · ${bytes}${speed}`
+  return `${percent} · ${bytes}`
+}
+
+function formatSpeed(value) {
+  return `${(value / 1024 ** 2).toFixed(1)} MB/s`
 }
 
 function nativeQueue() {
@@ -506,6 +516,15 @@ onBeforeUnmount(async () => {
   overflow-wrap: anywhere;
 }
 
+.downloadProgressDetails,
+.downloadSpeed {
+  min-height: 1.5em;
+  margin-block: 1em;
+  overflow: hidden;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .downloadActions {
   display: flex;
   gap: 8px;
@@ -525,6 +544,10 @@ onBeforeUnmount(async () => {
   .downloadsSearch input {
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .downloadInfo {
+    flex-basis: 100%;
   }
 }
 
