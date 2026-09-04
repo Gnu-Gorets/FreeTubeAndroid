@@ -493,6 +493,19 @@ test('native downloads use canonical statuses and exact final file size', () => 
   assert.equal(watchSource.includes('exportSabrDownload'), false)
 })
 
+test('Downloads view supports filtered bulk selection and stale selection cleanup', () => {
+  assert.ok(downloadsViewSource.includes('const selectableDownloadIds = computed(() => filteredDownloads.value.map(download => download.downloadId))'))
+  assert.ok(downloadsViewSource.includes('ids.length > 0 && ids.every(id => selectedDownloadIds.value.has(id))'))
+  assert.ok(downloadsViewSource.includes('selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => downloadIds.has(id)))'))
+  assert.ok(downloadsViewSource.includes('ids.forEach(id => selected.delete(id))'))
+  assert.ok(downloadsViewSource.includes('ids.forEach(id => selected.add(id))'))
+})
+
+test('Downloads action hover uses readable theme colors', () => {
+  assert.ok(downloadsViewSource.includes('color: var(--text-with-main-color);\n  background: var(--primary-color-hover);'))
+  assert.equal(downloadsViewSource.includes('background: var(--secondary-text-color);\n}'), false)
+})
+
 test('Downloads view supports fast bulk selection and deletion', () => {
   assert.ok(downloadsViewSource.includes('selectedDownloadIds'))
   assert.ok(downloadsViewSource.includes('data-download-action="select-all"'))

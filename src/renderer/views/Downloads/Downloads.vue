@@ -136,11 +136,14 @@ const router = useRouter()
 const downloads = ref([])
 const searchQuery = ref('')
 const selectedDownloadIds = ref(new Set())
-const selectAllLabel = computed(() => {
-  if (selectedDownloadIds.value.size === downloads.value.length) return t('Downloads.Select None')
-  return t('Downloads.Select all')
-})
 const filteredDownloads = computed(() => filterDownloads(downloads.value, searchQuery.value))
+const selectableDownloadIds = computed(() => filteredDownloads.value.map(download => download.downloadId))
+const selectAllLabel = computed(() => {
+  const ids = selectableDownloadIds.value
+  return ids.length > 0 && ids.every(id => selectedDownloadIds.value.has(id))
+    ? t('Downloads.Select None')
+    : t('Downloads.Select all')
+})
 let queueTimer = null
 let sabrRecoveryRunning = false
 
@@ -195,6 +198,8 @@ function load() {
         ? { ...download, status: 'queued', interrupted: true, error: 'Download interrupted' }
         : download]
     })
+    const downloadIds = new Set(downloads.value.map(download => download.downloadId))
+    selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => downloadIds.has(id)))
     localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
     console.warn('[Downloads] list loaded', downloads.value.map(download => ({ id: download.downloadId, status: download.status, selectedFormat: download.selectedFormat, hasThumbnail: Boolean(download.thumbnail), hasOfflineUri: Boolean(download.offlineUri) })))
   } catch (error) {
@@ -264,9 +269,11 @@ function toggleSelected(id) {
 }
 
 function selectAll() {
-  selectedDownloadIds.value = selectedDownloadIds.value.size === downloads.value.length
-    ? new Set()
-    : new Set(downloads.value.map(download => download.downloadId))
+  const ids = selectableDownloadIds.value
+  const selected = new Set(selectedDownloadIds.value)
+  if (ids.length > 0 && ids.every(id => selected.has(id))) ids.forEach(id => selected.delete(id))
+  else ids.forEach(id => selected.add(id))
+  selectedDownloadIds.value = selected
 }
 
 async function removeMany(items = downloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))) {
@@ -562,7 +569,8 @@ onBeforeUnmount(async () => {
 
 .downloadActions button:hover,
 .downloadBulkActions button:hover {
-  background: var(--secondary-text-color);
+  color: var(--text-with-main-color);
+  background: var(--primary-color-hover);
 }
 
 @media only screen and (width <= 680px) {
