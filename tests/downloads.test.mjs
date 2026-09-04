@@ -176,20 +176,18 @@ test('Watch passes one complete SABR selection and logs its outer timestamps', (
   assert.ok(watchSource.includes('const selection = {'))
   for (const field of ['maxHeight', 'videoTrackId: preflight.videoId', 'audioTrackId: preflight.audioId', 'total: preflight.total', 'totalExact: preflight.totalExact']) assert.ok(watchSource.includes(field))
   assert.ok(watchSource.includes('}, selection)'))
-  for (const event of ['selection', 'preflight-complete', 'processing-start', 'completed']) assert.ok(watchSource.includes(`logSabrTimestamp(downloadId, '${event}'`))
+  for (const event of ['selection', 'preflight-complete', 'completed']) assert.ok(watchSource.includes(`logSabrTimestamp(downloadId, '${event}'`))
 })
 
-test('SABR completes download before asynchronous MP4 export', () => {
+test('SABR completes as offline-only download after storage', () => {
   const stored = watchSource.indexOf('content = await storeSabrDownload')
   const offlineUriChecked = watchSource.indexOf("if (!content?.offlineUri) throw new Error('Offline storage returned no URI')", stored)
-  const completed = watchSource.indexOf("status: 'completed',\n          phase: 'exporting'", offlineUriChecked)
-  const exportStarted = watchSource.indexOf('exportSabrDownload(content, this.videoTitle, downloadId).then', completed)
-  const exported = watchSource.indexOf('localPath: exported.localPath', exportStarted)
-  assert.ok(stored < offlineUriChecked && offlineUriChecked < completed && completed < exportStarted && exportStarted < exported)
-
-  const completedBlock = watchSource.slice(completed, exportStarted)
-  for (const field of ["phase: 'exporting'", '...finalSnapshot', 'offlineUri: content.offlineUri', 'speedBps: 0', 'error: null']) assert.ok(completedBlock.includes(field))
-  assert.ok(watchSource.includes("phase: 'export-failed', offlineUri: content.offlineUri"))
+  const completed = watchSource.indexOf("status: 'completed',\n          phase: 'completed'", offlineUriChecked)
+  const completedLog = watchSource.indexOf("logSabrTimestamp(downloadId, 'completed'", completed)
+  assert.ok(stored < offlineUriChecked && offlineUriChecked < completed && completed < completedLog)
+  const completedBlock = watchSource.slice(completed, completedLog)
+  for (const field of ['...finalSnapshot', 'offlineUri: content.offlineUri', 'speedBps: 0', 'error: null']) assert.ok(completedBlock.includes(field))
+  assert.equal(watchSource.includes('exportSabrDownload'), false)
 })
 
 test('invalid SABR manifest returns no quality options', () => {
@@ -348,14 +346,12 @@ test('Downloads view exposes cancel, retry, play and delete flows', () => {
   assert.ok(downloadsViewSource.includes('downloads.value = downloads.value.filter'))
 })
 
-test('Downloads preserves exporting phase and disables unsafe controls during export', () => {
+test('Downloads allows immediate offline-only deletion', () => {
   const load = downloadsViewSource.slice(downloadsViewSource.indexOf('function load()'), downloadsViewSource.indexOf('async function retry('))
   assert.ok(load.includes("download.status === 'downloading'"))
-  assert.ok(downloadsViewSource.includes(":disabled=\"download.status === 'processing' || download.phase === 'exporting'\""))
-  assert.ok(downloadsViewSource.includes("download.offlineUri && ['exporting', 'export-failed'].includes(download.phase)"))
-  assert.ok(downloadsViewSource.includes("['processing', 'exporting', 'export-failed'].includes(item.phase || item.status)"))
-  assert.ok(downloadsViewSource.includes('v-if="download.status === \'downloading\'"'))
-  assert.ok(downloadsViewSource.includes('v-if="download.status === \'paused\'"'))
+  assert.equal(downloadsViewSource.includes(':disabled='), false)
+  assert.ok(downloadsViewSource.includes('v-if="download.status === \'completed\'"'))
+  assert.ok(downloadsViewSource.includes('stored.find(item => item.offlineUri === download.offlineUri)'))
 })
 
 test('debug Downloads hook targets records and inspects offline storage', () => {
@@ -465,14 +461,14 @@ test('native GET totals stay explicit across Kotlin and renderer boundaries', ()
   assert.equal(inexact.totalExact, false)
 })
 
-test('downloads use canonical native statuses and exact final file size', () => {
+test('native downloads use canonical statuses and exact final file size', () => {
   assert.ok(androidBridgeSource.includes('fun getFileSize(uri: String): Long'))
   assert.ok(downloadServiceSource.includes('ACTION_STATE'))
   assert.ok(downloadServiceSource.includes('putExtra("status"'))
   assert.ok(downloadServiceSource.includes('item.put("fileSize", length('))
   assert.ok(source.includes('preflightSabrDownload'))
   assert.ok(watchSource.includes('total: preflight.total'))
-  assert.ok(watchSource.includes('fileSize: exported.fileSize || 0'))
+  assert.equal(watchSource.includes('exportSabrDownload'), false)
 })
 
 test('Downloads view supports fast bulk selection and deletion', () => {

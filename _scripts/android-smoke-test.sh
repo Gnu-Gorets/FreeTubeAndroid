@@ -917,8 +917,10 @@ assert totals == {preflight['total']}, f'total changed during download: prefligh
 completed = [item for item in updates if item.get('status') == 'completed']
 assert completed, 'SABR completion metadata is missing'
 final = completed[-1]
+assert final.get('phase') == 'completed', f'offline-only phase is not completed: {final}'
 assert final.get('totalExact') is True, f'completed size is not exact: {final}'
 assert final.get('received') == final.get('total'), f'exact final bytes mismatch: {final}'
+assert not any(item.get('phase') in {'exporting', 'export-failed'} for item in updates), updates
 PY
   [[ $? -eq 0 ]] || return 1
   cdp_cleanup_download "$id"
@@ -964,15 +966,10 @@ download_sabr_ui_progress() {
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
-  cdp_wait "window.__ftTest?.downloads().some(d => d.id === '$id' && d.status === 'completed')" "$TIMEOUT" || return 1
-  local phase
-  phase=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.phase" | tr -d '"')
-  [[ "$phase" == exporting || "$phase" == completed ]] || { echo "[download-sabr-ui-progress] unexpected phase after store completion: $phase"; return 1; }
   cdp_wait_status "$id" completed || return 1
-  cdp_wait "window.__ftTest?.downloads().some(d => d.id === '$id' && d.phase === 'completed' && d.localPath)" "$DOWNLOAD_TIMEOUT" || return 1
   adb_cmd logcat -d -v threadtime > "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt"
   grep -q 'SABR store complete' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
-  grep -q 'metadata update.*"status":"completed"' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
+  grep -q 'metadata update.*"status":"completed".*"phase":"completed"' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
   python3 - "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" <<'PY'
 import re
 import sys

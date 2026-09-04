@@ -1,8 +1,6 @@
 import android from 'android'
 import shaka from 'shaka-player'
 import { requestSaveDialog } from './dialogs'
-import { awaitAsyncResult } from './jsinterface'
-import { writeFile } from './storage'
 import { setupSabrScheme } from '../player/SabrSchemePlugin'
 import { getDownloadNotificationPayload } from './download-notification.mjs'
 
@@ -242,12 +240,8 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
 }
 
 export async function recoverSabrDownload(download, onProgress) {
-  if (download.offlineUri && ['processing', 'exporting', 'export-failed'].includes(download.phase || download.status)) {
-    return { ...await exportSabrDownload(download, download.title, download.downloadId), offlineUri: download.offlineUri }
-  }
   const content = await storeSabrDownload(download, onProgress, download)
-  const snapshot = getProgressSnapshot(content, 1, download.total, download.totalExact)
-  return { ...await exportSabrDownload(content, download.title, download.downloadId), ...snapshot, offlineUri: content.offlineUri }
+  return { ...getProgressSnapshot(content, 1, download.total, download.totalExact), offlineUri: content.offlineUri }
 }
 
 export function hasSabrDownload(downloadId) {
@@ -392,69 +386,6 @@ function downloadDirectory() {
   return !stored || ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube'].includes(stored)
     ? 'data://downloads/FreeTube'
     : stored
-}
-
-function idbValue(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-}
-
-async function writeOfflineStream(db, stream, uri) {
-  let append = false
-  const writtenInitSegments = new Set()
-  for (const segment of [...stream.segments].sort((a, b) => a.startTime - b.startTime)) {
-    const keys = []
-    if (segment.initSegmentKey != null && !writtenInitSegments.has(segment.initSegmentKey)) {
-      writtenInitSegments.add(segment.initSegmentKey)
-      keys.push(segment.initSegmentKey)
-    }
-    keys.push(segment.dataKey)
-    for (const key of keys) {
-      const stored = await idbValue(db.transaction('segment-v5').objectStore('segment-v5').get(key))
-      if (!stored?.data) throw new Error(`Offline segment ${key} is unavailable`)
-      await writeFile(uri, new Blob([stored.data]), append)
-      append = true
-    }
-  }
-  if (!append) throw new Error(`Offline ${stream.type} stream is empty`)
-}
-
-export async function exportSabrDownload(content, title, downloadId) {
-  if (!content?.offlineUri || typeof android.muxStoredDownload !== 'function') throw new Error('SABR MP4 export is unavailable')
-  const match = /^offline:manifest\/idb\/v5\/([0-9]+)$/.exec(content.offlineUri)
-  if (!match) throw new Error('Unsupported SABR offline URI')
-  const fileName = safeFileName(title, downloadId)
-  const videoUri = `data://sabr/${downloadId}-video.mp4`
-  const audioUri = `data://sabr/${downloadId}-audio.mp4`
-  let targetUri = ''
-  const db = await idbValue(indexedDB.open('shaka_offline_db'))
-  try {
-    const manifest = await idbValue(db.transaction('manifest-v5').objectStore('manifest-v5').get(Number(match[1])))
-    const video = manifest?.streams?.find(stream => stream.type === 'video' && stream.mimeType === 'video/mp4')
-    const audio = manifest?.streams?.find(stream => stream.type === 'audio' && stream.mimeType === 'audio/mp4')
-    if (!video || !audio) throw new Error('Offline MP4 tracks are unavailable')
-    await Promise.all([
-      writeOfflineStream(db, video, videoUri),
-      writeOfflineStream(db, audio, audioUri)
-    ])
-    targetUri = android.createDownloadFile?.(downloadDirectory(), `${fileName}.part`) || ''
-    if (!targetUri) {
-      const dialog = await requestSaveDialog(fileName, 'video/mp4')
-      if (dialog.canceled) throw new Error('SABR MP4 export canceled')
-      targetUri = dialog.uri
-    }
-    const localPath = await awaitAsyncResult(android.muxStoredDownload(videoUri, audioUri, targetUri, fileName))
-    return { fileName, localPath, fileSize: android.getFileSize?.(localPath) || 0 }
-  } catch (error) {
-    if (targetUri) android.deleteFile?.(targetUri)
-    throw error
-  } finally {
-    db.close()
-    android.deleteFile?.(videoUri)
-    android.deleteFile?.(audioUri)
-  }
 }
 
 /**

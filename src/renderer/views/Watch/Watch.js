@@ -46,7 +46,7 @@ import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { getDownloadNotificationPayload } from '../../helpers/android/download-notification.mjs'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, exportSabrDownload, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1479,34 +1479,18 @@ export default defineComponent({
         }, selection)
         if (!content?.offlineUri) throw new Error('Offline storage returned no URI')
         const finalSnapshot = getProgressSnapshot(content, 1, lastTotal, lastTotalExact)
-        logSabrTimestamp(downloadId, 'processing-start')
         updateDownloadMetadata(downloadId, {
           status: 'completed',
-          phase: 'exporting',
+          phase: 'completed',
           ...finalSnapshot,
           offlineUri: content.offlineUri,
           speedBps: 0,
           error: null,
           completedAt: Date.now()
         })
+        logSabrTimestamp(downloadId, 'completed', { height: maxHeight })
         android.finishDownloadNotification?.(downloadId)
         showToast(this.t('Video.Download complete'))
-        exportSabrDownload(content, this.videoTitle, downloadId).then(exported => {
-          updateDownloadMetadata(downloadId, {
-            ...finalSnapshot,
-            offlineUri: content.offlineUri,
-            localPath: exported.localPath,
-            fileName: exported.fileName,
-            fileSize: exported.fileSize || 0,
-            phase: 'completed',
-            speedBps: 0,
-            error: null
-          })
-          logSabrTimestamp(downloadId, 'completed', { height: maxHeight, fileName: exported.fileName })
-        }).catch(error => {
-          updateDownloadMetadata(downloadId, { status: 'failed', phase: 'export-failed', offlineUri: content.offlineUri, error: error?.message || String(error) })
-          console.error(`[Downloads] SABR export failed: id=${downloadId} message=${error?.message || String(error)}`)
-        })
       } catch (error) {
         if (isSabrDownloadPaused(downloadId)) {
           updateDownloadMetadata(downloadId, { status: 'paused', interrupted: true, error: null })

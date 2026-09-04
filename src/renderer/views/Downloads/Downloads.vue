@@ -59,7 +59,7 @@
         <h2>{{ download.title }}</h2>
         <p>{{ download.status }}</p>
         <p
-          v-if="download.status === 'completed' && download.phase !== 'exporting' && download.fileSize > 0"
+          v-if="download.status === 'completed' && download.fileSize > 0"
         >
           {{ formatBytes(download.fileSize) }}
         </p>
@@ -123,7 +123,6 @@
           <button
             type="button"
             data-download-action="delete"
-            :disabled="download.status === 'processing' || download.phase === 'exporting'"
             @click="remove(download)"
           >
             {{ t('Downloads.Delete') }}
@@ -210,14 +209,6 @@ async function retry(download) {
     }
     return
   }
-  if (download.offlineUri && ['exporting', 'export-failed'].includes(download.phase)) {
-    download.status = 'completed'
-    download.phase = 'exporting'
-    download.error = null
-    updateDownloadMetadata(download.downloadId, { status: 'completed', phase: 'exporting', error: null })
-    recoverSabrDownloads()
-    return
-  }
   if (download.manifestSrc && download.sabrData) {
     download.status = 'queued'
     download.interrupted = true
@@ -277,7 +268,6 @@ function selectAll() {
 async function removeMany(items = downloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))) {
   items = [...items]
   if (!items.length) return
-  items = items.filter(download => download.status !== 'processing' && download.phase !== 'exporting')
   const active = items.filter(download => ['queued', 'downloading', 'paused'].includes(download.status))
   active.forEach(download => control(download, 'cancel'))
   if (active.some(download => !download.manifestSrc)) await new Promise(resolve => setTimeout(resolve, 300))
@@ -317,16 +307,6 @@ async function recoverSabrDownloads() {
   sabrRecoveryRunning = true
   try {
     let download
-    while ((download = downloads.value.find(item => item.offlineUri && ['processing', 'exporting', 'export-failed'].includes(item.phase || item.status)))) {
-      try {
-        const recovered = await recoverSabrDownload(download)
-        Object.assign(download, recovered, { status: 'completed', phase: 'completed', error: null, interrupted: false })
-        updateDownloadMetadata(download.downloadId, { ...recovered, status: 'completed', phase: 'completed', error: null, interrupted: false, completedAt: Date.now() })
-      } catch (error) {
-        updateDownloadMetadata(download.downloadId, { status: 'failed', phase: 'export-failed', error: error.message || 'SABR export failed', offlineUri: download.offlineUri })
-        Object.assign(download, { status: 'failed', phase: 'export-failed', error: error.message || 'SABR export failed' })
-      }
-    }
     while ((download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData))) {
       const progress = download.total > 0 ? 0 : null
       Object.assign(download, { status: 'downloading', progress, received: 0, speedBps: 0, etaSeconds: 0 })
@@ -337,8 +317,9 @@ async function recoverSabrDownloads() {
           Object.assign(download, { progress, received: content?.size || 0, total: total || 0, totalExact })
           updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total, totalExact })
         })
-        Object.assign(download, recovered, { status: 'completed', interrupted: false })
+        Object.assign(download, recovered, { status: 'completed', phase: 'completed', interrupted: false })
         updateDownloadMetadata(download.downloadId, {
+          phase: 'completed',
           status: 'completed',
           progress: download.progress,
           received: download.received,
@@ -388,7 +369,7 @@ function installTestHook() {
     }
   }
   window.__ftTest = {
-    downloads: () => downloads.value.map(({ downloadId, videoId, status, phase, selectedFormat, received, total, totalExact, fileSize, offlineUri, localPath, fileName, createdAt }) => ({ id: downloadId, videoId, status, phase, selectedFormat, received, total, totalExact, fileSize, offlineUri, localPath, fileName, createdAt })),
+    downloads: () => downloads.value.map(({ downloadId, videoId, status, selectedFormat, received, total, totalExact, fileSize, offlineUri, createdAt }) => ({ id: downloadId, videoId, status, selectedFormat, received, total, totalExact, fileSize, offlineUri, createdAt })),
     active: id => hasSabrDownload(id),
     offlineContents,
     removeOffline: async uri => {

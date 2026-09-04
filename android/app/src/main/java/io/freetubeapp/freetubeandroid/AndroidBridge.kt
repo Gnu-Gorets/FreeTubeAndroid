@@ -465,51 +465,6 @@ class AndroidBridge(
         return true
     }
 
-    @JavascriptInterface
-    fun muxStoredDownload(videoUri: String, audioUri: String, targetUri: String, finalName: String): String = asyncFileOperation {
-        require(Regex("^data://sabr/[A-Za-z0-9-]+-(video|audio)\\.mp4$").matches(videoUri)) { "Invalid offline video source" }
-        require(Regex("^data://sabr/[A-Za-z0-9-]+-(video|audio)\\.mp4$").matches(audioUri)) { "Invalid offline audio source" }
-        val videoFile = java.io.File(dataDirectory, videoUri.removePrefix("data://"))
-        val audioFile = java.io.File(dataDirectory, audioUri.removePrefix("data://"))
-        val outputFile = java.io.File(activity.cacheDir, "${UUID.randomUUID()}-output.mp4")
-        try {
-            muxMp4(videoFile, audioFile, outputFile)
-            if (targetUri.startsWith("data://")) {
-                java.io.File(dataDirectory, targetUri.removePrefix("data://")).outputStream().use { output ->
-                    outputFile.inputStream().use { it.copyTo(output) }
-                }
-            } else {
-                activity.contentResolver.openOutputStream(resolveUri(targetUri), "wt")?.use { output ->
-                    outputFile.inputStream().use { it.copyTo(output) }
-                } ?: throw IllegalStateException("Unable to open download target")
-            }
-            publishDownload(targetUri, finalName)
-        } finally {
-            outputFile.delete()
-        }
-    }
-
-    private fun publishDownload(uriString: String, finalName: String): String {
-        if (uriString.startsWith("data://")) {
-            val source = java.io.File(dataDirectory, uriString.removePrefix("data://"))
-            val target = java.io.File(source.parentFile, finalName)
-            if (!source.renameTo(target) && source.name != finalName) throw IllegalStateException("Unable to rename download target")
-            return "data://${target.relativeTo(dataDirectory).path}"
-        }
-        val uri = Uri.parse(uriString)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.authority == MediaStore.AUTHORITY) {
-            if (activity.contentResolver.update(uri, ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, finalName)
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
-                }, null, null) == 0) throw IllegalStateException("Unable to publish download target")
-            return uriString
-        }
-        val target = DocumentFile.fromSingleUri(activity, uri)
-            ?: throw IllegalStateException("Unable to open download target")
-        if (target.name != finalName && target.renameTo(finalName) != true) throw IllegalStateException("Unable to rename download target")
-        return target.uri.toString()
-    }
-
     private fun downloadToFile(url: String, target: java.io.File, downloadId: String) {
         var connection: HttpURLConnection? = null
         try {
