@@ -29,7 +29,8 @@ const context = vm.createContext({
   shaka: { offline: { Storage: true } },
   setupSabrScheme: () => {},
   android: {},
-  process: { env: { IS_ANDROID: true } }
+  process: { env: { IS_ANDROID: true } },
+  setTimeout
 })
 vm.runInContext(source, context)
 
@@ -159,7 +160,7 @@ test('SABR store reuses one preflight selection and logs store timestamps', asyn
   })
   assert.equal(selected, fallback)
   assert.equal(progress.length, 4)
-  assert.equal(Math.round(progress[1] * 100), 43)
+  assert.equal(Math.round(progress[1] * 100), 78)
   assert.equal(progress[2], 149.4)
   assert.equal(progress[3], true)
   assert.deepEqual(downloadLogs.filter(([message]) => message === 'SABR timestamp').map(([, detail]) => detail.event), [
@@ -560,12 +561,13 @@ test('native queue progress replaces stale UI progress fields', () => {
   })
 })
 
-test('SABR progress is derived only from normalized stored bytes and total', () => {
+test('SABR progress uses Shaka progress and stays below 100 before terminal', () => {
   const inconsistentRawProgress = getProgressSnapshot({ size: 63.9 }, 0.78, 149.4, true)
   assert.equal(inconsistentRawProgress.received, 63.9)
   assert.equal(inconsistentRawProgress.total, 149.4)
   assert.equal(inconsistentRawProgress.totalExact, true)
   assert.equal(Math.round(inconsistentRawProgress.progress * 100), 43)
+  assert.equal(getProgressSnapshot({ size: 63.9 }, 1, 149.4, true, false).progress, 63.9 / 149.4)
 
   assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 0.5))), {
     received: 500, total: 1000, totalExact: false, progress: 0.5
@@ -573,6 +575,14 @@ test('SABR progress is derived only from normalized stored bytes and total', () 
   assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 500 }, 0))), {
     received: 500, total: 0, totalExact: false, progress: null
   })
+})
+
+test('SABR terminal progress reaches 100 in Downloads', () => {
+  const result = getProgressSnapshot({ size: 80 }, 1, 100, true)
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    received: 80, total: 80, totalExact: true, progress: 1
+  })
+  assert.ok(downloadsViewSource.includes("download.status === 'downloading' && download.received > 0"))
 })
 
 test('SABR exact total stays fixed until stored bytes overflow it', () => {
@@ -599,6 +609,7 @@ test('SABR transport bytes stay diagnostic and Downloads renders normalized prog
   assert.equal(downloadsViewSource.includes('networkBytes'), false)
   assert.ok(downloadsViewSource.includes('Math.round(download.progress * 100)'))
   assert.equal(downloadsViewSource.includes('download.received / download.total'), false)
+  assert.ok(source.includes("Math.min(Math.max(rawProgressValue, 0), 0.99)"))
   assert.ok(watchSource.includes('const finalSnapshot = getProgressSnapshot(content, 1, lastTotal, lastTotalExact)'))
   assert.equal(watchSource.includes('progress: 1'), false)
 })
@@ -610,6 +621,16 @@ test('SABR progress event updates bytes, speed and percent immediately', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
     downloadId: 'sabr', status: 'downloading', progress: 0.25, received: 25, total: 100, totalExact: false, fileSize: 0, speedBps: 50, etaSeconds: 2, error: null
   })
+})
+
+test('SABR progress bar keeps active Shaka progress below 100 percent', () => {
+  const result = mergeDownloadProgress({ downloadId: 'sabr' }, {
+    status: 'downloading', progress: 1, received: 80, total: 100, totalExact: true
+  })
+  assert.equal(result.status, 'downloading')
+  assert.equal(result.progress, 0.99)
+  assert.equal(result.received, 80)
+  assert.equal(result.total, 100)
 })
 
 test('native queue leaves progress notifications to DownloadService', () => {
@@ -650,6 +671,7 @@ test('heavy SABR downloads use two scheduler weight units', () => {
 test('download progress persistence is throttled', () => {
   assert.ok(source.includes('DOWNLOAD_PROGRESS_UPDATE_MS = 250'))
   assert.ok(source.includes('now - lastUpdatedAt < DOWNLOAD_PROGRESS_UPDATE_MS'))
+  assert.ok(source.includes('const nearCompletion = Number(changes.progress) >= 0.99'))
   assert.match(downloadServiceSource, /now - lastPublishedAt >= 250_000_000L/)
 })
 

@@ -64,7 +64,7 @@
           {{ formatDownloadMeta(download) }}
         </p>
         <progress
-          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0"
+          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0 && download.progress != null"
           max="1"
           :value="download.progress"
           :aria-label="t('Downloads.Progress')"

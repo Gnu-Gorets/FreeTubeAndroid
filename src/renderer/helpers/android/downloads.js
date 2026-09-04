@@ -233,7 +233,10 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
           const snapshot = getProgressSnapshot(content, progress, stableTotal, totalExact, false)
           if (snapshot.total > stableTotal) stableTotal = snapshot.total
           const progressTotal = Math.max(stableTotal, snapshot.total)
-          const progressValue = progressTotal > 0 ? Math.min(snapshot.received / progressTotal, 1) : snapshot.progress
+          const rawProgressValue = Number(progress)
+          const progressValue = Number.isFinite(rawProgressValue)
+            ? Math.min(Math.max(rawProgressValue, 0), 0.99)
+            : snapshot.progress
           if (!snapshot.totalExact) totalExact = false
           const elapsed = (now - lastTelemetryAt) / 1000
           const speedBps = elapsed > 0 ? Math.max(0, Math.round((snapshot.received - lastTelemetryReceived) / elapsed)) : 0
@@ -261,6 +264,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
     const operation = storage.store(manifestSrc, {}, download.manifestMimeType)
     sabrOperations.set(download.downloadId, operation)
     const content = await operation.promise
+    await new Promise(resolve => setTimeout(resolve, 100))
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped')
     const finalSnapshot = getProgressSnapshot(content, 1, stableTotal, totalExact)
     log('SABR telemetry', { id: download.downloadId, received: finalSnapshot.received, total: finalSnapshot.total, networkBytes: transportBytes, totalExact: finalSnapshot.totalExact, progress: finalSnapshot.progress, speedBps: 0, speedJump: false, mismatch: false })
@@ -409,11 +413,15 @@ export function mergeDownloadProgress(download, detail, native = null) {
     detail.totalExact ?? download.totalExact,
     detail.status !== 'downloading'
   )
+  const activeProgress = detail.status === 'downloading' && Number.isFinite(Number(detail.progress))
+    ? Math.min(Math.max(Number(detail.progress), 0), 0.99)
+    : snapshot.progress
   return {
     ...download,
     ...detail,
     status: detail.status ?? download.status,
     ...snapshot,
+    progress: activeProgress,
     fileSize: detail.fileSize || download.fileSize || 0,
     phase: detail.phase ?? download.phase,
     speedBps: detail.speedBps,
@@ -425,7 +433,8 @@ export function mergeDownloadProgress(download, detail, native = null) {
 export function updateDownloadMetadata(downloadId, changes) {
   const now = Date.now()
   const lastUpdatedAt = downloadMetadataUpdatedAt.get(downloadId) || 0
-  if (changes.status === 'downloading' && now - lastUpdatedAt < DOWNLOAD_PROGRESS_UPDATE_MS) return
+  const nearCompletion = Number(changes.progress) >= 0.99
+  if (changes.status === 'downloading' && !nearCompletion && now - lastUpdatedAt < DOWNLOAD_PROGRESS_UPDATE_MS) return
   const downloads = readDownloadMetadata()
   const download = downloads.find(item => item.downloadId === downloadId)
   if (!download) return
