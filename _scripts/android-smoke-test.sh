@@ -60,6 +60,16 @@ done
 
 mkdir -p "$ARTIFACT_DIR"
 LOG_FILE="$ARTIFACT_DIR/logcat.txt"
+RUN_START_SECONDS=$(date +%s)
+CURRENT_TEST="setup"
+TEST_START_SECONDS=$RUN_START_SECONDS
+
+progress() {
+  local now elapsed
+  now=$(date +%s)
+  elapsed=$((now - TEST_START_SECONDS))
+  printf '%s [%s +%ss] %s\n' "$(date +%H:%M:%S)" "$CURRENT_TEST" "$elapsed" "$*" | tee -a "$ARTIFACT_DIR/progress.log"
+}
 
 adb_cmd() {
   if [[ -n "$SERIAL" ]]; then adb -s "$SERIAL" "$@"; else adb "$@"; fi
@@ -110,36 +120,70 @@ dump_ui() {
   adb_shell cat /sdcard/window.xml >"$ARTIFACT_DIR/$1.xml"
 }
 wait_for_ui_text() {
-  local text="$1" start now
+  local text="$1" start now last_log=0
   start=$(date +%s)
+  last_log=$start
+  progress "waiting for UI text: $text (timeout ${TIMEOUT}s)"
   while :; do
-    dump_ui wait-for-ui >/dev/null 2>&1 && grep -q "text=\"$text\"" "$ARTIFACT_DIR/wait-for-ui.xml" && return 0
+    dump_ui wait-for-ui >/dev/null 2>&1 && grep -q "text=\"$text\"" "$ARTIFACT_DIR/wait-for-ui.xml" && { progress "UI text found: $text"; return 0; }
     now=$(date +%s)
-    ((now - start >= TIMEOUT)) && return 1
+    if ((now - last_log >= 10)); then
+      progress "still waiting for UI text: $text ($((now - start))s/${TIMEOUT}s)"
+      last_log=$now
+    fi
+    if ((now - start >= TIMEOUT)); then
+      progress "timeout waiting for UI text: $text ($((now - start))s); artifacts: $ARTIFACT_DIR"
+      return 1
+    fi
     sleep 1
   done
 }
 
 wait_for_logcat() {
-  local pattern="$1" start now
-  [[ -n "$LOGCAT_STREAM_PID" ]] || return 1
+  local pattern="$1" start now last_log=0 last_line
+  [[ -n "$LOGCAT_STREAM_PID" ]] || { progress "cannot wait for logcat, stream is not running"; return 1; }
   start=$(date +%s)
+  last_log=$start
+  progress "waiting for logcat: $pattern (timeout ${TIMEOUT}s)"
   while :; do
-    grep -q "$pattern" "$ARTIFACT_DIR/live-logcat.txt" 2>/dev/null && return 0
+    if grep -q "$pattern" "$ARTIFACT_DIR/live-logcat.txt" 2>/dev/null; then
+      progress "logcat pattern found: $pattern"
+      return 0
+    fi
     now=$(date +%s)
-    ((now - start >= TIMEOUT)) && return 1
+    if ((now - last_log >= 10)); then
+      last_line=$(tail -1 "$ARTIFACT_DIR/live-logcat.txt" 2>/dev/null || true)
+      progress "still waiting for logcat: $pattern ($((now - start))s/${TIMEOUT}s); last=${last_line:-none}"
+      last_log=$now
+    fi
+    if ((now - start >= TIMEOUT)); then
+      progress "timeout waiting for logcat: $pattern ($((now - start))s); live log: $ARTIFACT_DIR/live-logcat.txt"
+      return 1
+    fi
     sleep 1
   done
 }
 
 wait_for_notification() {
-  local pattern="$1" start now dump
+  local pattern="$1" start now dump last_log=0
   start=$(date +%s)
+  last_log=$start
+  progress "waiting for notification: $pattern (timeout ${TIMEOUT}s)"
   while :; do
     dump=$(adb_shell dumpsys notification --noredact)
-    grep -q "$pattern" <<<"$dump" && return 0
+    if grep -q "$pattern" <<<"$dump"; then
+      progress "notification found: $pattern"
+      return 0
+    fi
     now=$(date +%s)
-    ((now - start >= TIMEOUT)) && return 1
+    if ((now - last_log >= 10)); then
+      progress "still waiting for notification: $pattern ($((now - start))s/${TIMEOUT}s)"
+      last_log=$now
+    fi
+    if ((now - start >= TIMEOUT)); then
+      progress "timeout waiting for notification: $pattern ($((now - start))s); artifacts: $ARTIFACT_DIR"
+      return 1
+    fi
     sleep 1
   done
 }
@@ -223,8 +267,32 @@ cdp_eval() {
 }
 
 cdp_wait() {
-  local expression="$1" timeout="${2:-$TIMEOUT}"
-  [[ $(node "$(dirname "$0")/cdp.mjs" --wait "$expression" "$timeout" 2>/dev/null || true) == true ]]
+  local expression="$1" timeout="${2:-$TIMEOUT}" start now last_log=0 result_file cdp_pid result
+  start=$(date +%s)
+  last_log=$start
+  result_file="$ARTIFACT_DIR/cdp-wait-$$.result"
+  progress "waiting for CDP condition: ${expression:0:120} (timeout ${timeout}s)"
+  node "$(dirname "$0")/cdp.mjs" --wait "$expression" "$timeout" >"$result_file" 2>/dev/null &
+  cdp_pid=$!
+  while kill -0 "$cdp_pid" 2>/dev/null; do
+    sleep 1
+    now=$(date +%s)
+    if ((now - last_log >= 10)); then
+      progress "still waiting for CDP condition ($((now - start))s/${timeout}s): ${expression:0:120}"
+      last_log=$now
+    fi
+  done
+  wait "$cdp_pid" 2>/dev/null || true
+  result=$(<"$result_file")
+  rm -f "$result_file"
+  now=$(date +%s)
+  if [[ "$result" == true ]]; then
+    progress "CDP condition satisfied ($((now - start))s)"
+    return 0
+  fi
+  now=$(date +%s)
+  progress "timeout waiting for CDP condition ($((now - start))s/${timeout}s); artifacts: $ARTIFACT_DIR"
+  return 1
 }
 
 cdp_wait_status() {
@@ -313,13 +381,18 @@ cleanup_run_downloads() {
 
 run_test() {
   local name="$1" start elapsed; shift
+  CURRENT_TEST="$name"
+  TEST_START_SECONDS=$(date +%s)
   echo "== $name =="
-  start=$(date +%s)
+  progress "started"
+  start=$TEST_START_SECONDS
   if assert_personal_profile && "$@"; then
     echo "PASS $name"
+    progress "passed"
     PASS=$((PASS + 1))
   else
     echo "FAIL $name"
+    progress "failed; artifacts: $ARTIFACT_DIR"
     FAIL=$((FAIL + 1))
   fi
   elapsed=$(($(date +%s) - start))
@@ -331,12 +404,21 @@ is_focused() {
 }
 
 wait_for() {
-  local pattern="$1" start now
+  local pattern="$1" start now last_log=0
   start=$(date +%s)
+  last_log=$start
+  progress "waiting for focus: $pattern (timeout ${TIMEOUT}s)"
   while :; do
-    if is_focused "$pattern"; then return 0; fi
+    if is_focused "$pattern"; then progress "focus found: $pattern"; return 0; fi
     now=$(date +%s)
-    ((now - start >= TIMEOUT)) && return 1
+    if ((now - last_log >= 10)); then
+      progress "still waiting for focus: $pattern ($((now - start))s/${TIMEOUT}s)"
+      last_log=$now
+    fi
+    if ((now - start >= TIMEOUT)); then
+      progress "timeout waiting for focus: $pattern ($((now - start))s); artifacts: $ARTIFACT_DIR"
+      return 1
+    fi
     sleep 1
   done
 }
@@ -493,18 +575,23 @@ open_video() {
 open_download_video() {
   local attempt
   for attempt in 1 2; do
+    progress "opening download video (attempt $attempt/2)"
     adb_cmd logcat -c
     adb_shell am force-stop "$PACKAGE"
     adb_shell am start -a android.intent.action.VIEW -d "$DOWNLOAD_VIDEO_URL" -n "$ACTIVITY" >/dev/null
+    progress "waiting for app focus after opening video"
     wait_for "$PACKAGE" || return 1
+    progress "waiting for download controls (timeout ${DOWNLOAD_TIMEOUT}s)"
     ensure_cdp && cdp_wait "Boolean(document.querySelector('[data-download-action=\"start-download\"] button'))" "$DOWNLOAD_TIMEOUT" || return 1
     if adb_cmd logcat -d --pid="$(adb_shell pidof -s "$PACKAGE")" '*:E' | grep -q 'TypeError:'; then
+      progress "TypeError detected while opening video"
       [[ "$attempt" == 2 ]] && return 1
       continue
     fi
     adb_shell input tap 400 340
     adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null
     screenshot download-video
+    progress "download video is ready"
     return 0
   done
   return 1
@@ -753,14 +840,19 @@ download_quality() {
 
 download_sabr_telemetry() {
   clean_logs
+  progress "starting SABR telemetry scenario"
   open_download_video || return 1
   ensure_cdp || return 1
   local marker id
   marker=$(cdp_eval 'Date.now()')
+  progress "opening quality picker"
   adb_shell input tap 185 830
   sleep 2
+  progress "selecting telemetry download quality"
   adb_shell input tap 220 940
+  progress "download started; waiting for SABR store completion"
   wait_for_logcat 'SABR store complete' || return 1
+  progress "SABR store completed; collecting telemetry log"
   adb_cmd logcat -d -v threadtime >"$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt"
   grep -q 'SABR telemetry' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
   grep -q '"progress":1' "$ARTIFACT_DIR/download-sabr-telemetry-logcat.txt" || return 1
@@ -769,7 +861,9 @@ download_sabr_telemetry() {
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
+  progress "checking completed download state"
   cdp_wait_status "$id" completed || return 1
+  progress "cleaning up telemetry download"
   cdp_cleanup_download "$id"
 }
 
