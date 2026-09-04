@@ -936,7 +936,13 @@ download_sabr_ui_progress() {
   echo '[download-sabr-ui-progress] selecting 360p SABR'
   adb_shell input tap 185 830
   sleep 2
+  local tap_sent_ms tap_done_ms
+  tap_sent_ms=$(date +%s%3N)
+  progress "quality option tap sent at ${tap_sent_ms}ms"
   adb_shell input tap 575 875
+  tap_done_ms=$(date +%s%3N)
+  progress "quality option tap completed at ${tap_done_ms}ms"
+  printf 'quality_option_tap_sent_ms=%s\nquality_option_tap_completed_ms=%s\n' "$tap_sent_ms" "$tap_done_ms" >"$ARTIFACT_DIR/download-latency.txt"
   wait_for_logcat '"event":"preflight-complete"' || return 1
   adb_shell input tap 535 1540
   echo '[download-sabr-ui-progress] download started, waiting for completion'
