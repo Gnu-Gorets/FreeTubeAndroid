@@ -177,9 +177,17 @@ function handleDownloadControl({ detail }) {
 onMounted(async () => {
   if (process.env.IS_ANDROID) {
     window.addEventListener('android-download-control', handleDownloadControl)
-    window.addEventListener('youtube-link', ({ detail }) => {
-      if (detail?.link) handleYoutubeLink(detail.link)
-    })
+    const handleYoutubeLinkEvent = ({ detail }) => {
+      if (!detail?.link) return
+      delete window.__ftPendingYoutubeLink
+      handleYoutubeLink(detail.link)
+    }
+    window.addEventListener('youtube-link', handleYoutubeLinkEvent)
+    const pendingYoutubeLink = window.__ftPendingYoutubeLink
+    if (pendingYoutubeLink) {
+      delete window.__ftPendingYoutubeLink
+      handleYoutubeLink(pendingYoutubeLink)
+    }
   }
 
   await store.dispatch('grabUserSettings')

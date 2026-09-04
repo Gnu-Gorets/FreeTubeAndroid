@@ -207,7 +207,7 @@ class MainActivity : Activity() {
         val url = intent?.data?.toString() ?: return
         val event = JSONObject.quote(url)
         webView.evaluateJavascript(
-            "window.dispatchEvent(new CustomEvent('youtube-link', { detail: { link: $event } }))",
+            "window.__ftPendingYoutubeLink = $event; window.dispatchEvent(new CustomEvent('youtube-link', { detail: { link: $event } }))",
             null
         )
     }
