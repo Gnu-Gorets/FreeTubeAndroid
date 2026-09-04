@@ -4,6 +4,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 const source = fs.readFileSync(new URL('../src/renderer/helpers/android/downloads.js', import.meta.url), 'utf8')
+  .replace(/^import \{ DEFAULT_DOWNLOAD_CONCURRENCY \} from .*$/m, 'const DEFAULT_DOWNLOAD_CONCURRENCY = 3')
   .replace(/^import .*$/gm, '')
   .replace(/^export /gm, '')
   .replace(/const log = .*$/m, 'const log = (...args) => globalThis.downloadLogs?.push(args)')
@@ -13,6 +14,7 @@ const downloadServiceSource = fs.readFileSync(new URL('../android/app/src/main/j
 const androidBridgeSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
 const watchSource = fs.readFileSync(new URL('../src/renderer/views/Watch/Watch.js', import.meta.url), 'utf8')
 const downloadsViewSource = fs.readFileSync(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
+const sabrSchemeSource = fs.readFileSync(new URL('../src/renderer/helpers/player/SabrSchemePlugin.js', import.meta.url), 'utf8')
 
 const storage = new Map()
 const downloadLogs = []
@@ -162,7 +164,12 @@ test('SABR store reuses one preflight selection and logs store timestamps', asyn
   assert.equal(progress[3], true)
   assert.deepEqual(downloadLogs.filter(([message]) => message === 'SABR timestamp').map(([, detail]) => detail.event), [
     'slot-acquired',
+    'player-created',
+    'scheme-ready',
+    'player-load-start',
+    'player-load-complete',
     'offline-player-loaded',
+    'storage-created',
     'store-started',
     'first-progress',
     'store-complete'
@@ -172,11 +179,20 @@ test('SABR store reuses one preflight selection and logs store timestamps', asyn
   assert.ok(source.includes('await player.load(manifestSrc, null, download.manifestMimeType)'))
 })
 
+test('Watch uses SABR for every download quality', () => {
+  assert.ok(watchSource.includes('const options = getSabrDownloadFormats(this.manifestSrc)'))
+  assert.equal(watchSource.includes('directOptions'), false)
+  assert.equal(watchSource.includes('downloadSelected'), false)
+})
+
 test('Watch passes one complete SABR selection and logs its outer timestamps', () => {
   assert.ok(watchSource.includes('const selection = {'))
   for (const field of ['maxHeight', 'videoTrackId: preflight.videoId', 'audioTrackId: preflight.audioId', 'total: preflight.total', 'totalExact: preflight.totalExact']) assert.ok(watchSource.includes(field))
   assert.ok(watchSource.includes('}, selection)'))
-  for (const event of ['selection', 'preflight-complete', 'completed']) assert.ok(watchSource.includes(`logSabrTimestamp(downloadId, '${event}'`))
+  for (const event of ['quality-click', 'selection', 'preflight-complete', 'completed']) assert.ok(watchSource.includes(`logSabrTimestamp(downloadId, '${event}'`))
+  assert.ok(watchSource.includes('qualityClickAt = Date.now()'))
+  for (const event of ['player-created', 'scheme-ready', 'player-load-start', 'player-load-complete', 'storage-created']) assert.ok(source.includes(`'${event}'`))
+  for (const event of ['sabr-request-start', 'sabr-response-headers', 'sabr-first-body', 'sabr-first-media-body']) assert.ok(sabrSchemeSource.includes(`'${event}'`))
 })
 
 test('SABR completes as offline-only download after storage', () => {
@@ -355,7 +371,7 @@ test('quality picker keeps multiple options and dispatches selected format', () 
   assert.ok(watchSource.includes('this.downloadOptions = options'))
   assert.ok(watchSource.includes('handleDownloadQuality(formats)'))
   assert.ok(watchSource.includes('this.downloadOptions = []'))
-  assert.ok(watchSource.includes('this.downloadSelected(formats)'))
+  assert.ok(watchSource.includes('this.downloadSabr(formats?.height, formats?.label, qualityClickAt)'))
 })
 
 test('Downloads view exposes cancel, retry, play and delete flows', () => {
@@ -416,13 +432,6 @@ test('native adaptive progress aggregates video and audio bytes', () => {
   assert.ok(downloadServiceSource.includes('videoTotal + audioTotal'))
   assert.ok(!downloadServiceSource.includes('0.0, 0.5'))
   assert.ok(!downloadServiceSource.includes('0.5, 0.5'))
-})
-
-test('direct download keeps selected quality and source sizes', () => {
-  assert.ok(watchSource.includes('selectedFormat: formats.label'))
-  assert.ok(watchSource.includes('videoTotal: Number(formats.video.contentLength'))
-  assert.ok(source.includes("selectedFormat: video.selectedFormat ||"))
-  assert.ok(!source.includes("throw new Error('Download size is unavailable')"))
 })
 
 test('direct download queues honest initial totals, including unknown sizes', async () => {
@@ -624,6 +633,31 @@ test('metadata update changes only matching download', () => {
     { downloadId: 'one', status: 'failed', error: 'network' },
     { downloadId: 'two', status: 'completed' }
   ])
+})
+
+test('download concurrency defaults to three across Android paths', () => {
+  assert.ok(source.includes('DEFAULT_DOWNLOAD_CONCURRENCY'))
+  assert.ok(source.includes("|| DEFAULT_DOWNLOAD_CONCURRENCY"))
+  assert.match(downloadServiceSource, /getInt\("maxConcurrent", 3\)/)
+})
+
+test('heavy SABR downloads use two scheduler weight units', () => {
+  assert.ok(source.includes("Number(maxHeight) >= 1080 ? 2 : 1"))
+  assert.ok(source.includes('sabrActiveWeight + weight <= sabrBudget()'))
+  assert.ok(source.includes('weight: slotWeight'))
+})
+
+test('download progress persistence is throttled', () => {
+  assert.ok(source.includes('DOWNLOAD_PROGRESS_UPDATE_MS = 250'))
+  assert.ok(source.includes('now - lastUpdatedAt < DOWNLOAD_PROGRESS_UPDATE_MS'))
+  assert.match(downloadServiceSource, /now - lastPublishedAt >= 250_000_000L/)
+})
+
+test('SABR recovery starts queued downloads together', () => {
+  const recovery = downloadsViewSource.slice(downloadsViewSource.indexOf('async function recoverSabrDownloads()'), downloadsViewSource.indexOf('function handleDownloadControl'))
+  assert.ok(recovery.includes('const queued = downloads.value.filter'))
+  assert.ok(recovery.includes('await Promise.all(queued.map(recover))'))
+  assert.equal(recovery.includes('while ((download ='), false)
 })
 
 test('Downloads selection uses stable ids across metadata reloads', () => {

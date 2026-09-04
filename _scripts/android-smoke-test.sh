@@ -35,7 +35,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
+                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -977,13 +977,66 @@ PY
   cdp_cleanup_download "$id"
 }
 
+download_sabr_1080() {
+  clean_logs
+  open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id
+  marker=$(cdp_eval 'Date.now()')
+  cdp_eval "localStorage.removeItem('freetube-download-concurrency'); true" >/dev/null
+  cdp_start_sabr_download_quality "$marker" 1 '1080p (SABR)' || return 1
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+  adb_cmd logcat -d -v threadtime >"$ARTIFACT_DIR/download-sabr-1080-logcat.txt"
+  python3 - "$ARTIFACT_DIR/download-sabr-1080-logcat.txt" "$ARTIFACT_DIR/download-sabr-1080-latency.txt" "$id" <<'PY'
+import json
+import re
+import sys
+
+log = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
+download_id = sys.argv[3]
+events = {}
+for value in re.findall(r'SABR timestamp (\{"id".*?\})', log):
+    item = json.loads(value)
+    if item.get('id') == download_id:
+        events[item['event']] = item['timestamp']
+for event in ('quality-click', 'preflight-complete', 'slot-acquired', 'store-started', 'first-progress', 'completed'):
+    assert event in events, f'missing {event}: {events}'
+with open(sys.argv[2], 'w', encoding='utf-8') as output:
+    for start, end in [('quality-click', 'preflight-complete'), ('preflight-complete', 'slot-acquired'), ('slot-acquired', 'store-started'), ('store-started', 'first-progress'), ('quality-click', 'first-progress')]:
+        output.write(f'{start}_to_{end}_ms={events[end] - events[start]}\n')
+PY
+  [[ $? -eq 0 ]] || return 1
+  cdp_cleanup_download "$id"
+}
+
+download_sabr_quality_pair() {
+  clean_logs
+  open_download_video || return 1
+  ensure_cdp || return 1
+  local marker ids id
+  marker=$(cdp_eval 'Date.now()')
+  cdp_eval "localStorage.removeItem('freetube-download-concurrency'); true" >/dev/null
+  cdp_start_sabr_download_quality "$marker" 1 '1440p (SABR)' || return 1
+  cdp_start_sabr_download_quality "$marker" 2 '1080p (SABR)' || return 1
+  ids=$(cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $marker).map(d => d.id).join('|')" | tr -d '"')
+  IFS='|' read -ra download_ids <<<"$ids"
+  [[ ${#download_ids[@]} -eq 2 ]] || return 1
+  for id in "${download_ids[@]}"; do
+    cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
+  done
+  for id in "${download_ids[@]}"; do cdp_cleanup_download "$id" || return 1; done
+}
+
 download_sabr_quality_totals() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
   local marker ids
   marker=$(cdp_eval 'Date.now()')
-  cdp_eval "localStorage.setItem('freetube-download-concurrency', '3'); true" >/dev/null
+  cdp_eval "localStorage.removeItem('freetube-download-concurrency'); true" >/dev/null
   cdp_start_sabr_download_quality "$marker" 1 '1440p (SABR)' || return 1
   cdp_start_sabr_download_quality "$marker" 2 '480p (SABR)' || return 1
   cdp_start_sabr_download_quality "$marker" 3 '360p (SABR)' || return 1
@@ -1002,6 +1055,29 @@ assert len({item['total'] for item in items}) == 3 and all(item['total'] > 0 for
 PY
   [[ $? -eq 0 ]] || return 1
   IFS='|' read -ra download_ids <<<"$ids"
+  python3 - "$ARTIFACT_DIR/download-sabr-quality-totals-start.json" "$ARTIFACT_DIR/download-sabr-quality-totals-start-times.txt" "$ARTIFACT_DIR/live-logcat.txt" <<'PY'
+import json
+import re
+import sys
+
+items = json.load(open(sys.argv[1], encoding='utf-8'))
+log = open(sys.argv[3], encoding='utf-8', errors='ignore').read()
+events = {}
+for value in re.findall(r'SABR timestamp (\{"id".*?\})', log):
+    item = json.loads(value)
+    if item.get('id') in {entry['id'] for entry in items} and item.get('event') in {'store-started', 'first-progress'}:
+        events.setdefault(item['event'], {})[item['id']] = item['timestamp']
+for event in ('store-started', 'first-progress'):
+    assert len(events.get(event, {})) == 3, f'missing {event} timestamps: {events.get(event, {})}'
+first_progress_spread = max(events['first-progress'].values()) - min(events['first-progress'].values())
+assert first_progress_spread <= 2000, f'first-byte start spread is {first_progress_spread}ms'
+with open(sys.argv[2], 'w', encoding='utf-8') as output:
+    output.write(f'store_started_spread_ms={max(events["store-started"].values()) - min(events["store-started"].values())}\n')
+    output.write(f'first_progress_spread_ms={first_progress_spread}\n')
+    for item in items:
+        output.write(f"{item['selectedFormat']}_first_progress_ms={events['first-progress'][item['id']]}\n")
+PY
+  [[ $? -eq 0 ]] || return 1
   local id
   for id in "${download_ids[@]}"; do cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1; done
   cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $marker)" >"$ARTIFACT_DIR/download-sabr-quality-totals-complete.json"
@@ -1388,6 +1464,8 @@ run_downloads_suite() {
   run_test download-sabr-telemetry download_sabr_telemetry
   run_test download-sabr-total download_sabr_total
   run_test download-sabr-quality-totals download_sabr_quality_totals
+  run_test download-sabr-quality-pair download_sabr_quality_pair
+  run_test download-sabr-1080 download_sabr_1080
   run_test download-sabr-ui-progress download_sabr_ui_progress
   run_test download-sabr-pause-resume download_sabr_pause_resume
   run_test download-notification download_notification
@@ -1479,6 +1557,8 @@ case "$TEST" in
   download-sabr-telemetry) run_test download-sabr-telemetry download_sabr_telemetry ;;
   download-sabr-total) run_test download-sabr-total download_sabr_total ;;
   download-sabr-quality-totals) run_test download-sabr-quality-totals download_sabr_quality_totals ;;
+  download-sabr-quality-pair) run_test download-sabr-quality-pair download_sabr_quality_pair ;;
+  download-sabr-1080) run_test download-sabr-1080 download_sabr_1080 ;;
   download-sabr-ui-progress) run_test download-sabr-ui-progress download_sabr_ui_progress ;;
   download-sabr-pause-resume) run_test download-sabr-pause-resume download_sabr_pause_resume ;;
   download-notification) run_test download-notification download_notification ;;

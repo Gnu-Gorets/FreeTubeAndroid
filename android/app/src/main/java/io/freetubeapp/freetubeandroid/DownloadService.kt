@@ -186,7 +186,7 @@ class DownloadService : Service() {
         synchronized(this) {
             val queue = readQueue()
             for (index in 0 until queue.length()) {
-                if (activeDownloads.size + items.size >= prefs().getInt("maxConcurrent", 1).coerceIn(1, 5)) break
+                if (activeDownloads.size + items.size >= prefs().getInt("maxConcurrent", 3).coerceIn(1, 5)) break
                 val item = queue.getJSONObject(index)
                 val id = item.optString("id")
                 if (item.optString("status") == "queued" && activeDownloads.add(id)) {
@@ -341,6 +341,7 @@ class DownloadService : Service() {
                     var lastTime = System.nanoTime()
                     var lastProgressTime = lastTime
                     var lastLoggedSpeed = 0L
+                    var lastPublishedAt = lastTime
                     while (true) {
                         checkDownloadState(item)
                         val count = input.read(buffer)
@@ -359,9 +360,14 @@ class DownloadService : Service() {
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - received) / speed).toLong())
                         lastBytes = received
                         lastTime = now
-                        saveItem(item)
-                        notify(item.optString("id"), item.optString("title"), progress?.let { "Downloading ${"%.0f".format(it * 100)}%" } ?: "Downloading", progress, true)
+                        if (now - lastPublishedAt >= 250_000_000L) {
+                            lastPublishedAt = now
+                            saveItem(item)
+                            notify(item.optString("id"), item.optString("title"), progress?.let { "Downloading ${"%.0f".format(it * 100)}%" } ?: "Downloading", progress, true)
+                        }
                     }
+                    saveItem(item)
+                    notify(item.optString("id"), item.optString("title"), "Downloading", 1.0, true)
                     if (total > 0 && received != total) throw IOException("Incomplete download: $received/$total")
                 }
             }
@@ -410,6 +416,7 @@ class DownloadService : Service() {
                     var lastTime = System.nanoTime()
                     var lastProgressTime = lastTime
                     var lastLoggedSpeed = 0L
+                    var lastPublishedAt = lastTime
                     while (true) {
                         checkDownloadState(item)
                         val count = input.read(buffer)
@@ -429,9 +436,14 @@ class DownloadService : Service() {
                         if (speed > 0 && total > 0) item.put("etaSeconds", ((total - aggregateReceived).coerceAtLeast(0) / speed).toLong())
                         lastBytes = received
                         lastTime = now
-                        saveItem(item)
-                        notify(item.optString("id"), item.optString("title"), progress?.let { "Downloading ${"%.0f".format(it * 100)}%" } ?: "Downloading", progress, true)
+                        if (now - lastPublishedAt >= 250_000_000L) {
+                            lastPublishedAt = now
+                            saveItem(item)
+                            notify(item.optString("id"), item.optString("title"), progress?.let { "Downloading ${"%.0f".format(it * 100)}%" } ?: "Downloading", progress, true)
+                        }
                     }
+                    saveItem(item)
+                    notify(item.optString("id"), item.optString("title"), "Downloading", 1.0, true)
                     if (componentTotal > 0 && received != componentTotal) throw IOException("Incomplete download: $received/$componentTotal")
                 }
             }

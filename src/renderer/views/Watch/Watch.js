@@ -46,7 +46,7 @@ import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { getDownloadNotificationPayload } from '../../helpers/android/download-notification.mjs'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { getProgressSnapshot, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -1363,17 +1363,15 @@ export default defineComponent({
     },
 
     async downloadVideo() {
-      const directOptions = getDownloadFormats(this.legacyFormats, this.downloadFormats)
-      const options = directOptions.length > 0 ? directOptions : getSabrDownloadFormats(this.manifestSrc)
+      const qualityClickAt = Date.now()
+      const options = getSabrDownloadFormats(this.manifestSrc)
       console.warn('[Downloads] picker options', options.map(option => option.label))
       if (options.length > 1) {
         this.downloadOptions = options
         return
       }
       const formats = options[0] ?? null
-      if (!formats) return this.downloadSabr()
-      if (formats.sabr) return this.downloadSabr(formats.height, formats.label)
-      this.downloadSelected(formats)
+      return this.downloadSabr(formats?.height, formats?.label, qualityClickAt)
     },
 
     getDownloadMetadata() {
@@ -1396,8 +1394,9 @@ export default defineComponent({
       }
     },
 
-    async downloadSabr(maxHeight, selectedFormat) {
+    async downloadSabr(maxHeight, selectedFormat, qualityClickAt = Date.now()) {
       const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`
+      logSabrTimestamp(downloadId, 'quality-click', { height: maxHeight, videoId: this.videoId, timestamp: qualityClickAt })
       logSabrTimestamp(downloadId, 'selection', { height: maxHeight, videoId: this.videoId })
       let preflight
       try {
@@ -1510,31 +1509,9 @@ export default defineComponent({
     },
 
     handleDownloadQuality(formats) {
+      const qualityClickAt = Date.now()
       this.downloadOptions = []
-      if (formats?.sabr) this.downloadSabr(formats.height, formats.label)
-      else if (formats) this.downloadSelected(formats)
-    },
-
-    async downloadSelected(formats) {
-      console.warn('[Downloads] direct download selected', formats.label)
-      try {
-        await downloadProgressiveVideo({
-          id: this.videoId,
-          title: this.videoTitle,
-          thumbnail: this.thumbnail,
-          videoUrl: formats.video.url,
-          audioUrl: formats.audio?.url ?? null,
-          videoTotal: Number(formats.video.contentLength || formats.video.content_length || formats.video.clen || 0),
-          audioTotal: Number(formats.audio?.contentLength || formats.audio?.content_length || formats.audio?.clen || 0),
-          selectedFormat: formats.label,
-          sourceBackend: this.backendPreference,
-          metadata: this.getDownloadMetadata()
-        })
-        showToast(this.t('Video.Download complete'))
-      } catch (error) {
-        console.error('Progressive download failed', error)
-        showToast(this.t('Video.Download failed'))
-      }
+      this.downloadSabr(formats?.height, formats?.label, qualityClickAt)
     },
 
     handleWatchProgressManualSave() {

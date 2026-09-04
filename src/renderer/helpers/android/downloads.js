@@ -2,6 +2,7 @@ import android from 'android'
 import shaka from 'shaka-player'
 import { requestSaveDialog } from './dialogs'
 import { setupSabrScheme } from '../player/SabrSchemePlugin'
+import { DEFAULT_DOWNLOAD_CONCURRENCY } from './download-settings.mjs'
 import { getDownloadNotificationPayload } from './download-notification.mjs'
 
 const log = (...args) => console.warn('[Downloads]', ...args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg))
@@ -111,22 +112,40 @@ const sabrOperations = new Map()
 const sabrStarting = new Set()
 const sabrCanceled = new Set()
 const sabrPaused = new Set()
-let sabrActive = 0
+let sabrActiveWeight = 0
 const sabrWaiters = []
+const downloadMetadataUpdatedAt = new Map()
+const DOWNLOAD_PROGRESS_UPDATE_MS = 250
 
-async function acquireSabrSlot() {
-  const limit = Number(localStorage.getItem('freetube-download-concurrency') || 1)
-  if (sabrActive < Math.max(1, Math.min(5, limit))) {
-    sabrActive++
-    return
-  }
-  await new Promise(resolve => sabrWaiters.push(resolve))
-  sabrActive++
+function sabrBudget() {
+  const limit = Number(localStorage.getItem('freetube-download-concurrency') || DEFAULT_DOWNLOAD_CONCURRENCY)
+  return Math.max(1, Math.min(5, limit))
 }
 
-function releaseSabrSlot() {
-  sabrActive--
-  sabrWaiters.shift()?.()
+function sabrWeight(maxHeight) {
+  return Number(maxHeight) >= 1080 ? 2 : 1
+}
+
+async function acquireSabrSlot(requestedWeight) {
+  const weight = Math.min(requestedWeight, sabrBudget())
+  if (sabrActiveWeight + weight <= sabrBudget()) {
+    sabrActiveWeight += weight
+    return weight
+  }
+  return new Promise(resolve => sabrWaiters.push({ weight, resolve }))
+}
+
+function releaseSabrSlot(weight) {
+  sabrActiveWeight -= weight
+  for (let index = 0; index < sabrWaiters.length; index++) {
+    const waiter = sabrWaiters[index]
+    if (sabrActiveWeight + waiter.weight <= sabrBudget()) {
+      sabrWaiters.splice(index, 1)
+      sabrActiveWeight += waiter.weight
+      waiter.resolve(waiter.weight)
+      break
+    }
+  }
 }
 
 function readDownloadMetadata() {
@@ -151,12 +170,17 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
   sabrCanceled.delete(download.downloadId)
   sabrPaused.delete(download.downloadId)
   sabrStarting.add(download.downloadId)
-  await acquireSabrSlot()
-  logSabrTimestamp(download.downloadId, 'slot-acquired')
+  const slotWeight = await acquireSabrSlot(sabrWeight(selection.maxHeight))
+  logSabrTimestamp(download.downloadId, 'slot-acquired', { weight: slotWeight })
   const scheme = `sabr-${download.downloadId.replaceAll('-', '')}`
   const manifestSrc = `${download.manifestSrc}#${scheme.slice(5)}`
   const video = document.createElement('video')
   const player = new shaka.Player(video)
+  player.configure?.({
+    abr: { enabled: false },
+    streaming: { bufferingGoal: 1, rebufferingGoal: 0.1, bufferBehind: 0 }
+  })
+  logSabrTimestamp(download.downloadId, 'player-created')
   const manifestRef = { value: null }
   let storage = null
   let lastLoggedPercent = -1
@@ -167,18 +191,35 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
   let lastTelemetryAt = Date.now()
   let lastTelemetryReceived = 0
   let lastTelemetrySpeed = 0
+  let storageStarted = false
+  let storageRequestNumber = null
+  let mediaBodyLogged = false
   setupSabrScheme(download.sabrData, () => player, () => manifestRef.value, 640, 360, scheme, bytes => {
     transportBytes += bytes
+  }, timing => {
+    const storageRequestStarted = storageStarted && storageRequestNumber === null && timing.event === 'sabr-request-start'
+    const firstMediaBody = timing.event === 'sabr-first-media-body' && !mediaBodyLogged
+    if (timing.requestNumber === 0 || storageRequestStarted || firstMediaBody) {
+      if (storageRequestStarted) storageRequestNumber = timing.requestNumber
+      if (firstMediaBody) mediaBodyLogged = true
+      logSabrTimestamp(download.downloadId, timing.event, { requestNumber: timing.requestNumber, status: timing.status, bytes: timing.bytes, isInit: timing.isInit })
+    } else if (timing.requestNumber === storageRequestNumber) {
+      logSabrTimestamp(download.downloadId, timing.event, { requestNumber: timing.requestNumber, status: timing.status, bytes: timing.bytes, isInit: timing.isInit })
+    }
   })
+  logSabrTimestamp(download.downloadId, 'scheme-ready')
   try {
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped before start')
+    logSabrTimestamp(download.downloadId, 'player-load-start')
     await player.load(manifestSrc, null, download.manifestMimeType)
+    logSabrTimestamp(download.downloadId, 'player-load-complete')
     logSabrTimestamp(download.downloadId, 'offline-player-loaded')
     manifestRef.value = player.getManifest()
     const selectTracks = tracks => selectSabrStorageTracks(tracks, selection)
     const [selectedTrack] = selectTracks(player.getVariantTracks())
     log('SABR track selected', { id: download.downloadId, total: stableTotal, exact: totalExact, selected: { height: selectedTrack.height, video: selectedTrack.originalVideoId, audio: selectedTrack.originalAudioId } })
     storage = new shaka.offline.Storage(player)
+    logSabrTimestamp(download.downloadId, 'storage-created')
     storage.configure({
       offline: {
         trackSelectionCallback: selectTracks,
@@ -216,6 +257,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
     })
     if (sabrPaused.has(download.downloadId) || sabrCanceled.has(download.downloadId)) throw new Error('SABR download stopped before storage')
     logSabrTimestamp(download.downloadId, 'store-started')
+    storageStarted = true
     const operation = storage.store(manifestSrc, {}, download.manifestMimeType)
     sabrOperations.set(download.downloadId, operation)
     const content = await operation.promise
@@ -237,7 +279,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
     sabrStarting.delete(download.downloadId)
     await storage?.destroy()
     await player.destroy()
-    releaseSabrSlot()
+    releaseSabrSlot(slotWeight)
   }
 }
 
@@ -381,6 +423,9 @@ export function mergeDownloadProgress(download, detail, native = null) {
 }
 
 export function updateDownloadMetadata(downloadId, changes) {
+  const now = Date.now()
+  const lastUpdatedAt = downloadMetadataUpdatedAt.get(downloadId) || 0
+  if (changes.status === 'downloading' && now - lastUpdatedAt < DOWNLOAD_PROGRESS_UPDATE_MS) return
   const downloads = readDownloadMetadata()
   const download = downloads.find(item => item.downloadId === downloadId)
   if (!download) return
@@ -392,6 +437,8 @@ export function updateDownloadMetadata(downloadId, changes) {
   Object.assign(download, changes)
   if (statusChanged || changes.phase || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, phase: changes.phase, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+  if (changes.status === 'downloading') downloadMetadataUpdatedAt.set(downloadId, now)
+  else downloadMetadataUpdatedAt.delete(downloadId)
   if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
     window.dispatchEvent(new CustomEvent('android-download', { detail: { id: downloadId, ...changes } }))
   }
@@ -427,7 +474,7 @@ export async function downloadProgressiveVideo(video) {
   const suppliedTotal = positiveBytes(video.total)
   const total = video.audioUrl ? (videoTotal > 0 && audioTotal > 0 ? videoTotal + audioTotal : 0) : suppliedTotal || videoTotal
   const totalExact = total > 0
-  android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || 1))
+  android.setDownloadConcurrency?.(Number(localStorage.getItem('freetube-download-concurrency') || DEFAULT_DOWNLOAD_CONCURRENCY))
   const defaultUri = android.createDownloadFile?.(downloadDirectory(), `${fileName}.part`) || ''
   const dialog = defaultUri
     ? { canceled: false, uri: defaultUri }

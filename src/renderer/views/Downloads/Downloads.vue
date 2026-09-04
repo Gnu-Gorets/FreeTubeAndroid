@@ -328,46 +328,47 @@ async function remove(download) {
 async function recoverSabrDownloads() {
   if (sabrRecoveryRunning) return
   sabrRecoveryRunning = true
-  try {
-    let download
-    while ((download = downloads.value.find(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData))) {
-      const progress = download.total > 0 ? 0 : null
-      Object.assign(download, { status: 'downloading', progress, received: 0, speedBps: 0, etaSeconds: 0 })
-      updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: 0, speedBps: 0, etaSeconds: 0 })
-      try {
-        const recovered = await recoverSabrDownload(download, (content, progress, total, totalExact) => {
-          if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
-          Object.assign(download, { progress, received: content?.size || 0, total: total || 0, totalExact })
-          updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total, totalExact })
-        })
-        Object.assign(download, recovered, { status: 'completed', phase: 'completed', interrupted: false })
-        updateDownloadMetadata(download.downloadId, {
-          phase: 'completed',
-          status: 'completed',
-          progress: download.progress,
-          received: download.received,
-          total: download.total,
-          totalExact: download.totalExact,
-          offlineUri: download.offlineUri,
-          localPath: download.localPath,
-          fileName: download.fileName,
-          error: null,
-          completedAt: Date.now(),
-          interrupted: false
-        })
-      } catch (error) {
-        if (isSabrDownloadPaused(download.downloadId)) {
-          Object.assign(download, { status: 'paused', error: null })
-          updateDownloadMetadata(download.downloadId, { status: 'paused', interrupted: true, error: null })
-        } else if (isSabrDownloadCanceled(download.downloadId)) {
-          Object.assign(download, { status: 'canceled', error: null })
-          updateDownloadMetadata(download.downloadId, { status: 'canceled', error: null })
-        } else {
-          Object.assign(download, { status: 'failed', error: error.message || 'SABR recovery failed' })
-          updateDownloadMetadata(download.downloadId, { status: 'failed', error: download.error })
-        }
+  const recover = async download => {
+    const progress = download.total > 0 ? 0 : null
+    Object.assign(download, { status: 'downloading', progress, received: 0, speedBps: 0, etaSeconds: 0 })
+    updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: 0, speedBps: 0, etaSeconds: 0 })
+    try {
+      const recovered = await recoverSabrDownload(download, (content, progress, total, totalExact) => {
+        if (isSabrDownloadPaused(download.downloadId) || isSabrDownloadCanceled(download.downloadId)) return
+        Object.assign(download, { progress, received: content?.size || 0, total: total || 0, totalExact })
+        updateDownloadMetadata(download.downloadId, { status: 'downloading', progress, received: download.received, total: download.total, totalExact })
+      })
+      Object.assign(download, recovered, { status: 'completed', phase: 'completed', interrupted: false })
+      updateDownloadMetadata(download.downloadId, {
+        phase: 'completed',
+        status: 'completed',
+        progress: download.progress,
+        received: download.received,
+        total: download.total,
+        totalExact: download.totalExact,
+        offlineUri: download.offlineUri,
+        localPath: download.localPath,
+        fileName: download.fileName,
+        error: null,
+        completedAt: Date.now(),
+        interrupted: false
+      })
+    } catch (error) {
+      if (isSabrDownloadPaused(download.downloadId)) {
+        Object.assign(download, { status: 'paused', error: null })
+        updateDownloadMetadata(download.downloadId, { status: 'paused', interrupted: true, error: null })
+      } else if (isSabrDownloadCanceled(download.downloadId)) {
+        Object.assign(download, { status: 'canceled', error: null })
+        updateDownloadMetadata(download.downloadId, { status: 'canceled', error: null })
+      } else {
+        Object.assign(download, { status: 'failed', error: error.message || 'SABR recovery failed' })
+        updateDownloadMetadata(download.downloadId, { status: 'failed', error: download.error })
       }
     }
+  }
+  try {
+    const queued = downloads.value.filter(item => item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData)
+    await Promise.all(queued.map(recover))
   } finally {
     sabrRecoveryRunning = false
   }

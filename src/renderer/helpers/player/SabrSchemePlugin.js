@@ -290,6 +290,7 @@ async function doRequest(
   operationInputs,
   currentState,
   onSegmentBytes = null,
+  onRequestTiming = null,
 ) {
   let response
   /** @type {CompositeBuffer | null} */
@@ -348,8 +349,11 @@ async function doRequest(
     }
 
     const sabrURL = new URL(currentState.sabrStreamState.sabrUrl)
-    sabrURL.searchParams.set('rn', String(currentState.sabrStreamState.requestNumber++))
+    const requestNumber = currentState.sabrStreamState.requestNumber++
+    sabrURL.searchParams.set('rn', String(requestNumber))
+    onRequestTiming?.({ event: 'sabr-request-start', requestNumber, timestamp: Date.now() })
     response = await fetch(sabrURL.toString(), currentState.requestInit)
+    onRequestTiming?.({ event: 'sabr-response-headers', requestNumber, timestamp: Date.now(), status: response.status })
 
     operationInputs.headersReceived({})
 
@@ -358,8 +362,13 @@ async function doRequest(
 
     const reader = response.body.getReader()
     let readObj = await reader.read()
+    let firstBodyReported = false
 
     while (!readObj.done && !currentState.abortStatus.finished) {
+      if (!firstBodyReported && readObj.value?.byteLength > 0) {
+        firstBodyReported = true
+        onRequestTiming?.({ event: operationInputs.isInit ? 'sabr-first-body' : 'sabr-first-media-body', requestNumber, timestamp: Date.now(), bytes: readObj.value.byteLength, isInit: operationInputs.isInit })
+      }
       if (chunkedDataBuffer) {
         chunkedDataBuffer.append(readObj.value)
       } else {
@@ -577,7 +586,7 @@ async function doRequest(
     currentState.abortStatus.timedOut = false
 
     currentState.abortStatus.finished = false
-    return doRequest(operationInputs, currentState, onSegmentBytes)
+    return doRequest(operationInputs, currentState, onSegmentBytes, onRequestTiming)
   } else if (invalidPoToken) {
     throw new ShakaError(
       ShakaError.Severity.CRITICAL,
@@ -635,9 +644,10 @@ async function doRequest(
  * @param {import('vue').ComputedRef<number>} playerHeight
  * @param {string} scheme
  * @param {(bytes: number) => void} onSegmentBytes
+ * @param {(timing: {event: string, requestNumber: number, timestamp: number, status?: number, bytes?: number, isInit?: boolean}) => void} onRequestTiming
  * @return SabrStream
  */
-export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, playerHeight, scheme = 'sabr', onSegmentBytes = null) {
+export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, playerHeight, scheme = 'sabr', onSegmentBytes = null, onRequestTiming = null) {
   console.warn('[SABR] scheme setup', { url: Boolean(sabrData?.url), hasPoToken: Boolean(sabrData?.poToken) })
   const eventEmitter = new EventEmitterLike()
 
@@ -867,7 +877,7 @@ export function setupSabrScheme(sabrData, getPlayer, getManifest, playerWidth, p
       cumulativeRetryDueToNextRequestPolicy: 0,
     }
 
-    const pendingRequest = doRequest(opInputs, currentState, onSegmentBytes)
+    const pendingRequest = doRequest(opInputs, currentState, onSegmentBytes, onRequestTiming)
 
     const op = new AbortableOperation(pendingRequest, () => {
       abortStatus.cancelled = true

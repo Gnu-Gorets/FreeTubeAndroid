@@ -35,19 +35,19 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { awaitAsyncResult } from '../helpers/android/jsinterface'
-import { digitsOnly } from '../helpers/android/download-settings.mjs'
+import { DEFAULT_DOWNLOAD_CONCURRENCY, digitsOnly } from '../helpers/android/download-settings.mjs'
 
 const { t } = useI18n()
 const DEFAULT_DIRECTORY = 'data://downloads/FreeTube'
 const LEGACY_DEFAULT_DIRECTORIES = ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube']
-const concurrency = ref(localStorage.getItem('freetube-download-concurrency') || '1')
+const concurrency = ref(localStorage.getItem('freetube-download-concurrency') || String(DEFAULT_DOWNLOAD_CONCURRENCY))
 const savedDirectory = localStorage.getItem('freetube-download-directory')
 const directory = ref(!savedDirectory || LEGACY_DEFAULT_DIRECTORIES.includes(savedDirectory) ? DEFAULT_DIRECTORY : savedDirectory)
 if (directory.value !== savedDirectory) localStorage.setItem('freetube-download-directory', directory.value)
 
 function saveConcurrency() {
   concurrency.value = digitsOnly(concurrency.value)
-  localStorage.setItem('freetube-download-concurrency', concurrency.value || '1')
+  localStorage.setItem('freetube-download-concurrency', concurrency.value || String(DEFAULT_DOWNLOAD_CONCURRENCY))
   window.dispatchEvent(new CustomEvent('download-settings-changed'))
 }
 
