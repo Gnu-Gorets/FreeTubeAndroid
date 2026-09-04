@@ -964,7 +964,12 @@ download_sabr_ui_progress() {
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait "window.__ftTest?.downloads().some(d => d.id === '$id' && d.status === 'completed')" "$TIMEOUT" || return 1
+  local phase
+  phase=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.phase" | tr -d '"')
+  [[ "$phase" == exporting || "$phase" == completed ]] || { echo "[download-sabr-ui-progress] unexpected phase after store completion: $phase"; return 1; }
   cdp_wait_status "$id" completed || return 1
+  cdp_wait "window.__ftTest?.downloads().some(d => d.id === '$id' && d.phase === 'completed' && d.localPath)" "$DOWNLOAD_TIMEOUT" || return 1
   adb_cmd logcat -d -v threadtime > "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt"
   grep -q 'SABR store complete' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1
   grep -q 'metadata update.*"status":"completed"' "$ARTIFACT_DIR/download-sabr-ui-progress-logcat.txt" || return 1

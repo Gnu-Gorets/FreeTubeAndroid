@@ -242,7 +242,7 @@ export async function storeSabrDownload(download, onProgress, selection = {}) {
 }
 
 export async function recoverSabrDownload(download, onProgress) {
-  if (download.status === 'processing' && download.offlineUri) {
+  if (download.offlineUri && ['processing', 'exporting', 'export-failed'].includes(download.phase || download.status)) {
     return { ...await exportSabrDownload(download, download.title, download.downloadId), offlineUri: download.offlineUri }
   }
   const content = await storeSabrDownload(download, onProgress, download)
@@ -375,7 +375,7 @@ export function updateDownloadMetadata(downloadId, changes) {
   if (!download) return
   const statusChanged = changes.status && changes.status !== download.status
   Object.assign(download, changes)
-  if (statusChanged || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })
+  if (statusChanged || changes.phase || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, phase: changes.phase, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
   if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
     window.dispatchEvent(new CustomEvent('android-download', { detail: { id: downloadId, ...changes } }))
