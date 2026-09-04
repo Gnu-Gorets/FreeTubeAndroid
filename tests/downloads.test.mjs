@@ -220,12 +220,34 @@ test('SABR preflight uses exact source lengths matched by itag and lastModified'
     originalVideoId: '137-111-video', originalAudioId: '140-333-en'
   }
   const result = await preflightSabrDownload(sabrPlayer(track), sabrManifest([
-    { itag: 137, lastModified: '111', contentLength: '1000' },
-    { itag: 140, lastModified: '222', contentLength: '200' },
-    { itag: 140, lastModified: '333', contentLength: '300' }
+    { itag: 137, lastModified: '111', mimeType: 'video/mp4', height: 720, contentLength: '1000' },
+    { itag: 140, lastModified: '222', mimeType: 'audio/mp4', contentLength: '200' },
+    { itag: 140, lastModified: '333', mimeType: 'audio/mp4', contentLength: '300' }
   ]), 720)
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
     videoId: '137-111-video', audioId: '140-333-en', total: 1300, totalExact: true
+  })
+})
+
+test('SABR preflight uses source format matching requested quality when player exposes only 1440p', async () => {
+  const playerTrack = {
+    type: 'variant', height: 1440, bandwidth: 1,
+    videoMimeType: 'video/mp4', audioMimeType: 'audio/mp4',
+    originalVideoId: '400-444-video', originalAudioId: '140-999-audio'
+  }
+  const formats = [
+    { itag: 400, lastModified: '444', mimeType: 'video/mp4', height: 1440, bitrate: 4, contentLength: '144000' },
+    { itag: 397, lastModified: '480', mimeType: 'video/mp4', height: 480, bitrate: 3, contentLength: '48000' },
+    { itag: 396, lastModified: '360', mimeType: 'video/mp4', height: 360, bitrate: 2, contentLength: '36000' },
+    { itag: 140, lastModified: '999', mimeType: 'audio/mp4', bitrate: 1, contentLength: '1000' }
+  ]
+  const totals = await Promise.all([1440, 480, 360].map(async height => {
+    const result = await preflightSabrDownload(sabrPlayer(playerTrack), sabrManifest(formats), height)
+    return result.total
+  }))
+  assert.deepEqual(totals, [145000, 49000, 37000])
+  assert.deepEqual(JSON.parse(JSON.stringify(await preflightSabrDownload(sabrPlayer(playerTrack), sabrManifest(formats), 360))), {
+    videoId: '396-360-', audioId: '140-999-audio', total: 37000, totalExact: true
   })
 })
 

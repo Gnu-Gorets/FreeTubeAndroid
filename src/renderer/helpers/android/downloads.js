@@ -99,8 +99,8 @@ function selectSabrStorageTracks(tracks = [], selection = {}) {
       (!selection.maxHeight || track.height <= selection.maxHeight) &&
       track.videoMimeType?.startsWith('video/mp4') &&
       track.audioMimeType?.startsWith('audio/mp4') &&
-      track.originalVideoId === selection.videoTrackId &&
-      track.originalAudioId === selection.audioTrackId)
+      track.originalVideoId?.startsWith(selection.videoTrackId) &&
+      track.originalAudioId?.startsWith(selection.audioTrackId))
     : null
   const selected = exact || selectSabrDownloadTrack(tracks, selection.maxHeight)
   if (!selected) throw new Error('SABR download has no MP4 track')
@@ -306,11 +306,25 @@ export async function preflightSabrDownload(player, manifestSrc, maxHeight) {
   const selectedTrack = selectSabrDownloadTrack(player?.getVariantTracks?.() || [], maxHeight)
   if (!manifest || !selectedTrack) throw new Error('SABR download is not ready')
   const formats = parseSabrFormats(manifestSrc)
-  const find = id => formats.find(format => id?.startsWith(`${format.itag}-${format.lastModified}-`))
-  const videoLength = Number(find(selectedTrack.originalVideoId)?.contentLength)
-  const audioLength = Number(find(selectedTrack.originalAudioId)?.contentLength)
+  const pick = (mimeType, height = Infinity) => formats
+    .filter(format => format.mimeType?.startsWith(mimeType) && (height === Infinity || (Number.isFinite(format.height) && format.height <= height)))
+    .sort((a, b) => (b.height - a.height) || ((b.bitrate || 0) - (a.bitrate || 0)))[0]
+  const formatId = format => `${format.itag}-${format.lastModified}-`
+  const find = id => formats.find(format => id?.startsWith(formatId(format)))
+  const selectedVideo = find(selectedTrack.originalVideoId)
+  const selectedAudio = find(selectedTrack.originalAudioId)
+  const selectedIsEligible = selectedTrack.height <= (maxHeight || Infinity) && selectedVideo?.mimeType?.startsWith('video/mp4') && selectedAudio?.mimeType?.startsWith('audio/mp4')
+  const video = selectedIsEligible ? selectedVideo : pick('video/mp4', maxHeight) || pick('video/mp4')
+  const audio = selectedIsEligible ? selectedAudio : pick('audio/mp4')
+  const videoLength = Number(video?.contentLength)
+  const audioLength = Number(audio?.contentLength)
   if ([videoLength, audioLength].every(value => Number.isFinite(value) && Number.isInteger(value) && value > 0)) {
-    return { videoId: selectedTrack.originalVideoId, audioId: selectedTrack.originalAudioId, total: videoLength + audioLength, totalExact: true }
+    return {
+      videoId: selectedTrack.originalVideoId?.startsWith(formatId(video)) ? selectedTrack.originalVideoId : formatId(video),
+      audioId: selectedTrack.originalAudioId?.startsWith(formatId(audio)) ? selectedTrack.originalAudioId : formatId(audio),
+      total: videoLength + audioLength,
+      totalExact: true
+    }
   }
   const estimate = await estimateSabrSize(manifest, selectedTrack)
   return { videoId: selectedTrack.originalVideoId, audioId: selectedTrack.originalAudioId, total: estimate.total, totalExact: false }

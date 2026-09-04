@@ -35,7 +35,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
+                        downloads-page, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-external-delete,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -336,6 +336,17 @@ cdp_start_sabr_download() {
     if [[ $(cdp_eval "(() => { const buttons = [...document.querySelectorAll('.prompt button')]; const button = buttons.at(-1); if (!button) return false; button.click(); return true })()" 2>/dev/null || true) == true ]]; then break; fi
     sleep 1
   done
+  for _ in $(seq 1 "$TIMEOUT"); do
+    [[ $(cdp_eval "JSON.parse(localStorage.getItem('freetube-downloads') || '[]').filter(d => d.createdAt >= $marker).length" 2>/dev/null || true) -ge "$expected" ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+cdp_start_sabr_download_quality() {
+  local marker="$1" expected="$2" label="$3"
+  [[ $(cdp_eval "(() => { const button = document.querySelector('[data-download-action=\"start-download\"] button'); if (!button) return false; button.click(); return true })()") == true ]] || return 1
+  cdp_click_prompt_option "$label" || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
     [[ $(cdp_eval "JSON.parse(localStorage.getItem('freetube-downloads') || '[]').filter(d => d.createdAt >= $marker).length" 2>/dev/null || true) -ge "$expected" ]] && return 0
     sleep 1
@@ -926,6 +937,46 @@ PY
   cdp_cleanup_download "$id"
 }
 
+download_sabr_quality_totals() {
+  clean_logs
+  open_download_video || return 1
+  ensure_cdp || return 1
+  local marker ids
+  marker=$(cdp_eval 'Date.now()')
+  cdp_eval "localStorage.setItem('freetube-download-concurrency', '3'); true" >/dev/null
+  cdp_start_sabr_download_quality "$marker" 1 '1440p (SABR)' || return 1
+  cdp_start_sabr_download_quality "$marker" 2 '480p (SABR)' || return 1
+  cdp_start_sabr_download_quality "$marker" 3 '360p (SABR)' || return 1
+  open_downloads_cdp || return 1
+  cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $marker)" >"$ARTIFACT_DIR/download-sabr-quality-totals-start.json"
+  screenshot download-sabr-quality-totals-start
+  dump_ui download-sabr-quality-totals-start || return 1
+  ids=$(cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $marker).map(d => d.id).join('|')" | tr -d '"')
+  python3 - "$ARTIFACT_DIR/download-sabr-quality-totals-start.json" <<'PY'
+import json
+import sys
+
+items = json.load(open(sys.argv[1], encoding='utf-8'))
+assert [item['selectedFormat'] for item in items] == ['1440p (SABR)', '480p (SABR)', '360p (SABR)'], items
+assert len({item['total'] for item in items}) == 3 and all(item['total'] > 0 for item in items), items
+PY
+  [[ $? -eq 0 ]] || return 1
+  IFS='|' read -ra download_ids <<<"$ids"
+  local id
+  for id in "${download_ids[@]}"; do cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1; done
+  cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $marker)" >"$ARTIFACT_DIR/download-sabr-quality-totals-complete.json"
+  python3 - "$ARTIFACT_DIR/download-sabr-quality-totals-complete.json" <<'PY'
+import json
+import sys
+
+items = json.load(open(sys.argv[1], encoding='utf-8'))
+assert len(items) == 3, items
+assert all(item['received'] == item['total'] and item['totalExact'] is True for item in items), items
+PY
+  [[ $? -eq 0 ]] || return 1
+  for id in "${download_ids[@]}"; do cdp_cleanup_download "$id" || return 1; done
+}
+
 download_sabr_ui_progress() {
   echo '[download-sabr-ui-progress] opening video'
   clean_logs
@@ -1282,6 +1333,7 @@ run_downloads_suite() {
   run_test download-quality download_quality
   run_test download-sabr-telemetry download_sabr_telemetry
   run_test download-sabr-total download_sabr_total
+  run_test download-sabr-quality-totals download_sabr_quality_totals
   run_test download-sabr-ui-progress download_sabr_ui_progress
   run_test download-sabr-pause-resume download_sabr_pause_resume
   run_test download-notification download_notification
@@ -1367,6 +1419,7 @@ case "$TEST" in
   download-quality) run_test download-quality download_quality ;;
   download-sabr-telemetry) run_test download-sabr-telemetry download_sabr_telemetry ;;
   download-sabr-total) run_test download-sabr-total download_sabr_total ;;
+  download-sabr-quality-totals) run_test download-sabr-quality-totals download_sabr_quality_totals ;;
   download-sabr-ui-progress) run_test download-sabr-ui-progress download_sabr_ui_progress ;;
   download-sabr-pause-resume) run_test download-sabr-pause-resume download_sabr_pause_resume ;;
   download-notification) run_test download-notification download_notification ;;
