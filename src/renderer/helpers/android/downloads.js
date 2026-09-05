@@ -3,7 +3,6 @@ import shaka from 'shaka-player'
 import { requestSaveDialog } from './dialogs'
 import { setupSabrScheme } from '../player/SabrSchemePlugin'
 import { DEFAULT_DOWNLOAD_CONCURRENCY } from './download-settings.mjs'
-import { getDownloadNotificationPayload } from './download-notification.mjs'
 
 const log = (...args) => console.warn('[Downloads]', ...args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg))
 
@@ -551,7 +550,6 @@ export async function downloadProgressiveVideo(video) {
   if (dialog.canceled) return
 
   const downloadId = globalThis.crypto?.randomUUID?.() ?? `download-${Date.now()}`
-  const eventName = 'android-download'
   const metadata = {
     downloadId,
     videoId: video.id,
