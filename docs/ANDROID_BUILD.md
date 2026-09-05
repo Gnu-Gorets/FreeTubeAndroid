@@ -38,7 +38,7 @@ The image currently provides:
 - Node.js 24;
 - pnpm 10;
 - JDK 17;
-- Android platform 34;
-- Android build tools 34.0.0.
+- Android platform 36;
+- Android build tools 36.0.0.
 
-These versions match current `dev` Android project configuration. Change them together with `android/app/build.gradle.kts`, not independently.
+These versions match current Android project configuration. Change them together with `android/app/build.gradle.kts`, not independently.
