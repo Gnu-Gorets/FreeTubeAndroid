@@ -148,7 +148,7 @@ function releaseSabrSlot(weight) {
   }
 }
 
-function readDownloadMetadata() {
+export function readDownloadMetadata() {
   try {
     const downloads = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
     return Array.isArray(downloads) ? downloads : []
@@ -157,12 +157,43 @@ function readDownloadMetadata() {
   }
 }
 
-export function recordDownloadMetadata(metadata) {
-  const downloads = readDownloadMetadata()
-  log('metadata create', { id: metadata.downloadId, selectedFormat: metadata.selectedFormat, status: metadata.status })
-  downloads.push(metadata)
+export function writeDownloadMetadata(downloads) {
   localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
   return downloads
+}
+
+export function normalizeDownloadMetadata(downloads) {
+  if (!Array.isArray(downloads)) return []
+  return downloads.map(download => {
+    if (!download || typeof download !== 'object' || Array.isArray(download)) return download
+    const downloadId = download.downloadId || download.id || (download.videoId && `legacy-${download.videoId}-${download.createdAt || download.localPath || 'unknown'}`)
+    if (!downloadId) return download
+    return {
+      ...download,
+      downloadId,
+      videoId: download.videoId || '',
+      title: download.title || download.fileName || downloadId,
+      thumbnail: download.thumbnail || '',
+      engine: download.engine || (download.localPath ? 'native' : 'sabr')
+    }
+  })
+}
+
+export function upsertDownloadMetadata(metadata) {
+  const downloads = readDownloadMetadata()
+  const index = downloads.findIndex(item => item.downloadId === metadata.downloadId)
+  if (index === -1) downloads.push(metadata)
+  else downloads[index] = { ...downloads[index], ...metadata }
+  return writeDownloadMetadata(downloads)
+}
+
+export function removeDownloadMetadata(downloadId) {
+  return writeDownloadMetadata(readDownloadMetadata().filter(item => item.downloadId !== downloadId))
+}
+
+export function recordDownloadMetadata(metadata) {
+  log('metadata create', { id: metadata.downloadId, selectedFormat: metadata.selectedFormat, status: metadata.status })
+  return upsertDownloadMetadata(metadata)
 }
 
 export async function storeSabrDownload(download, onProgress, selection = {}) {
@@ -351,28 +382,30 @@ export function getProgressSnapshot(content, shakaProgress, knownTotal = 0, tota
 export async function preflightSabrDownload(player, manifestSrc, maxHeight) {
   const manifest = player?.getManifest?.()
   const selectedTrack = selectSabrDownloadTrack(player?.getVariantTracks?.() || [], maxHeight)
-  if (!manifest || !selectedTrack) throw new Error('SABR download is not ready')
+  if (!manifest) throw new Error('SABR download is not ready')
   const formats = parseSabrFormats(manifestSrc)
   const pick = (mimeType, height = Infinity) => formats
     .filter(format => format.mimeType?.startsWith(mimeType) && (height === Infinity || (Number.isFinite(format.height) && format.height <= height)))
     .sort((a, b) => (b.height - a.height) || ((b.bitrate || 0) - (a.bitrate || 0)))[0]
   const formatId = format => `${format.itag}-${format.lastModified}-`
   const find = id => formats.find(format => id?.startsWith(formatId(format)))
-  const selectedVideo = find(selectedTrack.originalVideoId)
-  const selectedAudio = find(selectedTrack.originalAudioId)
-  const selectedIsEligible = selectedTrack.height <= (maxHeight || Infinity) && selectedVideo?.mimeType?.startsWith('video/mp4') && selectedAudio?.mimeType?.startsWith('audio/mp4')
+  const selectedVideo = selectedTrack && find(selectedTrack.originalVideoId)
+  const selectedAudio = selectedTrack && find(selectedTrack.originalAudioId)
+  const selectedIsEligible = selectedTrack && selectedTrack.height <= (maxHeight || Infinity) && selectedVideo && selectedAudio && (!selectedVideo.mimeType || selectedVideo.mimeType.startsWith('video/mp4')) && (!selectedAudio.mimeType || selectedAudio.mimeType.startsWith('audio/mp4'))
   const video = selectedIsEligible ? selectedVideo : pick('video/mp4', maxHeight) || pick('video/mp4')
   const audio = selectedIsEligible ? selectedAudio : pick('audio/mp4')
+  if (!video || !audio) throw new Error('SABR download is not ready')
   const videoLength = Number(video?.contentLength)
   const audioLength = Number(audio?.contentLength)
   if ([videoLength, audioLength].every(value => Number.isFinite(value) && Number.isInteger(value) && value > 0)) {
     return {
-      videoId: selectedTrack.originalVideoId?.startsWith(formatId(video)) ? selectedTrack.originalVideoId : formatId(video),
-      audioId: selectedTrack.originalAudioId?.startsWith(formatId(audio)) ? selectedTrack.originalAudioId : formatId(audio),
+      videoId: selectedTrack?.originalVideoId?.startsWith(formatId(video)) ? selectedTrack.originalVideoId : formatId(video),
+      audioId: selectedTrack?.originalAudioId?.startsWith(formatId(audio)) ? selectedTrack.originalAudioId : formatId(audio),
       total: videoLength + audioLength,
       totalExact: true
     }
   }
+  if (!selectedTrack) throw new Error('SABR download is not ready')
   const estimate = await estimateSabrSize(manifest, selectedTrack)
   return { videoId: selectedTrack.originalVideoId, audioId: selectedTrack.originalAudioId, total: estimate.total, totalExact: false }
 }
@@ -449,7 +482,7 @@ export function updateDownloadMetadata(downloadId, changes) {
   const statusChanged = changes.status && changes.status !== download.status
   Object.assign(download, changes)
   if (statusChanged || changes.phase || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, phase: changes.phase, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })
-  localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+  writeDownloadMetadata(downloads)
   if (changes.status === 'downloading') downloadMetadataUpdatedAt.set(downloadId, now)
   else downloadMetadataUpdatedAt.delete(downloadId)
   if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
@@ -538,7 +571,7 @@ export async function downloadProgressiveVideo(video) {
             metadata.fileName = fileName
             metadata.completedAt ??= Date.now()
           }
-          localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+          writeDownloadMetadata(downloads)
           if (['completed', 'failed', 'canceled'].includes(item.status)) {
             clearInterval(timer)
             item.status === 'completed' ? resolve() : reject(new Error(item.error || 'Download failed'))
@@ -557,7 +590,7 @@ export async function downloadProgressiveVideo(video) {
         Object.assign(metadata, getProgressSnapshot({ size: event.detail.received }, 0, event.detail.total, event.detail.totalExact ?? metadata.totalExact))
         const notification = getDownloadNotificationPayload({ downloadId, title: video.title, status: metadata.status || 'downloading', progress: metadata.progress ?? 0, speedBps: metadata.speedBps || 0, received: metadata.received || 0, total: metadata.total || 0 })
         android.updateDownloadNotification?.(notification.downloadId, notification.title, metadata.status || 'downloading', notification.progress, metadata.speedBps || 0, metadata.received || 0, metadata.total || 0)
-        localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+        writeDownloadMetadata(downloads)
         return
       }
       if (event.detail.status === 'completed') {
@@ -571,7 +604,7 @@ export async function downloadProgressiveVideo(video) {
         android.finishDownloadNotification?.(downloadId)
         metadata.fileName = fileName
         metadata.completedAt = Date.now()
-        localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+        writeDownloadMetadata(downloads)
         resolve()
       } else if (event.detail.status === 'failed' || event.detail.status === 'canceled') {
         window.removeEventListener(eventName, onEvent)
@@ -579,7 +612,7 @@ export async function downloadProgressiveVideo(video) {
         metadata.status = event.detail.status
         android.finishDownloadNotification?.(downloadId)
         metadata.error = event.detail.error || null
-        localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+        writeDownloadMetadata(downloads)
         reject(new Error(event.detail.error || 'Download failed'))
       }
     }

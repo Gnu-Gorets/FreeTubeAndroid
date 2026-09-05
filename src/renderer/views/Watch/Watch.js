@@ -40,13 +40,13 @@ import {
   youtubeImageUrlToInvidious
 } from '../../helpers/api/invidious'
 import { sortCaptions } from '../../helpers/player/utils'
-import { getOfflinePlaybackState } from '../../helpers/player/playback-source.mjs'
+import { getDownloadedSources, getOfflinePlaybackState, getPlaybackSource } from '../../helpers/player/playback-source.mjs'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { getDownloadNotificationPayload } from '../../helpers/android/download-notification.mjs'
 import { createMediaSession } from '../../helpers/android/media-session'
-import { getProgressSnapshot, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, preflightSabrDownload, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, isSabrDownloadCanceled, isSabrDownloadPaused, logSabrTimestamp, normalizeDownloadMetadata, preflightSabrDownload, readDownloadMetadata, recordDownloadMetadata, storeSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -154,6 +154,7 @@ export default defineComponent({
       sabrData: null,
       legacyFormats: [],
       downloadFormats: [],
+      downloadedFormats: [],
       downloadOptions: [],
       captions: [],
       /** @type {'EQUIRECTANGULAR' | 'EQUIRECTANGULAR_THREED_TOP_BOTTOM' | 'MESH'| null} */
@@ -271,7 +272,8 @@ export default defineComponent({
       return !this.hideRecommendedVideos || (!this.hideLiveChat && this.isLive) || this.watchingPlaylist
     },
     autoplayPossible: function () {
-      return (!this.watchingPlaylist && !this.hideRecommendedVideos && !!this.nextRecommendedVideo) ||
+      return (!!this.$route.query.offlinePlaylist && this.getOfflinePlaylistDownloads().some(download => download.downloadId === this.$route.query.offline)) ||
+      (!this.watchingPlaylist && !this.hideRecommendedVideos && !!this.nextRecommendedVideo) ||
       (this.watchingPlaylist && !this.$refs.watchVideoPlaylist?.shouldStopDueToPlaylistEnd)
     },
     hideChapters: function () {
@@ -359,6 +361,7 @@ export default defineComponent({
   },
   created: function () {
     this.videoId = this.$route.params.id
+    this.loadDownloadedFormats()
     this.activeFormat = this.defaultVideoFormat
     // So that the value for this session remains unchanged even if setting changed
     this.autoplayNextRecommendedVideo = this.autoplayNextRecommendedVideoByDefault
@@ -393,6 +396,7 @@ export default defineComponent({
 
       // react to route changes...
       this.videoId = this.$route.params.id
+      this.loadDownloadedFormats()
       this.resetVideoState()
 
       this.firstLoad = true
@@ -402,6 +406,13 @@ export default defineComponent({
       this.checkIfTimestamp()
       this.checkIfPlaylist()
       this.setViewingModeOnRouteChange()
+
+      if (this.$route.query.offline || this.$route.query.offlinePlaylist) {
+        if (this.loadOfflineDownload()) return
+        this.errorMessage = this.$t('Downloads.Player source unavailable')
+        this.isLoading = false
+        return
+      }
 
       switch (this.backendPreference) {
         case 'local':
@@ -472,6 +483,11 @@ export default defineComponent({
       this.onMountedRun = true
 
       if (this.loadOfflineDownload()) return
+      if (this.$route.query.offlinePlaylist) {
+        this.errorMessage = this.$t('Downloads.Player source unavailable')
+        this.isLoading = false
+        return
+      }
 
       this.checkIfPlaylist()
 
@@ -493,19 +509,37 @@ export default defineComponent({
       this.resetAutoplayInterruptionTimeout()
     },
 
+    loadDownloadedFormats: function () {
+      try {
+        this.downloadedFormats = getDownloadedSources(
+          normalizeDownloadMetadata(readDownloadMetadata()),
+          this.videoId,
+          window.Android?.getLocalPlaybackUrl
+        )
+      } catch (error) {
+        console.error('[Downloads] unable to load downloaded formats', error)
+        this.downloadedFormats = []
+      }
+    },
+
     loadOfflineDownload: function () {
       const downloadId = this.$route.query.offline
-      if (!downloadId) return false
+      const videoId = this.$route.params.id
+      const playlist = String(this.$route.query.offlinePlaylist || '').split(',').filter(Boolean)
+      if (!downloadId && !playlist.length) return false
 
       let download = null
       try {
-        const stored = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
-        download = Array.isArray(stored) ? stored.find(item => item.downloadId === downloadId && item.status === 'completed') : null
+        const stored = normalizeDownloadMetadata(readDownloadMetadata())
+        download = Array.isArray(stored)
+          ? stored.find(item => item.status === 'completed' && (item.downloadId === downloadId || (!downloadId && !playlist.length && item.videoId === videoId)))
+          : null
       } catch (error) {
         console.error('[Downloads] unable to load offline playback metadata', error)
       }
+      if (!download) return false
 
-      const state = download && getOfflinePlaybackState(download, window.Android?.getLocalPlaybackUrl)
+      const state = getOfflinePlaybackState(download, window.Android?.getLocalPlaybackUrl)
       this.videoId = state?.videoId || this.$route.params.id
       this.offlinePlayback = true
       this.videoTitle = state?.title || ''
@@ -535,6 +569,32 @@ export default defineComponent({
       this.isLoading = false
       this.firstLoad = false
       return true
+    },
+
+    getOfflinePlaylistDownloads: function () {
+      const ids = String(this.$route.query.offlinePlaylist || '').split(',').filter(Boolean)
+      if (!ids.length) return []
+      try {
+        const stored = normalizeDownloadMetadata(readDownloadMetadata())
+        return ids
+          .map(id => stored.find(download => download?.downloadId === id && download.status === 'completed'))
+          .filter(download => download && getPlaybackSource(download, window.Android?.getLocalPlaybackUrl))
+      } catch (error) {
+        console.error('[Downloads] unable to load offline playlist metadata', error)
+        return []
+      }
+    },
+
+    navigateOfflinePlaylist: function (direction) {
+      const downloads = this.getOfflinePlaylistDownloads()
+      const currentId = this.$route.query.offline
+      const index = downloads.findIndex(download => download.downloadId === currentId)
+      const target = downloads[index + direction]
+      if (!target) return
+      this.$router.push({
+        path: `/watch/${target.videoId}`,
+        query: { ...this.$route.query, offline: target.downloadId }
+      })
     },
 
     setViewingModeOnFirstLoad: function () {
@@ -1371,7 +1431,28 @@ export default defineComponent({
         return
       }
       const formats = options[0] ?? null
-      return this.downloadSabr(formats?.height, formats?.label, qualityClickAt)
+      if (!formats) {
+        const nativeFormat = getDownloadFormats([], this.downloadFormats)[0]
+        if (!nativeFormat) {
+          showToast(this.t('Video.Download unavailable'))
+          return
+        }
+        const video = nativeFormat.video
+        const audio = nativeFormat.audio
+        return downloadProgressiveVideo({
+          id: this.videoId,
+          title: this.videoTitle,
+          videoUrl: video.url,
+          audioUrl: audio?.url,
+          videoTotal: video.contentLength,
+          audioTotal: audio?.contentLength,
+          thumbnail: this.thumbnail,
+          sourceBackend: this.backendPreference,
+          selectedFormat: nativeFormat.label,
+          metadata: this.getDownloadMetadata()
+        })
+      }
+      return this.downloadSabr(formats.height, formats.label, qualityClickAt)
     },
 
     getDownloadMetadata() {
@@ -1400,7 +1481,15 @@ export default defineComponent({
       logSabrTimestamp(downloadId, 'selection', { height: maxHeight, videoId: this.videoId })
       let preflight
       try {
-        preflight = await preflightSabrDownload(this.$refs.player, this.manifestSrc, maxHeight)
+        for (let attempt = 0; attempt < 20; attempt++) {
+          try {
+            preflight = await preflightSabrDownload(this.$refs.player, this.manifestSrc, maxHeight)
+            break
+          } catch (error) {
+            if (error?.message !== 'SABR download is not ready' || attempt === 19) throw error
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
         logSabrTimestamp(downloadId, 'preflight-complete', { total: preflight.total, exact: preflight.totalExact })
       } catch (error) {
         console.error('[Downloads] SABR size preflight failed', error?.message || String(error), error?.stack)
@@ -1665,6 +1754,15 @@ export default defineComponent({
     },
 
     handleFormatChange: function (format) {
+      if (format?.type === 'downloaded') {
+        this.enableDownloadedFormat(format.source)
+        return
+      }
+      if (format === 'online') {
+        this.enableOnlineFormat()
+        return
+      }
+
       switch (format) {
         case 'dash':
           this.enableDashFormat()
@@ -1675,6 +1773,32 @@ export default defineComponent({
         case 'audio':
           this.enableAudioFormat()
           break
+      }
+    },
+
+    enableDownloadedFormat: function (downloaded) {
+      if (!downloaded?.source) return
+
+      this.activeFormat = 'offline'
+      this.manifestSrc = null
+      this.sabrData = null
+      this.offlineUri = downloaded.source.offlineUri || null
+      this.localVideoUrl = downloaded.source.localVideoUrl || null
+      this.manifestMimeType = downloaded.source.offlineUri ? 'application/dash+xml' : ''
+    },
+
+    enableOnlineFormat: function () {
+      this.offlinePlayback = false
+      this.activeFormat = this.defaultVideoFormat
+      this.offlineUri = null
+      this.localVideoUrl = null
+      this.manifestSrc = null
+      this.sabrData = null
+      this.errorMessage = null
+      if (!process.env.SUPPORTS_LOCAL_API || this.backendPreference === 'invidious') {
+        this.getVideoInformationInvidious()
+      } else {
+        this.getVideoInformationLocal()
       }
     },
 
@@ -1739,6 +1863,11 @@ export default defineComponent({
         return
       }
 
+      if (this.$route.query.offlinePlaylist) {
+        this.navigateOfflinePlaylist(1)
+        return
+      }
+
       if (this.watchingPlaylist && this.$refs.watchVideoPlaylist?.shouldStopDueToPlaylistEnd) {
         // Let `watchVideoPlaylist` handle end of playlist, no countdown needed
         this.$refs.watchVideoPlaylist.playNextVideo()
@@ -1787,7 +1916,9 @@ export default defineComponent({
     // Skip to the next video if in a playlist
     // else next recommended video if autoplay enabled
     handleSkipToNext: function () {
-      if (this.watchingPlaylist) {
+      if (this.$route.query.offlinePlaylist) {
+        this.navigateOfflinePlaylist(1)
+      } else if (this.watchingPlaylist) {
         this.$refs.watchVideoPlaylist?.playNextVideo()
       } else if (!this.hideRecommendedVideos && this.nextRecommendedVideo) {
         this.$router.push({
@@ -1799,7 +1930,11 @@ export default defineComponent({
 
     // Skip to the previous video in a playlist
     handleSkipToPrev: function () {
-      this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      if (this.$route.query.offlinePlaylist) {
+        this.navigateOfflinePlaylist(-1)
+      } else {
+        this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      }
     },
 
     abortAutoplayCountdown: function (hideToast = false) {

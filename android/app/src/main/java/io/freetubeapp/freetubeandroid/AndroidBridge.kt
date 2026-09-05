@@ -237,7 +237,11 @@ class AndroidBridge(
         val id = UUID.randomUUID().toString()
         pendingDirectoryRequest = id
         activity.runOnUiThread {
-            activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), MainActivity.DIRECTORY_REQUEST)
+            activity.startActivityForResult(
+                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),
+                MainActivity.DIRECTORY_REQUEST
+            )
         }
         return id
     }
@@ -255,8 +259,9 @@ class AndroidBridge(
             messages[id] = uri.toString()
             notifyMain(id, true)
         } catch (error: Exception) {
-            messages[id] = error.stackTraceToString()
-            notifyMain(id, false)
+            Log.w("FreeTubeDownload", "Unable to persist directory permission; using URI", error)
+            messages[id] = uri.toString()
+            notifyMain(id, true)
         }
     }
 

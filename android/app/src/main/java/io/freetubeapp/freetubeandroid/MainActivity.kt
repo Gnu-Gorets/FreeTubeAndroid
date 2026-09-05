@@ -91,8 +91,9 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 pendingDeepLink?.let {
-                    dispatchDeepLink(it)
+                    val deepLink = it
                     pendingDeepLink = null
+                    webView.postDelayed({ dispatchDeepLink(deepLink) }, 500)
                     setIntent(Intent(this@MainActivity, MainActivity::class.java))
                 }
             }
