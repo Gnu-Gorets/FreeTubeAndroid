@@ -1036,6 +1036,15 @@ test('Watch format picker passes downloaded source descriptor to player', () => 
   assert.ok(watchViewSource.includes(':downloaded-formats="downloadedFormats"'))
 })
 
+test('Downloaded Formats default to completed local source', () => {
+  assert.ok(watchVideoInfoSource.includes('props.downloadedFormats.length > 0'))
+  assert.ok(watchVideoInfoSource.includes("value: { type: 'downloaded', source: props.downloadedFormats[0] }"))
+  assert.ok(watchSource.includes("this.activeFormat = 'offline'"))
+  assert.ok(watchSource.includes('this.offlinePlayback = true'))
+  assert.ok(watchSource.includes('this.manifestSrc = null'))
+  assert.ok(watchSource.includes('this.sabrData = null'))
+})
+
 test('Downloads hides Play for records without a playable source', () => {
   assert.ok(downloadsViewSource.includes('playableDownloadIds.has(download.downloadId)'))
   assert.ok(downloadsViewSource.includes('const playableDownloadIds = computed'))
