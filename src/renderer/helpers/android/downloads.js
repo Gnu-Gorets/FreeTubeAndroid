@@ -148,7 +148,7 @@ function releaseSabrSlot(weight) {
   }
 }
 
-export function readDownloadMetadata() {
+function readLocalDownloadMetadata() {
   try {
     const downloads = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
     return Array.isArray(downloads) ? downloads : []
@@ -157,8 +157,32 @@ export function readDownloadMetadata() {
   }
 }
 
+export function readDownloadMetadata() {
+  try {
+    const nativeValue = android.getDownloadMetadata?.()
+    if (nativeValue) {
+      const nativeDownloads = JSON.parse(nativeValue)
+      if (Array.isArray(nativeDownloads)) {
+        const localDownloads = readLocalDownloadMetadata()
+        if (nativeDownloads.length === 0 && localDownloads.length > 0) {
+          android.replaceDownloadMetadata?.(JSON.stringify(localDownloads))
+          return localDownloads
+        }
+        return nativeDownloads
+      }
+    }
+  } catch (error) {
+    log('native metadata read failed', error?.message || String(error))
+  }
+  return readLocalDownloadMetadata()
+}
+
 export function writeDownloadMetadata(downloads) {
-  localStorage.setItem('freetube-downloads', JSON.stringify(downloads))
+  const serialized = JSON.stringify(downloads)
+  localStorage.setItem('freetube-downloads', serialized)
+  if (typeof android.replaceDownloadMetadata === 'function' && !android.replaceDownloadMetadata(serialized)) {
+    log('native metadata write failed')
+  }
   return downloads
 }
 

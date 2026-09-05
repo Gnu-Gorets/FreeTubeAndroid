@@ -38,7 +38,7 @@ const context = vm.createContext({
 })
 vm.runInContext(source, context)
 
-const { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, normalizeDownloadMetadata, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
+const { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, normalizeDownloadMetadata, preflightSabrDownload, readDownloadMetadata, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
 
 function sabrManifest(formats) {
   return `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats }))}`
@@ -342,6 +342,28 @@ test('download metadata preserves channel and playback details', () => {
     chapters: [{ title: 'Intro' }],
     status: 'downloading'
   })
+})
+
+test('native metadata storage is authoritative and imports local legacy records', () => {
+  const local = [{ downloadId: 'legacy', title: 'Legacy', status: 'completed' }]
+  let native = '[]'
+  context.android.getDownloadMetadata = () => native
+  context.android.replaceDownloadMetadata = value => {
+    native = value
+    return true
+  }
+  try {
+    storage.set('freetube-downloads', JSON.stringify(local))
+    assert.equal(JSON.stringify(readDownloadMetadata()), JSON.stringify(local))
+    const current = [{ downloadId: 'native', title: 'Native', status: 'completed' }]
+    native = JSON.stringify(current)
+    storage.set('freetube-downloads', JSON.stringify(local))
+    assert.equal(JSON.stringify(readDownloadMetadata()), JSON.stringify(current))
+  } finally {
+    delete context.android.getDownloadMetadata
+    delete context.android.replaceDownloadMetadata
+    storage.delete('freetube-downloads')
+  }
 })
 
 test('recording same downloadId upserts metadata instead of duplicating it', () => {
