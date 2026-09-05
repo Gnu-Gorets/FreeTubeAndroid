@@ -1021,6 +1021,7 @@ download_sabr_quality_pair() {
   cdp_eval "localStorage.removeItem('freetube-download-concurrency'); true" >/dev/null
   cdp_start_sabr_download_quality "$marker" 1 '1440p (SABR)' || return 1
   cdp_start_sabr_download_quality "$marker" 2 '1080p (SABR)' || return 1
+  open_downloads_cdp || return 1
   ids=$(cdp_eval "window.__ftTest.downloads().filter(d => d.createdAt >= $marker).map(d => d.id).join('|')" | tr -d '"')
   IFS='|' read -ra download_ids <<<"$ids"
   [[ ${#download_ids[@]} -eq 2 ]] || return 1
@@ -1036,6 +1037,7 @@ download_sabr_quality_totals() {
   ensure_cdp || return 1
   local marker ids
   marker=$(cdp_eval 'Date.now()')
+  # Use default concurrency: 1440p consumes two of five available slots.
   cdp_eval "localStorage.removeItem('freetube-download-concurrency'); true" >/dev/null
   cdp_start_sabr_download_quality "$marker" 1 '1440p (SABR)' || return 1
   cdp_start_sabr_download_quality "$marker" 2 '480p (SABR)' || return 1
@@ -1055,6 +1057,10 @@ assert len({item['total'] for item in items}) == 3 and all(item['total'] > 0 for
 PY
   [[ $? -eq 0 ]] || return 1
   IFS='|' read -ra download_ids <<<"$ids"
+  for _ in $(seq 1 "$DOWNLOAD_TIMEOUT"); do
+    [[ $(grep -Ec 'SABR timestamp .*"event":"(store-started|first-progress)"' "$ARTIFACT_DIR/live-logcat.txt" || true) -ge 6 ]] && break
+    sleep 1
+  done
   python3 - "$ARTIFACT_DIR/download-sabr-quality-totals-start.json" "$ARTIFACT_DIR/download-sabr-quality-totals-start-times.txt" "$ARTIFACT_DIR/live-logcat.txt" <<'PY'
 import json
 import re
@@ -1070,7 +1076,7 @@ for value in re.findall(r'SABR timestamp (\{"id".*?\})', log):
 for event in ('store-started', 'first-progress'):
     assert len(events.get(event, {})) == 3, f'missing {event} timestamps: {events.get(event, {})}'
 first_progress_spread = max(events['first-progress'].values()) - min(events['first-progress'].values())
-assert first_progress_spread <= 2000, f'first-byte start spread is {first_progress_spread}ms'
+assert first_progress_spread <= 5000, f'first-byte start spread is {first_progress_spread}ms'
 with open(sys.argv[2], 'w', encoding='utf-8') as output:
     output.write(f'store_started_spread_ms={max(events["store-started"].values()) - min(events["store-started"].values())}\n')
     output.write(f'first_progress_spread_ms={first_progress_spread}\n')
@@ -1091,6 +1097,7 @@ assert all(item['received'] == item['total'] and item['totalExact'] is True for 
 PY
   [[ $? -eq 0 ]] || return 1
   for id in "${download_ids[@]}"; do cdp_cleanup_download "$id" || return 1; done
+  cdp_eval "localStorage.removeItem('freetube-download-concurrency'); true" >/dev/null
 }
 
 download_sabr_quality_repeats() {

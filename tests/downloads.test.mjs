@@ -4,7 +4,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 const source = fs.readFileSync(new URL('../src/renderer/helpers/android/downloads.js', import.meta.url), 'utf8')
-  .replace(/^import \{ DEFAULT_DOWNLOAD_CONCURRENCY \} from .*$/m, 'const DEFAULT_DOWNLOAD_CONCURRENCY = 3')
+  .replace(/^import \{ DEFAULT_DOWNLOAD_CONCURRENCY \} from .*$/m, 'const DEFAULT_DOWNLOAD_CONCURRENCY = 5')
   .replace(/^import .*$/gm, '')
   .replace(/^export /gm, '')
   .replace(/const log = .*$/m, 'const log = (...args) => globalThis.downloadLogs?.push(args)')
@@ -656,10 +656,10 @@ test('metadata update changes only matching download', () => {
   ])
 })
 
-test('download concurrency defaults to three across Android paths', () => {
+test('download concurrency defaults to five across Android paths', () => {
   assert.ok(source.includes('DEFAULT_DOWNLOAD_CONCURRENCY'))
   assert.ok(source.includes("|| DEFAULT_DOWNLOAD_CONCURRENCY"))
-  assert.match(downloadServiceSource, /getInt\("maxConcurrent", 3\)/)
+  assert.match(downloadServiceSource, /getInt\("maxConcurrent", 5\)/)
 })
 
 test('heavy SABR downloads use two scheduler weight units', () => {

@@ -186,7 +186,7 @@ class DownloadService : Service() {
         synchronized(this) {
             val queue = readQueue()
             for (index in 0 until queue.length()) {
-                if (activeDownloads.size + items.size >= prefs().getInt("maxConcurrent", 3).coerceIn(1, 5)) break
+                if (activeDownloads.size + items.size >= prefs().getInt("maxConcurrent", 5).coerceIn(1, 5)) break
                 val item = queue.getJSONObject(index)
                 val id = item.optString("id")
                 if (item.optString("status") == "queued" && activeDownloads.add(id)) {

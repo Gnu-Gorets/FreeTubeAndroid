@@ -1,131 +1,148 @@
 <template>
   <section class="downloadsView">
-    <div class="downloadsHeader">
-      <h1>{{ t('Downloads.Title') }}</h1>
-      <div class="downloadBulkActions">
-        <button
-          v-if="selectableDownloads.length > 0"
-          type="button"
-          data-download-action="select-all"
-          @click="selectAll"
-        >
-          {{ selectAllLabel }}
-        </button>
-        <button
-          v-if="selectedDownloadIds.size"
-          type="button"
-          data-download-action="delete-selected"
-          @click="removeMany()"
-        >
-          {{ t('Downloads.Delete') }} {{ selectedDownloadIds.size }}
-        </button>
-      </div>
-      <label class="downloadsSearch">
-        <span class="visuallyHidden">{{ t('Downloads.Search') }}</span>
-        <input
-          v-model="searchQuery"
-          type="search"
-          :placeholder="t('Downloads.Search')"
-        >
-      </label>
-    </div>
-    <p
-      v-if="downloads.length === 0"
-    >
-      {{ t('Downloads.Empty') }}
-    </p>
-    <p
-      v-else-if="filteredDownloads.length === 0"
-    >
-      {{ t('Downloads.No matches') }}
-    </p>
-    <article
-      v-for="download in filteredDownloads"
-      :key="download"
-      class="downloadItem"
-      :data-download-id="download.downloadId"
-    >
-      <input
-        class="downloadSelect"
-        type="checkbox"
-        :checked="selectedDownloadIds.has(download.downloadId)"
-        :aria-label="download.title"
-        @change="toggleSelected(download.downloadId)"
-      >
-      <img
-        :src="download.thumbnail || thumbnailPlaceholder"
-        alt=""
-        class="downloadThumbnail"
-        @error="handleThumbnailError"
-      >
-      <div class="downloadInfo">
-        <h2>{{ download.title }}</h2>
-        <p class="downloadMeta">
-          {{ formatDownloadMeta(download) }}
-        </p>
-        <progress
-          v-if="download.status === 'downloading' && download.received > 0 && download.total > 0 && download.progress != null"
-          max="1"
-          :value="download.progress"
-          :aria-label="t('Downloads.Progress')"
+    <FtCard class="card">
+      <h2>
+        <FontAwesomeIcon
+          :icon="['fas', 'download']"
+          class="headingIcon"
         />
-        <div class="downloadActions">
+        {{ t('Downloads.Title') }}
+      </h2>
+      <div class="downloadsHeader">
+        <div class="downloadBulkActions">
           <button
-            v-if="download.status === 'completed'"
+            v-if="selectableDownloads.length > 0"
             type="button"
-            data-download-action="play"
-            @click="play(download)"
+            data-download-action="select-all"
+            @click="selectAll"
           >
-            {{ t('Downloads.Play') }}
+            {{ selectAllLabel }}
           </button>
           <button
-            v-if="download.status === 'failed'"
+            v-if="selectedDownloadIds.size"
             type="button"
-            data-download-action="retry"
-            @click="retry(download)"
+            data-download-action="delete-selected"
+            @click="removeMany()"
           >
-            {{ t('Downloads.Retry') }}
-          </button>
-          <button
-            v-if="download.status === 'downloading'"
-            type="button"
-            data-download-action="pause"
-            @click="control(download, 'pause')"
-          >
-            {{ t('Downloads.Pause') }}
-          </button>
-          <button
-            v-if="download.status === 'paused'"
-            type="button"
-            data-download-action="resume"
-            @click="control(download, 'resume')"
-          >
-            {{ t('Downloads.Resume') }}
-          </button>
-          <button
-            v-if="['queued', 'downloading', 'paused'].includes(download.status)"
-            type="button"
-            data-download-action="cancel"
-            @click="control(download, 'cancel')"
-          >
-            {{ t('Downloads.Cancel') }}
-          </button>
-          <button
-            type="button"
-            data-download-action="delete"
-            @click="remove(download)"
-          >
-            {{ t('Downloads.Delete') }}
+            {{ t('Downloads.Delete') }} {{ selectedDownloadIds.size }}
           </button>
         </div>
+        <FtInput
+          class="downloadsSearch"
+          :placeholder="t('Downloads.Search')"
+          :show-clear-text-button="true"
+          :show-action-button="false"
+          :value="searchQuery"
+          @input="updateSearchQuery"
+          @clear="clearSearchQuery"
+        />
       </div>
-    </article>
+      <FtFlexBox
+        v-if="downloads.length === 0"
+      >
+        <p class="message">
+          {{ t('Downloads.Empty') }}
+        </p>
+      </FtFlexBox>
+      <FtFlexBox
+        v-else-if="filteredDownloads.length === 0"
+      >
+        <p class="message">
+          {{ t('Downloads.No matches') }}
+        </p>
+      </FtFlexBox>
+      <article
+        v-for="download in filteredDownloads"
+        :key="download"
+        class="downloadItem"
+        :data-download-id="download.downloadId"
+      >
+        <input
+          class="downloadSelect"
+          type="checkbox"
+          :checked="selectedDownloadIds.has(download.downloadId)"
+          :aria-label="download.title"
+          @change="toggleSelected(download.downloadId)"
+        >
+        <img
+          :src="download.thumbnail || thumbnailPlaceholder"
+          alt=""
+          class="downloadThumbnail"
+          @error="handleThumbnailError"
+        >
+        <div class="downloadInfo">
+          <h2>{{ download.title }}</h2>
+          <p class="downloadMeta">
+            {{ formatDownloadMeta(download) }}
+          </p>
+          <progress
+            v-if="download.status === 'downloading' && download.received > 0 && download.total > 0 && download.progress != null"
+            max="1"
+            :value="download.progress"
+            :aria-label="t('Downloads.Progress')"
+          />
+          <div class="downloadActions">
+            <button
+              v-if="download.status === 'completed'"
+              type="button"
+              data-download-action="play"
+              @click="play(download)"
+            >
+              {{ t('Downloads.Play') }}
+            </button>
+            <button
+              v-if="download.status === 'failed'"
+              type="button"
+              data-download-action="retry"
+              @click="retry(download)"
+            >
+              {{ t('Downloads.Retry') }}
+            </button>
+            <button
+              v-if="download.status === 'downloading'"
+              type="button"
+              data-download-action="pause"
+              @click="control(download, 'pause')"
+            >
+              {{ t('Downloads.Pause') }}
+            </button>
+            <button
+              v-if="download.status === 'paused'"
+              type="button"
+              data-download-action="resume"
+              @click="control(download, 'resume')"
+            >
+              {{ t('Downloads.Resume') }}
+            </button>
+            <button
+              v-if="['queued', 'downloading', 'paused'].includes(download.status)"
+              type="button"
+              data-download-action="cancel"
+              @click="control(download, 'cancel')"
+            >
+              {{ t('Downloads.Cancel') }}
+            </button>
+            <button
+              type="button"
+              data-download-action="delete"
+              @click="remove(download)"
+            >
+              {{ t('Downloads.Delete') }}
+            </button>
+          </div>
+        </div>
+      </article>
+    </FtCard>
   </section>
 </template>
 
 <script setup>
 import shaka from 'shaka-player'
 import android from 'android'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import FtCard from '../../components/ft-card/ft-card.vue'
+import FtFlexBox from '../../components/ft-flex-box/ft-flex-box.vue'
+import FtInput from '../../components/FtInput/FtInput.vue'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
 import { awaitAsyncResult } from '../../helpers/android/jsinterface'
 import { cancelSabrDownload, hasSabrDownload, isSabrDownloadCanceled, isSabrDownloadPaused, mergeDownloadProgress, mergeNativeDownload, pauseSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
@@ -149,6 +166,14 @@ const selectAllLabel = computed(() => {
 })
 let queueTimer = null
 let sabrRecoveryRunning = false
+
+function updateSearchQuery(value) {
+  searchQuery.value = value
+}
+
+function clearSearchQuery() {
+  searchQuery.value = ''
+}
 
 function handleThumbnailError(event) {
   if (event.target.src.endsWith(thumbnailPlaceholder)) return
@@ -481,29 +506,17 @@ onBeforeUnmount(async () => {
   margin-block-end: 16px;
 }
 
-.downloadsHeader h1 {
-  margin: 0;
+.headingIcon {
+  color: var(--primary-color);
 }
 
-.downloadsSearch input {
-  width: min(360px, 45vw);
-  padding: 10px 12px;
-  color: var(--primary-text-color);
-  background: var(--card-background-color);
-  border: 1px solid var(--secondary-text-color);
-  border-radius: 4px;
+.message {
+  color: var(--tertiary-text-color);
 }
 
-.visuallyHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.downloadsSearch {
+  flex: 1 1 360px;
+  min-inline-size: 0;
 }
 
 .downloadItem {
@@ -511,11 +524,11 @@ onBeforeUnmount(async () => {
   grid-template-columns: 24px 160px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
-  margin: 16px 0;
+  margin-block: 12px;
   padding: 12px;
-  background: var(--card-background-color);
-  border: 1px solid var(--secondary-text-color);
-  border-radius: 6px;
+  background: var(--card-bg-color);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
 }
 
 .downloadSelect {
@@ -549,7 +562,7 @@ onBeforeUnmount(async () => {
   min-inline-size: 0;
   margin: 0 0 10px;
   overflow: hidden;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -574,10 +587,17 @@ onBeforeUnmount(async () => {
   padding: 8px 14px;
   color: var(--primary-text-color);
   font: inherit;
-  background: var(--card-background-color);
-  border: 1px solid var(--secondary-text-color);
+  background: var(--secondary-card-bg-color);
+  border: 0;
   border-radius: 4px;
   cursor: pointer;
+}
+
+.downloadActions button:focus-visible,
+.downloadBulkActions button:focus-visible,
+.downloadSelect:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 @media (hover: hover) {
@@ -605,14 +625,14 @@ onBeforeUnmount(async () => {
     flex-direction: column;
   }
 
-  .downloadsSearch input {
-    width: 100%;
-    box-sizing: border-box;
+  .downloadsSearch {
+    flex-basis: auto;
   }
 
   .downloadItem {
     grid-template-columns: 24px 112px minmax(0, 1fr);
     gap: 10px;
+    margin-block: 10px;
     padding: 10px;
   }
 

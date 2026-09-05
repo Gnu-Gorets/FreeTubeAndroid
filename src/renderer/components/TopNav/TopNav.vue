@@ -151,7 +151,7 @@ const searchSuggestionsDataList = shallowRef([])
 const lastSuggestionQuery = ref('')
 
 /** @type {import('vue').ComputedRef<boolean>} */
-const hideSearchBar = computed(() => store.getters.getHideSearchBar || route.path === '/downloads')
+const hideSearchBar = computed(() => store.getters.getHideSearchBar)
 /** @type {import('vue').ComputedRef<boolean>} */
 const hideHeaderLogo = computed(() => store.getters.getHideHeaderLogo)
 /** @type {import('vue').ComputedRef<boolean>} */
