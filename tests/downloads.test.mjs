@@ -684,6 +684,11 @@ test('native completion verifies, renames and publishes target', () => {
   assert.ok(completion.includes('item.put("fileSize", length(Uri.parse(item.optString("targetUri"))))'))
 })
 
+test('native download validates all remote source URLs', () => {
+  assert.ok(downloadServiceSource.includes('require(url.startsWith("https://")) { "Invalid download URL" }'))
+  assert.ok(downloadServiceSource.includes('require(audioUrl.startsWith("https://")) { "Invalid audio download URL" }'))
+})
+
 test('native adaptive download exposes processing mux lifecycle', () => {
   assert.ok(downloadServiceSource.includes('item.put("phase", "processing")'))
   assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title"), "Processing"'))

@@ -267,6 +267,7 @@ class DownloadService : Service() {
         require(url.startsWith("https://")) { "Invalid download URL" }
         val audioUrl = item.optString("audioUrl")
         if (audioUrl.isNotBlank()) {
+            require(audioUrl.startsWith("https://")) { "Invalid audio download URL" }
             val videoFile = java.io.File(cacheDir, "${item.optString("id")}-video.mp4")
             val audioFile = java.io.File(cacheDir, "${item.optString("id")}-audio.mp4")
             val outputFile = java.io.File(cacheDir, "${item.optString("id")}-output.mp4")
@@ -385,6 +386,7 @@ class DownloadService : Service() {
     }
 
     private fun downloadToFile(url: String, target: java.io.File, item: JSONObject, completedBytes: Long, expectedTotal: Long, phase: String) {
+        require(url.startsWith("https://")) { "Invalid download URL" }
         val existing = target.length()
         val request = URL(url).openConnection() as HttpURLConnection
         connections[item.optString("id")] = request
