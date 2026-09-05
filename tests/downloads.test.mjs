@@ -570,8 +570,6 @@ test('direct download queues honest initial totals, including unknown sizes', as
   async function queue(video) {
     let item
     Object.assign(context.android, {
-      downloadUrl: () => true,
-      muxDownload: () => true,
       createDownloadFile: () => 'content://download',
       enqueueNativeDownload: json => { item = JSON.parse(json); return false }
     })

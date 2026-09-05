@@ -508,8 +508,7 @@ function downloadDirectory() {
  * @returns {Promise<void>}
  */
 export async function downloadProgressiveVideo(video) {
-  if (!process.env.IS_ANDROID || typeof android.downloadUrl !== 'function' ||
-    (video.audioUrl && typeof android.muxDownload !== 'function')) {
+  if (!process.env.IS_ANDROID || typeof android.enqueueNativeDownload !== 'function') {
     throw new Error('Downloads are only available on Android with native MP4 muxing')
   }
 
@@ -547,84 +546,38 @@ export async function downloadProgressiveVideo(video) {
     createdAt: Date.now()
   }
   const downloads = recordDownloadMetadata(metadata)
-  if (typeof android.enqueueNativeDownload === 'function') {
-    const queued = android.enqueueNativeDownload(JSON.stringify({
-      id: downloadId,
-      title: video.title,
-      videoUrl: video.videoUrl,
-      audioUrl: video.audioUrl || '',
-      videoTotal,
-      audioTotal,
-      total,
-      totalExact,
-      targetUri: dialog.uri,
-      finalName: fileName
-    }))
-    if (!queued) throw new Error('Unable to queue download')
-    return new Promise((resolve, reject) => {
-      const timer = setInterval(() => {
-        try {
-          const item = JSON.parse(android.getNativeDownloadQueue?.() || '[]').find(entry => entry.id === downloadId)
-          if (!item) return
-          Object.assign(metadata, mergeNativeDownload(metadata, item))
-          if (item.status === 'completed') {
-            metadata.fileName = fileName
-            metadata.completedAt ??= Date.now()
-          }
-          writeDownloadMetadata(downloads)
-          if (['completed', 'failed', 'canceled'].includes(item.status)) {
-            clearInterval(timer)
-            item.status === 'completed' ? resolve() : reject(new Error(item.error || 'Download failed'))
-          }
-        } catch (error) {
+  const queued = android.enqueueNativeDownload(JSON.stringify({
+    id: downloadId,
+    title: video.title,
+    videoUrl: video.videoUrl,
+    audioUrl: video.audioUrl || '',
+    videoTotal,
+    audioTotal,
+    total,
+    totalExact,
+    targetUri: dialog.uri,
+    finalName: fileName
+  }))
+  if (!queued) throw new Error('Unable to queue download')
+  return new Promise((resolve, reject) => {
+    const timer = setInterval(() => {
+      try {
+        const item = JSON.parse(android.getNativeDownloadQueue?.() || '[]').find(entry => entry.id === downloadId)
+        if (!item) return
+        Object.assign(metadata, mergeNativeDownload(metadata, item))
+        if (item.status === 'completed') {
+          metadata.fileName = fileName
+          metadata.completedAt ??= Date.now()
+        }
+        writeDownloadMetadata(downloads)
+        if (['completed', 'failed', 'canceled'].includes(item.status)) {
           clearInterval(timer)
-          reject(error)
+          item.status === 'completed' ? resolve() : reject(new Error(item.error || 'Download failed'))
         }
-      }, 500)
-    })
-  }
-  const result = new Promise((resolve, reject) => {
-    const onEvent = (event) => {
-      if (event.detail?.id !== downloadId) return
-      if (event.detail.status === 'progress') {
-        Object.assign(metadata, getProgressSnapshot({ size: event.detail.received }, 0, event.detail.total, event.detail.totalExact ?? metadata.totalExact))
-        const notification = getDownloadNotificationPayload({ downloadId, title: video.title, status: metadata.status || 'downloading', progress: metadata.progress ?? 0, speedBps: metadata.speedBps || 0, received: metadata.received || 0, total: metadata.total || 0 })
-        android.updateDownloadNotification?.(notification.downloadId, notification.title, metadata.status || 'downloading', notification.progress, metadata.speedBps || 0, metadata.received || 0, metadata.total || 0)
-        writeDownloadMetadata(downloads)
-        return
+      } catch (error) {
+        clearInterval(timer)
+        reject(error)
       }
-      if (event.detail.status === 'completed') {
-        window.removeEventListener(eventName, onEvent)
-        if (!android.renameFile(dialog.uri, fileName)) {
-          android.deleteFile(dialog.uri)
-          reject(new Error('Unable to finalize downloaded file'))
-          return
-        }
-        metadata.status = 'completed'
-        android.finishDownloadNotification?.(downloadId)
-        metadata.fileName = fileName
-        metadata.completedAt = Date.now()
-        writeDownloadMetadata(downloads)
-        resolve()
-      } else if (event.detail.status === 'failed' || event.detail.status === 'canceled') {
-        window.removeEventListener(eventName, onEvent)
-        android.deleteFile(dialog.uri)
-        metadata.status = event.detail.status
-        android.finishDownloadNotification?.(downloadId)
-        metadata.error = event.detail.error || null
-        writeDownloadMetadata(downloads)
-        reject(new Error(event.detail.error || 'Download failed'))
-      }
-    }
-    window.addEventListener(eventName, onEvent)
+    }, 500)
   })
-
-  const startDownload = video.audioUrl && typeof android.muxDownload === 'function'
-    ? android.muxDownload(video.videoUrl, video.audioUrl, dialog.uri, downloadId)
-    : android.downloadUrl(video.videoUrl, dialog.uri, downloadId)
-  if (!startDownload) {
-    window.dispatchEvent(new CustomEvent(eventName, { detail: { id: downloadId, status: 'failed', error: 'Unable to start download' } }))
-  }
-
-  return result
 }
