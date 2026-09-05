@@ -12,6 +12,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
 import android.provider.MediaStore
+import android.media.MediaExtractor
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegSession
@@ -86,6 +87,7 @@ class DownloadService : Service() {
     override fun onDestroy() {
         stopped.set(true)
         connections.values.forEach { it.disconnect() }
+        ffmpegSessions.keys.forEach(::cancelFfmpeg)
         executor.shutdownNow()
         super.onDestroy()
     }
@@ -304,9 +306,17 @@ class DownloadService : Service() {
                 val total = item.optLong("total", 0).takeIf { it > 0 } ?: received
                 item.put("phase", "processing").put("progress", 0).put("received", received).put("total", total).put("speedBps", 0).put("etaSeconds", 0)
                 saveItem(item)
-                notify(item.optString("id"), item.optString("title"), "Processing", 0.0, true)
+                notify(item.optString("id"), item.optString("title"), "Processing", item.optLong("durationMs", 0).takeIf { it > 0 }?.let { 0.0 }, true)
+                validateMuxInput(videoFile, "video")
+                validateMuxInput(audioFile, "audio")
                 muxMp4(item, videoFile, audioFile, outputFile)
-                openTarget(item.getString("targetUri"), "wt").use { stream -> outputFile.inputStream().use { input -> input.copyTo(stream) } }
+                verifyMuxOutput(outputFile)
+                try {
+                    openTarget(item.getString("targetUri"), "wt").use { stream -> outputFile.inputStream().use { input -> input.copyTo(stream) } }
+                } catch (error: Exception) {
+                    delete(item.optString("targetUri"))
+                    throw error
+                }
             } finally {
                 videoFile.delete()
                 audioFile.delete()
@@ -506,6 +516,26 @@ class DownloadService : Service() {
         for (index in 0 until queue.length()) if (queue.getJSONObject(index).optString("id") == item.optString("id")) queue.put(index, item)
         writeQueue(queue)
         broadcast(item)
+    }
+
+    private fun validateMuxInput(file: java.io.File, kind: String) {
+        if (!file.exists() || file.length() <= 0) throw IOException("Unsupported $kind source: file is empty")
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            val prefix = if (kind == "video") "video/" else "audio/"
+            val hasTrack = (0 until extractor.trackCount).any { extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith(prefix) == true }
+            if (!hasTrack) throw IOException("MP4 track is missing")
+        } catch (error: Exception) {
+            throw IOException("Unsupported $kind source: ${error.message ?: "invalid MP4"}", error)
+        } finally {
+            extractor.release()
+        }
+    }
+
+    private fun verifyMuxOutput(file: java.io.File) {
+        validateMuxInput(file, "video")
+        validateMuxInput(file, "audio")
     }
 
     private fun muxMp4(item: JSONObject, videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
