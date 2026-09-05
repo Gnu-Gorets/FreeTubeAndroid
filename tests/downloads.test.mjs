@@ -656,6 +656,14 @@ test('metadata update changes only matching download', () => {
   ])
 })
 
+test('download metadata clamps speed jumps', () => {
+  storage.set('freetube-downloads', JSON.stringify([
+    { downloadId: 'speed', status: 'downloading', speedBps: 100 }
+  ]))
+  updateDownloadMetadata('speed', { status: 'downloading', speedBps: 1000 })
+  assert.equal(JSON.parse(storage.get('freetube-downloads'))[0].speedBps, 150)
+})
+
 test('download concurrency defaults to five across Android paths', () => {
   assert.ok(source.includes('DEFAULT_DOWNLOAD_CONCURRENCY'))
   assert.ok(source.includes("|| DEFAULT_DOWNLOAD_CONCURRENCY"))

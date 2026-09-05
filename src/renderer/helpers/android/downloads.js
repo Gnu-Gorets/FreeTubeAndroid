@@ -441,6 +441,11 @@ export function updateDownloadMetadata(downloadId, changes) {
     const received = Number(changes.received) || 0
     changes = { ...changes, total: download.total, progress: Math.min(received / download.total, 1) }
   }
+  if (changes.status === 'downloading' && Number(changes.speedBps) > 0 && Number(download.speedBps) > 0) {
+    const previousSpeed = Number(download.speedBps)
+    const speedBps = Number(changes.speedBps)
+    changes = { ...changes, speedBps: Math.min(previousSpeed * 1.5, Math.max(previousSpeed / 1.5, speedBps)) }
+  }
   const statusChanged = changes.status && changes.status !== download.status
   Object.assign(download, changes)
   if (statusChanged || changes.phase || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, phase: changes.phase, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })
