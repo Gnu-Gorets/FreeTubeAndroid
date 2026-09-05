@@ -666,8 +666,9 @@ test('native adaptive download exposes processing mux lifecycle', () => {
   assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title"), "Processing"'))
   assert.ok(downloadServiceSource.includes('muxMp4(videoFile, audioFile, outputFile)'))
   assert.ok(downloadServiceSource.includes('outputFile.inputStream().use { input -> input.copyTo(stream) }'))
-  assert.ok(downloadServiceSource.includes('videoExtractor.getTrackFormat(it).getString'))
-  assert.ok(downloadServiceSource.includes('audioExtractor.getTrackFormat(it).getString'))
+  assert.ok(downloadServiceSource.includes('FFmpegKit.execute'))
+  assert.ok(downloadServiceSource.includes('ReturnCode.isSuccess(session.returnCode)'))
+  assert.ok(downloadServiceSource.includes('-map 0:v:0 -map 1:a:0 -c copy'))
 })
 
 test('native download loop publishes progress telemetry', () => {

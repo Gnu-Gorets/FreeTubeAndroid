@@ -13,9 +13,8 @@ import android.net.Uri
 import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Log
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaMuxer
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
 import java.io.OutputStream
@@ -478,44 +477,18 @@ class DownloadService : Service() {
     }
 
     private fun muxMp4(videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
-        val videoExtractor = MediaExtractor()
-        val audioExtractor = MediaExtractor()
-        val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        try {
-            videoExtractor.setDataSource(videoFile.absolutePath)
-            audioExtractor.setDataSource(audioFile.absolutePath)
-            val videoTrack = (0 until videoExtractor.trackCount).firstOrNull { videoExtractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/") == true }
-                ?: throw IllegalStateException("Video track not found")
-            val audioTrack = (0 until audioExtractor.trackCount).firstOrNull { audioExtractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
-                ?: throw IllegalStateException("Audio track not found")
-            val muxVideoTrack = muxer.addTrack(videoExtractor.getTrackFormat(videoTrack))
-            val muxAudioTrack = muxer.addTrack(audioExtractor.getTrackFormat(audioTrack))
-            muxer.start()
-            copySamples(videoExtractor, videoTrack, muxer, muxVideoTrack)
-            copySamples(audioExtractor, audioTrack, muxer, muxAudioTrack)
-        } finally {
-            runCatching { muxer.stop() }
-            videoExtractor.release()
-            audioExtractor.release()
-            muxer.release()
+        val session = FFmpegKit.execute(
+            "-y -i ${ffmpegArg(videoFile)} -i ${ffmpegArg(audioFile)} " +
+                "-map 0:v:0 -map 1:a:0 -c copy ${ffmpegArg(outputFile)}"
+        )
+        if (!ReturnCode.isSuccess(session.returnCode)) {
+            val details = session.failStackTrace ?: session.allLogsAsString
+            throw IOException("FFmpeg mux failed: ${details?.takeLast(2000) ?: "unknown error"}")
         }
     }
 
-    private fun copySamples(extractor: MediaExtractor, sourceTrack: Int, muxer: MediaMuxer, targetTrack: Int) {
-        extractor.selectTrack(sourceTrack)
-        val buffer = java.nio.ByteBuffer.allocate(1024 * 1024)
-        val info = MediaCodec.BufferInfo()
-        while (true) {
-            val size = extractor.readSampleData(buffer, 0)
-            if (size < 0) break
-            info.offset = 0
-            info.size = size
-            info.presentationTimeUs = extractor.sampleTime
-            info.flags = extractor.sampleFlags
-            muxer.writeSampleData(targetTrack, buffer, info)
-            extractor.advance()
-        }
-    }
+    private fun ffmpegArg(file: java.io.File): String =
+        "'${file.absolutePath.replace("'", "'\\\"'\\\"'")}'"
 
     private fun length(uri: Uri): Long = try {
         targetFile(uri.toString())?.length() ?: contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.coerceAtLeast(0) } ?: 0
