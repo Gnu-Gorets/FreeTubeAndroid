@@ -151,6 +151,7 @@ class DownloadService : Service() {
         queue.put(item)
         writeQueue(queue)
         broadcast(item)
+        notify(item.optString("id"), item.optString("title"), "Queued", null, true)
         executor.execute { process() }
     }
 
@@ -167,6 +168,11 @@ class DownloadService : Service() {
         item.put("status", status).put("phase", status).put("error", JSONObject.NULL)
         writeQueue(queue)
         broadcast(item)
+        when (status) {
+            "queued" -> notify(id, item.optString("title"), "Queued", null, true)
+            "paused" -> notify(id, item.optString("title"), "Paused", null, true)
+            "canceled" -> notify(id, item.optString("title"), "Canceled", null, false)
+        }
         if (status == "paused") {
             connections[id]?.disconnect()
             cancelFfmpeg(id)
@@ -250,7 +256,8 @@ class DownloadService : Service() {
                     val status = if (currentState == "paused" || currentState == "canceled") currentState else "failed"
                     Log.e(TAG, "queue status id=${item.optString("id")} $currentState->$status error=${error.message}", error)
                     item.put("status", status).put("phase", status).put("error", if (status == "failed") error.message ?: "Download failed" else JSONObject.NULL)
-                    notify(item.optString("id"), item.optString("title"), item.optString("error"), null, false)
+                    saveItem(item)
+                    notify(item.optString("id"), item.optString("title"), item.optString("error"), null, status != "failed")
                 } finally {
                     connections.remove(item.optString("id"))?.disconnect()
                     activeDownloads.remove(item.optString("id"))
@@ -643,6 +650,7 @@ class DownloadService : Service() {
         if (current.optString("status") in setOf("downloading", "paused")) {
             builder.addAction(action("Cancel", ACTION_CANCEL, current.optString("id")))
         }
+        if (current.optString("status") == "failed") builder.addAction(action("Retry", ACTION_RETRY, current.optString("id")))
         return builder.build()
     }
 
@@ -676,12 +684,12 @@ class DownloadService : Service() {
 
     private fun notify(id: String, title: String, text: String, progress: Double?, ongoing: Boolean) {
         val manager = getSystemService(NotificationManager::class.java)
-        if (!ongoing) {
+        if (!ongoing && currentItem(id)?.optString("status") != "failed") {
             Log.i(TAG, "notification terminal id=$id text=$text")
             manager.cancel(notificationId(id))
             return
         }
         Log.d(TAG, "notification progress id=$id progress=${progress ?: -1.0} text=$text")
-        manager.notify(notificationId(id), notification(id, title, text, progress, true))
+        manager.notify(notificationId(id), notification(id, title, text, progress, ongoing))
     }
 }

@@ -698,6 +698,15 @@ test('native download validates all remote source URLs', () => {
   assert.ok(downloadServiceSource.includes('require(audioUrl.startsWith("https://")) { "Invalid audio download URL" }'))
 })
 
+test('native notifications cover queue and terminal recovery states', () => {
+  assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title"), "Queued", null, true)'))
+  assert.ok(downloadServiceSource.includes('"paused" -> notify(id, item.optString("title"), "Paused", null, true)'))
+  assert.ok(downloadServiceSource.includes('status != "failed"'))
+  assert.ok(downloadServiceSource.includes('currentItem(id)?.optString("status") != "failed"'))
+  assert.ok(downloadServiceSource.includes('current.optString("status") == "failed") builder.addAction(action("Retry"'))
+  assert.ok(downloadServiceSource.includes('notificationId(id)'))
+})
+
 test('native adaptive download exposes processing mux lifecycle', () => {
   assert.ok(downloadServiceSource.includes('item.put("phase", "processing")'))
   assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title"), "Processing"'))
