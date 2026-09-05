@@ -1315,7 +1315,6 @@ download_notification() {
   # Prefer 720p, but use fixture-provided SABR quality when it is unavailable.
   cdp_click_sabr_option '720p (SABR)' || return 1
   wait_for_notification_actions || return 1
-  adb_shell dumpsys notification --noredact >"$ARTIFACT_DIR/download-notification-during.txt"
   grep -q '"Pause"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
   grep -q '"Cancel"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
   grep -q 'android.progress=Integer' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
