@@ -193,11 +193,20 @@ export function normalizeDownloadMetadata(downloads) {
     if (!downloadId) return download
     return {
       ...download,
+      schemaVersion: Number(download.schemaVersion) || 1,
       downloadId,
       videoId: download.videoId || '',
       title: download.title || download.fileName || downloadId,
       thumbnail: download.thumbnail || '',
-      engine: download.engine || (download.localPath ? 'native' : 'sabr')
+      selectedFormat: download.selectedFormat || '',
+      engine: download.engine || (download.localPath ? 'native' : 'sabr'),
+      status: download.status || 'queued',
+      phase: download.phase || download.status || 'queued',
+      sourceLocator: download.sourceLocator || download.localPath || download.offlineUri || '',
+      progress: download.progress ?? null,
+      error: download.error ?? null,
+      createdAt: Number(download.createdAt) || 0,
+      updatedAt: Number(download.updatedAt) || Number(download.createdAt) || 0
     }
   })
 }
@@ -503,7 +512,7 @@ export function updateDownloadMetadata(downloadId, changes) {
     changes = { ...changes, speedBps: Math.min(previousSpeed * 1.5, Math.max(previousSpeed / 1.5, speedBps)) }
   }
   const statusChanged = changes.status && changes.status !== download.status
-  Object.assign(download, changes)
+  Object.assign(download, changes, { updatedAt: now })
   if (statusChanged || changes.phase || changes.offlineUri || changes.error || changes.speedBps != null) log('metadata update', { id: downloadId, status: changes.status, phase: changes.phase, hasOfflineUri: Boolean(changes.offlineUri), error: changes.error, received: changes.received, total: changes.total, totalExact: changes.totalExact, speedBps: changes.speedBps })
   writeDownloadMetadata(downloads)
   if (changes.status === 'downloading') downloadMetadataUpdatedAt.set(downloadId, now)
@@ -560,17 +569,27 @@ export async function downloadProgressiveVideo(video) {
     engine: 'native',
     selectedFormat: video.selectedFormat || (video.audioUrl ? 'adaptive-mp4' : 'progressive'),
     localPath: dialog.uri,
+    sourceLocator: dialog.uri,
     status: 'queued',
+    phase: 'queued',
     received: 0,
     total,
     totalExact,
     progress: null,
-    createdAt: Date.now()
+    error: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
   }
   const downloads = recordDownloadMetadata(metadata)
   const queued = android.enqueueNativeDownload(JSON.stringify({
     id: downloadId,
+    downloadId,
+    videoId: video.id,
     title: video.title,
+    thumbnail: metadata.thumbnail,
+    selectedFormat: metadata.selectedFormat,
+    engine: metadata.engine,
+    sourceBackend: metadata.sourceBackend,
     videoUrl: video.videoUrl,
     audioUrl: video.audioUrl || '',
     videoTotal,
@@ -579,6 +598,7 @@ export async function downloadProgressiveVideo(video) {
     totalExact,
     durationMs: Math.max(0, Number(video.metadata?.lengthSeconds || 0) * 1000),
     targetUri: dialog.uri,
+    sourceLocator: dialog.uri,
     finalName: fileName
   }))
   if (!queued) throw new Error('Unable to queue download')

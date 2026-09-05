@@ -604,7 +604,13 @@ test('direct download queues honest initial totals, including unknown sizes', as
   const unknown = await queue({ videoTotal: 0 })
   assert.deepEqual(unknown.item, {
     id: unknown.metadata.downloadId,
+    downloadId: unknown.metadata.downloadId,
+    videoId: 'id',
     title: 'Title',
+    thumbnail: '',
+    selectedFormat: 'progressive',
+    engine: 'native',
+    sourceBackend: 'unknown',
     videoUrl: 'https://video',
     audioUrl: '',
     videoTotal: 0,
@@ -613,6 +619,7 @@ test('direct download queues honest initial totals, including unknown sizes', as
     totalExact: false,
     durationMs: 0,
     targetUri: 'content://download',
+    sourceLocator: 'content://download',
     finalName: 'Title.mp4'
   })
   assert.deepEqual({ received: unknown.metadata.received, total: unknown.metadata.total, totalExact: unknown.metadata.totalExact, progress: unknown.metadata.progress }, {
@@ -737,11 +744,24 @@ test('native GET totals stay explicit across Kotlin and renderer boundaries', ()
 test('download metadata has native persistent storage contract', () => {
   assert.ok(downloadMetadataStoreSource.includes('SQLiteOpenHelper'))
   assert.ok(downloadMetadataStoreSource.includes('CREATE TABLE $TABLE'))
-  assert.ok(downloadMetadataStoreSource.includes('private const val ID = "download_id"'))
+  assert.ok(downloadMetadataStoreSource.includes('private const val DATABASE_VERSION = 2'))
+  assert.ok(downloadMetadataStoreSource.includes('ALTER TABLE $TABLE ADD COLUMN $SCHEMA'))
+  assert.ok(downloadMetadataStoreSource.includes('private const val METADATA_SCHEMA_VERSION = 1'))
+  assert.ok(downloadMetadataStoreSource.includes('private fun normalize(input: JSONObject, fallbackId: String)'))
+  for (const field of ['downloadId', 'videoId', 'selectedFormat', 'engine', 'status', 'phase', 'sourceLocator', 'progress', 'error', 'createdAt', 'updatedAt']) {
+    assert.ok(downloadMetadataStoreSource.includes(`put("${field}"`), `missing metadata field: ${field}`)
+  }
+  assert.ok(downloadMetadataStoreSource.includes('runCatching {'))
   assert.ok(downloadMetadataStoreSource.includes('fun replace(serialized: String): Boolean'))
   assert.ok(androidBridgeSource.includes('fun getDownloadMetadata(): String'))
   assert.ok(androidBridgeSource.includes('fun replaceDownloadMetadata(value: String): Boolean'))
   assert.ok(androidBridgeSource.includes('fun deleteDownloadMetadata(downloadId: String): Boolean'))
+})
+
+test('native queue receives metadata required for recovery', () => {
+  for (const field of ['downloadId', 'videoId', 'thumbnail', 'selectedFormat', 'engine', 'sourceBackend', 'sourceLocator']) {
+    assert.ok(source.includes(`${field},`) || source.includes(`${field}:`), `missing renderer metadata field: ${field}`)
+  }
 })
 
 test('native downloads use canonical statuses and exact final file size', () => {
@@ -1131,10 +1151,11 @@ test('metadata update changes only matching download', () => {
   ]))
   updateDownloadMetadata('one', { status: 'failed', error: 'network' })
   const result = JSON.parse(storage.get('freetube-downloads'))
-  assert.deepEqual(result, [
+  assert.deepEqual(result.map(({ updatedAt, ...download }) => download), [
     { downloadId: 'one', status: 'failed', error: 'network' },
     { downloadId: 'two', status: 'completed' }
   ])
+  assert.ok(result[0].updatedAt > 0)
 })
 
 test('download metadata clamps speed jumps', () => {
