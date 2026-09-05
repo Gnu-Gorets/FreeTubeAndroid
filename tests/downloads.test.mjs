@@ -637,6 +637,15 @@ test('direct download queues honest initial totals, including unknown sizes', as
   })
 })
 
+test('native download settings fall back when selected SAF target is unavailable', () => {
+  const settingsSource = fs.readFileSync(new URL('../src/renderer/components/DownloadsSettings.vue', import.meta.url), 'utf8')
+  assert.ok(source.includes('const defaultUri = android.createDownloadFile?.(downloadDirectory()'))
+  assert.ok(source.includes(': await requestSaveDialog(fileName, \'video/mp4\')'))
+  assert.ok(androidBridgeSource.includes('if (!tree.canWrite()) throw SecurityException'))
+  assert.ok(androidBridgeSource.includes('Log.w("FreeTubeDownload", "Unable to create download target"'))
+  assert.ok(settingsSource.includes('function resetDirectory()'))
+})
+
 test('native target deletion handles data MediaStore and SAF URIs', () => {
   assert.ok(androidBridgeSource.includes('if (uri.startsWith("data://")) java.io.File(dataDirectory, uri.removePrefix("data://")).delete()'))
   assert.ok(androidBridgeSource.includes('resolvedUri.authority == MediaStore.AUTHORITY'))
