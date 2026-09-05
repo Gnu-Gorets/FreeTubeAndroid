@@ -47,6 +47,7 @@ class AndroidBridge(
     private val dataDirectory: java.io.File
         get() = java.io.File(activity.filesDir, "data").also { it.mkdirs() }
     private val scripts = ConcurrentHashMap<String, String>()
+    private val downloadMetadata = DownloadMetadataStore(activity)
     private var sigWebView: WebView? = null
     private var sigReady = false
     private val notificationManager = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -378,6 +379,17 @@ class AndroidBridge(
     @JavascriptInterface
     fun getNativeDownloadQueue(): String = activity.getSharedPreferences("downloads", Context.MODE_PRIVATE)
         .getString("queue", "[]") ?: "[]"
+
+    @JavascriptInterface
+    fun getDownloadMetadata(): String = downloadMetadata.read()
+
+    @JavascriptInterface
+    fun replaceDownloadMetadata(value: String): Boolean = runCatching {
+        downloadMetadata.replace(value)
+    }.getOrDefault(false)
+
+    @JavascriptInterface
+    fun deleteDownloadMetadata(downloadId: String): Boolean = downloadMetadata.delete(downloadId)
 
     @JavascriptInterface
     fun controlNativeDownload(action: String, downloadId: String): Boolean {

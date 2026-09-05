@@ -13,6 +13,7 @@ const source = fs.readFileSync(new URL('../src/renderer/helpers/android/download
 const downloadServiceSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
 const mainActivitySource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
 const androidBridgeSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
+const downloadMetadataStoreSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadMetadataStore.kt', import.meta.url), 'utf8')
 const watchSource = fs.readFileSync(new URL('../src/renderer/views/Watch/Watch.js', import.meta.url), 'utf8')
 const watchViewSource = fs.readFileSync(new URL('../src/renderer/views/Watch/Watch.vue', import.meta.url), 'utf8')
 const downloadsViewSource = fs.readFileSync(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
@@ -698,6 +699,16 @@ test('native GET totals stay explicit across Kotlin and renderer boundaries', ()
 
   const inexact = mergeNativeDownload({}, { status: 'downloading', received: 40, total: 100, totalExact: false })
   assert.equal(inexact.totalExact, false)
+})
+
+test('download metadata has native persistent storage contract', () => {
+  assert.ok(downloadMetadataStoreSource.includes('SQLiteOpenHelper'))
+  assert.ok(downloadMetadataStoreSource.includes('CREATE TABLE $TABLE'))
+  assert.ok(downloadMetadataStoreSource.includes('private const val ID = "download_id"'))
+  assert.ok(downloadMetadataStoreSource.includes('fun replace(serialized: String): Boolean'))
+  assert.ok(androidBridgeSource.includes('fun getDownloadMetadata(): String'))
+  assert.ok(androidBridgeSource.includes('fun replaceDownloadMetadata(value: String): Boolean'))
+  assert.ok(androidBridgeSource.includes('fun deleteDownloadMetadata(downloadId: String): Boolean'))
 })
 
 test('native downloads use canonical statuses and exact final file size', () => {
