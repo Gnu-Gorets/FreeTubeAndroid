@@ -215,6 +215,7 @@ class AndroidBridge(
                 if (!file.createNewFile() && !file.exists()) throw IllegalStateException("Unable to create download target")
                 "data://${file.relativeTo(dataDirectory).path}"
             } else {
+                if (!isTreeAccessible(directory)) throw SecurityException("Download directory is not writable")
                 val tree = DocumentFile.fromTreeUri(activity, Uri.parse(directory))
                     ?: throw IllegalStateException("Unable to open download directory")
                 if (!tree.canWrite()) throw SecurityException("Download directory is not writable")
