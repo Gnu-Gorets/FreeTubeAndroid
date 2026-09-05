@@ -914,6 +914,7 @@ test('offline playlist next and previous keep local route state', () => {
   const end = watchSource.indexOf('\n    setViewingModeOnFirstLoad:', start)
   const navigation = watchSource.slice(start, end)
   assert.ok(navigation.includes('const target = downloads[index + direction]'))
+  assert.ok(navigation.includes('if (index < 0) return'))
   assert.ok(navigation.includes('path: `/watch/${target.videoId}`'))
   assert.ok(navigation.includes('query: { ...this.$route.query, offline: target.downloadId }'))
 

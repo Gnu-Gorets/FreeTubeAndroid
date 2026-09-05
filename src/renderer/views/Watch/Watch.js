@@ -589,6 +589,7 @@ export default defineComponent({
       const downloads = this.getOfflinePlaylistDownloads()
       const currentId = this.$route.query.offline
       const index = downloads.findIndex(download => download.downloadId === currentId)
+      if (index < 0) return
       const target = downloads[index + direction]
       if (!target) return
       this.$router.push({
