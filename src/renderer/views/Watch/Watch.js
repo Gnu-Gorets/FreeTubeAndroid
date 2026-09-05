@@ -40,6 +40,7 @@ import {
   youtubeImageUrlToInvidious
 } from '../../helpers/api/invidious'
 import { sortCaptions } from '../../helpers/player/utils'
+import { getCaptionLanguageName, getCaptionTrackLanguage } from '../../helpers/player/captions.mjs'
 import { getDownloadedSources, getOfflinePlaybackState, getPlaybackSource } from '../../helpers/player/playback-source.mjs'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
@@ -986,7 +987,7 @@ export default defineComponent({
                 return {
                   id: caption.vss_id,
                   url: url.toString(),
-                  label: caption.name.text,
+                  label: getCaptionTrackLanguage(caption),
                   language: caption.language_code,
                   mimeType: 'text/vtt'
                 }
@@ -2245,7 +2246,7 @@ export default defineComponent({
         translationName = this.t('Locale Name')
         translationCode = userLanguages.values().next().value
       } else {
-        translationName = translationLanguage.language_name.text
+        translationName = getCaptionLanguageName(translationLanguage)
         translationCode = translationLanguage.language_code
       }
 
@@ -2270,7 +2271,7 @@ export default defineComponent({
 
       const label = this.t('Video.Player.TranslatedCaptionTemplate', {
         language: translationName,
-        originalLanguage: trackToTranslate.name.text
+        originalLanguage: getCaptionTrackLanguage(trackToTranslate)
       })
 
       return {
