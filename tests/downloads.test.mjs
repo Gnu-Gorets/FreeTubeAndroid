@@ -611,6 +611,7 @@ test('direct download queues honest initial totals, including unknown sizes', as
     audioTotal: 0,
     total: 0,
     totalExact: false,
+    durationMs: 0,
     targetUri: 'content://download',
     finalName: 'Title.mp4'
   })
@@ -686,7 +687,9 @@ test('native completion verifies, renames and publishes target', () => {
 test('native adaptive download exposes processing mux lifecycle', () => {
   assert.ok(downloadServiceSource.includes('item.put("phase", "processing")'))
   assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title"), "Processing"'))
-  assert.ok(downloadServiceSource.includes('muxMp4(item.optString("id"), videoFile, audioFile, outputFile)'))
+  assert.ok(downloadServiceSource.includes('muxMp4(item, videoFile, audioFile, outputFile)'))
+  assert.ok(downloadServiceSource.includes('statistics.time / durationMs.toDouble()'))
+  assert.ok(downloadServiceSource.includes('Processing ${"%.0f".format(progress * 100)}%'))
   assert.ok(downloadServiceSource.includes('FFmpegKit.executeAsync'))
   assert.ok(downloadServiceSource.includes('FFmpegKit::cancel'))
   assert.ok(downloadServiceSource.includes('outputFile.inputStream().use { input -> input.copyTo(stream) }'))

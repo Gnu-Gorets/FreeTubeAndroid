@@ -279,10 +279,10 @@ class DownloadService : Service() {
                 withRetries { downloadToFile(audioUrl, audioFile, item, completedVideoBytes, expectedTotal, "audio") }
                 val received = videoFile.length() + audioFile.length()
                 val total = item.optLong("total", 0).takeIf { it > 0 } ?: received
-                item.put("phase", "processing").put("progress", 1).put("received", received).put("total", total).put("speedBps", 0).put("etaSeconds", 0)
+                item.put("phase", "processing").put("progress", 0).put("received", received).put("total", total).put("speedBps", 0).put("etaSeconds", 0)
                 saveItem(item)
-                notify(item.optString("id"), item.optString("title"), "Processing", 1.0, true)
-                muxMp4(item.optString("id"), videoFile, audioFile, outputFile)
+                notify(item.optString("id"), item.optString("title"), "Processing", 0.0, true)
+                muxMp4(item, videoFile, audioFile, outputFile)
                 openTarget(item.getString("targetUri"), "wt").use { stream -> outputFile.inputStream().use { input -> input.copyTo(stream) } }
             } finally {
                 videoFile.delete()
@@ -484,16 +484,28 @@ class DownloadService : Service() {
         broadcast(item)
     }
 
-    private fun muxMp4(downloadId: String, videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
+    private fun muxMp4(item: JSONObject, videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
+        val downloadId = item.optString("id")
         val completed = CountDownLatch(1)
         val result = AtomicReference<FFmpegSession>()
+        val durationMs = item.optLong("durationMs", 0)
         val session = FFmpegKit.executeAsync(
             "-y -i ${ffmpegArg(videoFile)} -i ${ffmpegArg(audioFile)} " +
-                "-map 0:v:0 -map 1:a:0 -c copy ${ffmpegArg(outputFile)}"
-        ) {
-            result.set(it)
-            completed.countDown()
-        }
+                "-map 0:v:0 -map 1:a:0 -c copy ${ffmpegArg(outputFile)}",
+            { finished ->
+                result.set(finished)
+                completed.countDown()
+            },
+            null,
+            { statistics ->
+                if (durationMs > 0) {
+                    val progress = (statistics.time / durationMs.toDouble()).coerceIn(0.0, 0.99)
+                    item.put("progress", progress).put("speedBps", 0).put("etaSeconds", 0)
+                    saveItem(item)
+                    notify(downloadId, item.optString("title"), "Processing ${"%.0f".format(progress * 100)}%", progress, true)
+                }
+            }
+        )
         ffmpegSessions[downloadId] = session.sessionId
         try {
             completed.await()

@@ -579,6 +579,7 @@ export async function downloadProgressiveVideo(video) {
     audioTotal,
     total,
     totalExact,
+    durationMs: Math.max(0, Number(video.metadata?.lengthSeconds || 0) * 1000),
     targetUri: dialog.uri,
     finalName: fileName
   }))
