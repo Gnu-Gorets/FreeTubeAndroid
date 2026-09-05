@@ -35,7 +35,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-quality-repeats, download-sabr-quality-once, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-offline-playback, download-selected-directory, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-restart-queued, download-missing-source, online-playlist, user-playlist, android-navigation,
+                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-quality-repeats, download-sabr-quality-once, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-offline-playback, download-selected-directory, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-restart-queued, download-retry, download-missing-source, download-saf-revoked, online-playlist, user-playlist, android-navigation,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -1485,6 +1485,36 @@ download_delete() {
   ! adb_shell content query --uri "$local_path" --projection _id 2>&1 | grep -q 'Row:'
 }
 
+download_retry() {
+  clean_logs
+  start_app || return 1
+  ensure_cdp || return 1
+  local id status
+  id="smoke-retry-$(date +%s%3N)"
+  cdp_set_download_metadata "[{\"downloadId\":\"$id\",\"videoId\":\"$id\",\"title\":\"Retry smoke fixture\",\"status\":\"queued\",\"engine\":\"native\",\"selectedFormat\":\"native\",\"createdAt\":$(date +%s%3N)}]" || return 1
+  cdp_eval "window.Android.enqueueNativeDownload(JSON.stringify({id:'$id',downloadId:'$id',videoId:'$id',title:'Retry smoke fixture',selectedFormat:'native',engine:'native',videoUrl:'https://invalid.invalid/smoke-retry.mp4',audioUrl:'',targetUri:'data://smoke-retry.mp4',sourceLocator:'data://smoke-retry.mp4',finalName:'smoke-retry.mp4'}))" | grep -q true || return 1
+  for _ in $(seq 1 "$DOWNLOAD_TIMEOUT"); do
+    status=$(cdp_eval "JSON.parse(window.Android.getNativeDownloadQueue()).find(item => item.id === '$id')?.status" | tr -d '"')
+    [[ "$status" == failed ]] && break
+    sleep 1
+  done
+  [[ "$status" == failed ]] || return 1
+  open_downloads_cdp || return 1
+  cdp_click_download_action "$id" retry || return 1
+  for _ in $(seq 1 "$TIMEOUT"); do
+    status=$(cdp_eval "JSON.parse(window.Android.getNativeDownloadQueue()).find(item => item.id === '$id')?.status" | tr -d '"')
+    [[ "$status" == queued || "$status" == downloading ]] && break
+    sleep 1
+  done
+  [[ "$status" == queued || "$status" == downloading ]] || return 1
+  for _ in $(seq 1 "$DOWNLOAD_TIMEOUT"); do
+    status=$(cdp_eval "JSON.parse(window.Android.getNativeDownloadQueue()).find(item => item.id === '$id')?.status" | tr -d '"')
+    [[ "$status" == failed ]] && break
+    sleep 1
+  done
+  [[ "$status" == failed ]]
+}
+
 download_restart_queued() {
   clean_logs
   open_download_video || return 1
@@ -1552,6 +1582,24 @@ download_missing_source() {
   cdp_eval "(() => { const value = window.__ftSmokeDownloadsBackup || '[]'; localStorage.setItem('freetube-downloads', value); return window.Android?.replaceDownloadMetadata?.(value) ?? true })()" >/dev/null || return 1
 }
 
+download_saf_revoked() {
+  download_selected_directory || return 1
+  local directory
+  ensure_cdp || return 1
+  directory=$(cdp_eval 'localStorage.getItem("freetube-download-directory")' | tr -d '"')
+  progress "selected SAF directory: $directory"
+  [[ "$directory" == content://* ]] || return 1
+  cdp_eval "window.Android.revokePermissionForTree('$directory'); true" >/dev/null || return 1
+  local accessible created
+  accessible=$(cdp_eval "window.Android.isTreeAccessible('$directory')")
+  progress "SAF access after revoke: $accessible"
+  [[ "$accessible" == false ]] || return 1
+  created=$(cdp_eval "window.Android.createDownloadFile('$directory', 'revoked-smoke.mp4')" | tr -d '"')
+  progress "revoked target creation result: $created"
+  [[ -z "$created" ]] || return 1
+  cdp_eval 'localStorage.removeItem("freetube-download-directory"); true' >/dev/null
+}
+
 download_selected_directory() {
   clean_logs
   start_app || return 1
@@ -1575,7 +1623,7 @@ download_selected_directory() {
   dump_ui directory-picker-freetube || return 1
   adb_shell input tap 360 1560
   wait_for_ui_text ALLOW || return 1
-  tap_ui_text ALLOW || return 1
+  adb_shell input tap 610 900
   sleep 8
   ensure_cdp || return 1
   [[ $(cdp_eval 'localStorage.getItem("freetube-download-directory") || ""' | tr -d '"') == content://* ]] || return 1
@@ -1632,7 +1680,9 @@ run_unlocked_suite() {
   run_test download-notification download_notification
   run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
+  run_test download-retry download_retry
   run_test download-delete download_delete
+  run_test download-saf-revoked download_saf_revoked
   run_test download-bulk-delete download_bulk_delete
   run_test cleanup cleanup
   run_test recovery recovery
@@ -1663,7 +1713,9 @@ run_downloads_suite() {
   run_test download-notification-terminal download_notification_terminal
   run_test download-sabr-export download_sabr_export
   run_test download-cancel download_cancel
+  run_test download-retry download_retry
   run_test download-delete download_delete
+  run_test download-saf-revoked download_saf_revoked
   run_test download-bulk-delete download_bulk_delete
   run_test download-restart-queued download_restart_queued
   run_test download-offline-playback download_offline_playback
@@ -1760,8 +1812,10 @@ case "$TEST" in
   download-storage) run_test download-storage download_storage ;;
   download-cancel) run_test download-cancel download_cancel ;;
   download-delete) run_test download-delete download_delete ;;
+  download-saf-revoked) run_test download-saf-revoked download_saf_revoked ;;
   download-bulk-delete) run_test download-bulk-delete download_bulk_delete ;;
   download-restart-queued) run_test download-restart-queued download_restart_queued ;;
+  download-retry) run_test download-retry download_retry ;;
   download-missing-source) run_test download-missing-source download_missing_source ;;
   user-playlist) run_test user-playlist user_playlist ;;
   android-navigation) run_test android-navigation android_navigation ;;
