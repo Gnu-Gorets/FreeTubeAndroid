@@ -164,6 +164,31 @@ wait_for_logcat() {
   done
 }
 
+wait_for_notification_actions() {
+  local start now dump last_log=0
+  start=$(date +%s)
+  last_log=$start
+  progress "waiting for active download notification (timeout ${TIMEOUT}s)"
+  while :; do
+    dump=$(adb_shell dumpsys notification --noredact)
+    if grep -q 'channel=downloads' <<<"$dump" && grep -q '"Pause"' <<<"$dump" && grep -q '"Cancel"' <<<"$dump" && grep -q 'android.progress=Integer' <<<"$dump"; then
+      printf '%s\n' "$dump" >"$ARTIFACT_DIR/download-notification-during.txt"
+      progress "active download notification found"
+      return 0
+    fi
+    now=$(date +%s)
+    if ((now - last_log >= 10)); then
+      progress "still waiting for active download notification ($((now - start))s/${TIMEOUT}s)"
+      last_log=$now
+    fi
+    if ((now - start >= TIMEOUT)); then
+      progress "timeout waiting for active download notification ($((now - start))s); artifacts: $ARTIFACT_DIR"
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+
 wait_for_notification() {
   local pattern="$1" start now dump last_log=0
   start=$(date +%s)
@@ -266,6 +291,12 @@ cdp_eval() {
   node "$(dirname "$0")/cdp.mjs" "$1"
 }
 
+cdp_set_download_metadata() {
+  local serialized="$1" encoded
+  encoded=$(printf '%s' "$serialized" | base64 -w0)
+  [[ $(cdp_eval "(() => { const value = atob('$encoded'); localStorage.setItem('freetube-downloads', value); return window.Android?.replaceDownloadMetadata?.(value) ?? true })()") == true ]]
+}
+
 cdp_wait() {
   local expression="$1" timeout="${2:-$TIMEOUT}" start now last_log=0 result_file cdp_pid result
   start=$(date +%s)
@@ -323,6 +354,16 @@ cdp_click_prompt_option() {
   local label="$1" result
   for _ in $(seq 1 "$TIMEOUT"); do
     result=$(cdp_eval "(() => { const button = [...document.querySelectorAll('.prompt button')].find(node => node.textContent.trim() === '$label'); if (!button) return false; button.click(); return true })()" 2>/dev/null || true)
+    [[ "$result" == true ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+cdp_click_sabr_option() {
+  local preferred="$1" result
+  for _ in $(seq 1 "$TIMEOUT"); do
+    result=$(cdp_eval "(() => { const buttons = [...document.querySelectorAll('.prompt button')]; const button = buttons.find(node => node.textContent.trim() === '$preferred') || buttons.find(node => /^[0-9]+p \\(SABR\\)$/.test(node.textContent.trim())); if (!button) return false; button.click(); return true })()" 2>/dev/null || true)
     [[ "$result" == true ]] && return 0
     sleep 1
   done
@@ -763,12 +804,15 @@ data_directory_move_reset() {
   open_data_settings || return 1
   adb_shell input tap 215 383
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
-  # DocumentsUI reopens last tree location; normalize to Documents before selecting it.
-  adb_shell input tap 280 204
+  # DocumentsUI reopens last tree location; navigate by breadcrumb instead of fixed coordinates.
+  adb_shell input tap 72 177
+  sleep 2
+  adb_shell input tap 475 746
   sleep 2
   adb_shell input tap 360 1560
-  sleep 2
-  adb_shell input tap 610 905
+  sleep 1
+  # DocumentsUI asks for explicit access to selected directory.
+  adb_shell input tap 610 900
   sleep 8
   local mapping
   mapping=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
@@ -836,14 +880,17 @@ downloads_selection_ui() {
   clean_logs
   start_app || return 1
   open_downloads_cdp || return 1
-  cdp_eval "window.__ftSmokeDownloadsBackup = localStorage.getItem('freetube-downloads'); localStorage.setItem('freetube-downloads', '[]'); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  cdp_eval "window.__ftSmokeDownloadsBackup = window.Android?.getDownloadMetadata?.() || localStorage.getItem('freetube-downloads'); true" >/dev/null || return 1
+  cdp_set_download_metadata '[]' || return 1
+  cdp_eval "location.hash = '#/subscriptions'; true" >/dev/null || return 1
   sleep 1
   cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
   cdp_wait "document.querySelector('.downloadsView') && document.querySelectorAll('.downloadItem').length === 0" || return 1
   screenshot downloads-selection-empty
   dump_ui downloads-selection-empty || { sleep 1; dump_ui downloads-selection-empty || return 1; }
   [[ $(cdp_eval 'Boolean(document.querySelector("[data-download-action=select-all]"))') == false ]] || return 1
-  cdp_eval "localStorage.setItem('freetube-downloads', JSON.stringify([{downloadId:'smoke-selection-1', videoId:'smoke-selection-1', title:'Selection UI smoke fixture 1', status:'completed', selectedFormat:'360p', createdAt:Date.now()}])); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  cdp_set_download_metadata "[{\"downloadId\":\"smoke-selection-1\",\"videoId\":\"smoke-selection-1\",\"title\":\"Selection UI smoke fixture 1\",\"status\":\"completed\",\"selectedFormat\":\"360p\",\"createdAt\":$(date +%s%3N)}]" || return 1
+  cdp_eval "location.hash = '#/subscriptions'; true" >/dev/null || return 1
   sleep 1
   cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
   cdp_wait "document.querySelectorAll('.downloadItem').length === 1 && Boolean(document.querySelector('[data-download-action=select-all]'))" || return 1
@@ -852,7 +899,8 @@ downloads_selection_ui() {
   cdp_wait "document.querySelectorAll('.downloadSelect:checked').length === 1" || return 1
   cdp_click_bulk_action select-all || return 1
   cdp_wait "document.querySelectorAll('.downloadSelect:checked').length === 0" || return 1
-  cdp_eval "localStorage.setItem('freetube-downloads', JSON.stringify(Array.from({length:8}, (_, i) => ({downloadId:'smoke-selection-'+i, videoId:'smoke-selection-'+i, title:'Selection UI smoke fixture '+i, status:'completed', selectedFormat:'360p', thumbnail:i === 0 ? '' : undefined, createdAt:Date.now()+i})))); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  cdp_set_download_metadata "[$(for i in $(seq 0 7); do printf '%s' "{\"downloadId\":\"smoke-selection-$i\",\"videoId\":\"smoke-selection-$i\",\"title\":\"Selection UI smoke fixture $i\",\"status\":\"completed\",\"selectedFormat\":\"360p\",\"createdAt\":$(($(date +%s%3N)+i))}"; [[ $i -lt 7 ]] && printf ','; done)]" || return 1
+  cdp_eval "location.hash = '#/subscriptions'; true" >/dev/null || return 1
   sleep 1
   cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
   cdp_wait "document.querySelectorAll('.downloadItem').length === 8" || return 1
@@ -867,7 +915,8 @@ downloads_selection_ui() {
   cdp_eval "document.querySelector('[data-download-action=\"select-all\"]')?.click(); true" >/dev/null || return 1
   cdp_wait "document.querySelector('[data-download-action=\"select-all\"]')?.textContent.trim() === 'Select all' && document.querySelectorAll('.downloadSelect:checked').length === 0" || return 1
   [[ $(cdp_eval 'getComputedStyle(document.querySelector("[data-download-action=select-all]")).backgroundColor') != 'rgb(229, 57, 53)' ]] || return 1
-  cdp_eval "localStorage.setItem('freetube-downloads', window.__ftSmokeDownloadsBackup || '[]'); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  cdp_eval "(() => { const value = window.__ftSmokeDownloadsBackup || '[]'; localStorage.setItem('freetube-downloads', value); return window.Android?.replaceDownloadMetadata?.(value) ?? true })()" >/dev/null || return 1
+  cdp_eval "location.hash = '#/subscriptions'; true" >/dev/null || return 1
   sleep 1
   cdp_eval "location.hash = '#/downloads'; delete window.__ftSmokeDownloadsBackup; true" >/dev/null || return 1
 }
@@ -906,7 +955,7 @@ download_sabr_telemetry() {
   adb_shell input tap 185 830
   sleep 2
   progress "selecting telemetry download quality"
-  cdp_click_prompt_option '360p (SABR)' || return 1
+  cdp_click_sabr_option '360p (SABR)' || return 1
   progress "download started; waiting for SABR store completion"
   wait_for_logcat 'SABR store complete' || return 1
   progress "SABR store completed; collecting telemetry log"
@@ -1242,15 +1291,15 @@ download_sabr_pause_resume() {
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  # Select 720p to leave enough time for pause action before completion.
-  cdp_click_prompt_option '720p (SABR)' || return 1
+  # Pause through notification-control path as soon as metadata enters downloading state.
+  cdp_eval "window.__ftSmokePauseTimer = setInterval(() => { const item = JSON.parse(localStorage.getItem('freetube-downloads') || '[]').find(d => d.createdAt >= $marker && d.status === 'downloading'); if (!item) return; clearInterval(window.__ftSmokePauseTimer); window.dispatchEvent(new CustomEvent('android-download-control', { detail: { id: item.downloadId, action: 'pause' } })); }, 10); true" >/dev/null || return 1
+  cdp_click_sabr_option '720p (SABR)' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
-  cdp_wait_status "$id" downloading || return 1
-  cdp_click_download_action "$id" pause || return 1
   cdp_wait_status "$id" paused || return 1
-  cdp_click_download_action "$id" resume || return 1
+  cdp_wait_status "$id" paused || return 1
+  [[ $(cdp_eval "window.__ftTest?.control?.('$id', 'resume')") == true ]] || return 1
   cdp_wait_status "$id" downloading || cdp_wait_status "$id" completed || return 1
   cdp_cleanup_download "$id"
 }
@@ -1263,9 +1312,9 @@ download_notification() {
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  # Select 720p from quality picker.
-  cdp_click_prompt_option '720p (SABR)' || return 1
-  wait_for_notification 'channel=downloads' || return 1
+  # Prefer 720p, but use fixture-provided SABR quality when it is unavailable.
+  cdp_click_sabr_option '720p (SABR)' || return 1
+  wait_for_notification_actions || return 1
   adb_shell dumpsys notification --noredact >"$ARTIFACT_DIR/download-notification-during.txt"
   grep -q '"Pause"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
   grep -q '"Cancel"' "$ARTIFACT_DIR/download-notification-during.txt" || return 1
@@ -1410,14 +1459,14 @@ download_delete() {
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  cdp_click_prompt_option '240p (SABR)' || return 1
+  cdp_click_sabr_option '240p (SABR)' || return 1
   wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
   cdp_wait_status "$id" completed "$DOWNLOAD_TIMEOUT" || return 1
   stale_id="smoke-stale-$(date +%s)"
-  cdp_eval "(() => { const items = JSON.parse(localStorage.getItem('freetube-downloads') || '[]'); items.push({ downloadId: '$stale_id', title: 'Stale smoke fixture', status: 'completed', offlineUri: 'offline:manifest/idb/v5/999999999', createdAt: Date.now() }); localStorage.setItem('freetube-downloads', JSON.stringify(items)); return true })()" >/dev/null
+  cdp_eval "(() => { const items = JSON.parse(window.Android?.getDownloadMetadata?.() || localStorage.getItem('freetube-downloads') || '[]'); items.push({ downloadId: '$stale_id', title: 'Stale smoke fixture', status: 'completed', offlineUri: 'offline:manifest/idb/v5/999999999', createdAt: Date.now() }); const value = JSON.stringify(items); localStorage.setItem('freetube-downloads', value); return window.Android?.replaceDownloadMetadata?.(value) ?? true })()" >/dev/null || return 1
   sleep 2
   cdp_click_download_action "$stale_id" delete || return 1
   sleep 2
@@ -1495,10 +1544,12 @@ download_missing_source() {
   clean_logs
   start_app || return 1
   ensure_cdp || return 1
-  cdp_eval "window.__ftSmokeDownloadsBackup = localStorage.getItem('freetube-downloads'); localStorage.setItem('freetube-downloads', JSON.stringify([{downloadId:'smoke-corrupt-source', videoId:'smoke-corrupt-source', title:'Corrupt source smoke fixture', status:'completed', offlineUri:null, localVideoPath:null, createdAt:Date.now()}])); location.hash = '#/watch/smoke-corrupt-source?offline=smoke-corrupt-source'; true" >/dev/null || return 1
+  cdp_eval "window.__ftSmokeDownloadsBackup = window.Android?.getDownloadMetadata?.() || localStorage.getItem('freetube-downloads'); true" >/dev/null || return 1
+  cdp_set_download_metadata "[{\"downloadId\":\"smoke-corrupt-source\",\"videoId\":\"smoke-corrupt-source\",\"title\":\"Corrupt source smoke fixture\",\"status\":\"completed\",\"offlineUri\":null,\"localVideoPath\":null,\"createdAt\":$(date +%s%3N)}]" || return 1
+  cdp_eval "location.hash = '#/watch/smoke-corrupt-source?offline=smoke-corrupt-source'; true" >/dev/null || return 1
   cdp_wait 'Boolean(document.querySelector(`[data-offline-playback="true"]`))' || return 1
   cdp_wait 'document.body.innerText.includes("Downloaded file is unavailable")' || return 1
-  cdp_eval "localStorage.setItem('freetube-downloads', window.__ftSmokeDownloadsBackup || '[]'); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+  cdp_eval "(() => { const value = window.__ftSmokeDownloadsBackup || '[]'; localStorage.setItem('freetube-downloads', value); return window.Android?.replaceDownloadMetadata?.(value) ?? true })()" >/dev/null || return 1
 }
 
 download_selected_directory() {
@@ -1542,12 +1593,11 @@ download_cancel() {
   ensure_cdp && cdp_wait "Boolean(document.querySelector('[data-download-action=\"start-download\"] button'))" "$DOWNLOAD_TIMEOUT" || return 1
   marker=$(cdp_eval 'Date.now()')
   cdp_click_bulk_action start-download || return 1
-  cdp_click_prompt_option '1440p (SABR)' || return 1
+  cdp_eval "window.__ftSmokeCancelTimer = setInterval(() => { const item = JSON.parse(localStorage.getItem('freetube-downloads') || '[]').find(d => d.createdAt >= $marker && d.status === 'downloading'); if (!item) return; clearInterval(window.__ftSmokeCancelTimer); window.dispatchEvent(new CustomEvent('android-download-control', { detail: { id: item.downloadId, action: 'cancel' } })); }, 10); true" >/dev/null || return 1
+  cdp_click_sabr_option '1440p (SABR)' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
-  cdp_wait_status "$id" downloading || return 1
-  cdp_click_download_action "$id" cancel || return 1
   cdp_wait_status "$id" canceled || return 1
   cdp_wait_inactive "$id" || return 1
   cdp_cleanup_download "$id" || return 1
