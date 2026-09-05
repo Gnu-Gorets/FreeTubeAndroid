@@ -75,7 +75,8 @@ class DownloadService : Service() {
         when (intent?.action) {
             ACTION_ENQUEUE -> intent.getStringExtra(EXTRA_ITEM)?.let { enqueue(JSONObject(it)) }
             ACTION_PAUSE -> update(intent.getStringExtra(EXTRA_ID), "paused")
-            ACTION_RESUME, ACTION_RETRY -> update(intent.getStringExtra(EXTRA_ID), "queued")
+            ACTION_RESUME -> update(intent.getStringExtra(EXTRA_ID), "queued")
+            ACTION_RETRY -> retry(intent.getStringExtra(EXTRA_ID))
             ACTION_CANCEL -> cancel(intent.getStringExtra(EXTRA_ID))
         }
         if (intent?.action != ACTION_ENQUEUE) executor.execute { process() }
@@ -98,8 +99,8 @@ class DownloadService : Service() {
         var changed = false
         for (index in 0 until queue.length()) {
             val item = queue.getJSONObject(index)
-            if (item.optString("status") == "downloading") {
-                item.put("status", "queued")
+            if (item.optString("status") == "downloading" || item.optString("status") == "processing") {
+                item.put("status", "queued").put("phase", "queued")
                 changed = true
             }
             if (item.optString("status") in setOf("queued", "paused") &&
@@ -154,15 +155,16 @@ class DownloadService : Service() {
     private fun update(id: String?, status: String) {
         if (id == null) return
         val queue = readQueue()
-        for (index in 0 until queue.length()) {
-            val item = queue.getJSONObject(index)
-            if (item.optString("id") == id) {
-                Log.i(TAG, "queue status id=$id ${item.optString("status")}->$status")
-                item.put("status", status).put("error", JSONObject.NULL)
-            }
+        val item = (0 until queue.length()).map { queue.getJSONObject(it) }.firstOrNull { it.optString("id") == id } ?: return
+        val current = item.optString("status")
+        if (!isAllowedTransition(current, status)) {
+            Log.w(TAG, "queue transition rejected id=$id $current->$status")
+            return
         }
+        Log.i(TAG, "queue status id=$id $current->$status")
+        item.put("status", status).put("phase", status).put("error", JSONObject.NULL)
         writeQueue(queue)
-        queue.let { q -> (0 until q.length()).map { q.getJSONObject(it) }.firstOrNull { it.optString("id") == id } }?.let(::broadcast)
+        broadcast(item)
         if (status == "paused") {
             connections[id]?.disconnect()
             cancelFfmpeg(id)
@@ -170,22 +172,42 @@ class DownloadService : Service() {
         executor.execute { process() }
     }
 
+    private fun retry(id: String?) {
+        if (id == null) return
+        val queue = readQueue()
+        val item = (0 until queue.length()).map { queue.getJSONObject(it) }.firstOrNull { it.optString("id") == id } ?: return
+        if (!isAllowedTransition(item.optString("status"), "queued")) {
+            Log.w(TAG, "queue retry rejected id=$id status=${item.optString("status")}")
+            return
+        }
+        update(id, "queued")
+    }
+
     private fun cancel(id: String?) {
         if (id == null) return
         connections[id]?.disconnect()
         cancelFfmpeg(id)
         val queue = readQueue()
-        for (index in 0 until queue.length()) {
-            val item = queue.getJSONObject(index)
-            if (item.optString("id") == id) {
-                Log.i(TAG, "queue status id=$id ${item.optString("status")}->canceled")
-                item.put("status", "canceled")
-                delete(item.optString("targetUri"))
-            }
+        val item = (0 until queue.length()).map { queue.getJSONObject(it) }.firstOrNull { it.optString("id") == id } ?: return
+        val current = item.optString("status")
+        if (!isAllowedTransition(current, "canceled")) {
+            Log.w(TAG, "queue cancel rejected id=$id status=$current")
+            return
         }
+        Log.i(TAG, "queue status id=$id $current->canceled")
+        item.put("status", "canceled").put("phase", "canceled")
+        delete(item.optString("targetUri"))
         writeQueue(queue)
-        queue.let { q -> (0 until q.length()).map { q.getJSONObject(it) }.firstOrNull { it.optString("id") == id } }?.let(::broadcast)
+        broadcast(item)
         executor.execute { process() }
+    }
+
+    private fun isAllowedTransition(from: String, to: String): Boolean = from == to || when (from) {
+        "queued" -> to in setOf("downloading", "paused", "canceled")
+        "downloading", "processing" -> to in setOf("paused", "completed", "failed", "canceled")
+        "paused" -> to in setOf("queued", "canceled")
+        "failed" -> to == "queued"
+        else -> false
     }
 
     private fun process() {

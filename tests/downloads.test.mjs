@@ -648,14 +648,15 @@ test('native target deletion handles data MediaStore and SAF URIs', () => {
 test('native queue recovers queued and downloading items after app restart', () => {
   assert.ok(downloadServiceSource.includes('items.getJSONObject(it).optString("status") == "queued"'))
   assert.ok(downloadServiceSource.includes('items.getJSONObject(it).optString("status") == "downloading"'))
-  assert.ok(downloadServiceSource.includes('if (item.optString("status") == "downloading")'))
-  assert.ok(downloadServiceSource.includes('item.put("status", "queued")'))
+  assert.ok(downloadServiceSource.includes('item.optString("status") == "downloading" || item.optString("status") == "processing"'))
+  assert.ok(downloadServiceSource.includes('item.put("status", "queued").put("phase", "queued")'))
   assert.ok(downloadServiceSource.includes('return START_STICKY'))
   assert.ok(mainActivitySource.includes('DownloadService.resumeIfNeeded(this)'))
 })
 
 test('native retry uses bounded retryable error policy', () => {
-  assert.ok(downloadServiceSource.includes('ACTION_RESUME, ACTION_RETRY -> update(intent.getStringExtra(EXTRA_ID), "queued")'))
+  assert.ok(downloadServiceSource.includes('ACTION_RETRY -> retry(intent.getStringExtra(EXTRA_ID))'))
+  assert.ok(downloadServiceSource.includes('private fun isAllowedTransition(from: String, to: String)'))
   assert.ok(downloadServiceSource.includes('private const val MAX_RETRIES = 4'))
   assert.ok(downloadServiceSource.includes('withRetries { downloadSingleFile'))
   assert.ok(downloadServiceSource.includes('withRetries { downloadToFile'))
@@ -667,14 +668,15 @@ test('native retry uses bounded retryable error policy', () => {
 test('native cancel disconnects and deletes target', () => {
   assert.ok(downloadServiceSource.includes('ACTION_CANCEL -> cancel(intent.getStringExtra(EXTRA_ID))'))
   assert.ok(downloadServiceSource.includes('connections[id]?.disconnect()'))
-  assert.ok(downloadServiceSource.includes('item.put("status", "canceled")'))
+  assert.ok(downloadServiceSource.includes('item.put("status", "canceled").put("phase", "canceled")'))
   assert.ok(downloadServiceSource.includes('delete(item.optString("targetUri"))'))
   assert.ok(downloadServiceSource.includes('currentState == "paused" || currentState == "canceled"'))
 })
 
 test('native pause and resume transition queue state', () => {
   assert.ok(downloadServiceSource.includes('ACTION_PAUSE -> update(intent.getStringExtra(EXTRA_ID), "paused")'))
-  assert.ok(downloadServiceSource.includes('ACTION_RESUME, ACTION_RETRY -> update(intent.getStringExtra(EXTRA_ID), "queued")'))
+  assert.ok(downloadServiceSource.includes('ACTION_RESUME -> update(intent.getStringExtra(EXTRA_ID), "queued")'))
+  assert.ok(downloadServiceSource.includes('private fun retry(id: String?)'))
   assert.ok(downloadServiceSource.includes('if (status == "paused") {'))
   assert.ok(downloadServiceSource.includes('cancelFfmpeg(id)'))
   assert.ok(downloadServiceSource.includes('item.optString("status") == "queued" && activeDownloads.add(id)'))
