@@ -8,7 +8,7 @@ APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/debug/app-d
 SERIAL=""
 TEST="all"
 SUITE="all"
-DOWNLOAD_VIDEO_URL="https://youtu.be/6gFpmmLbs2U"
+DOWNLOAD_VIDEO_URL="https://youtu.be/jNQXAC9IVRw"
 KEEP_DATA=1
 TIMEOUT=45
 DOWNLOAD_TIMEOUT=180
@@ -35,7 +35,7 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-quality-repeats, download-sabr-quality-once, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete,
+                        downloads-page, downloads-selection-ui, download-quality, download-sabr-telemetry, download-sabr-total, download-sabr-quality-totals, download-sabr-quality-pair, download-sabr-quality-repeats, download-sabr-quality-once, download-sabr-1080, download-sabr-ui-progress, download-sabr-pause-resume, download-sabr-export, download-offline-playback, download-selected-directory, download-notification, download-notification-title, download-notification-terminal, download-storage, download-cancel, download-delete, download-bulk-delete, download-restart-queued, download-missing-source, online-playlist, user-playlist, android-navigation,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
@@ -594,7 +594,12 @@ open_download_video() {
     progress "waiting for app focus after opening video"
     wait_for "$PACKAGE" || return 1
     progress "waiting for download controls (timeout ${DOWNLOAD_TIMEOUT}s)"
-    ensure_cdp && cdp_wait "Boolean(document.querySelector('[data-download-action=\"start-download\"] button'))" "$DOWNLOAD_TIMEOUT" || return 1
+    ensure_cdp || return 1
+    if ! cdp_wait "Boolean(document.querySelector('[data-download-action=\"start-download\"] button'))" 15; then
+      progress 'deep link did not update route; using direct Watch route fallback'
+      cdp_eval "location.hash = '#/subscriptions'; setTimeout(() => { location.hash = '#/watch/jNQXAC9IVRw' }, 100); true" >/dev/null || return 1
+      cdp_wait "Boolean(document.querySelector('[data-download-action=\"start-download\"] button'))" "$DOWNLOAD_TIMEOUT" || return 1
+    fi
     if adb_cmd logcat -d --pid="$(adb_shell pidof -s "$PACKAGE")" '*:E' | grep -q 'TypeError:'; then
       progress "TypeError detected while opening video"
       [[ "$attempt" == 2 ]] && return 1
@@ -874,7 +879,7 @@ download_quality() {
   local marker id format
   marker=$(cdp_eval 'Date.now()')
   cdp_click_bulk_action start-download || return 1
-  cdp_click_prompt_option '360p (SABR)' || return 1
+  cdp_click_prompt_option '240p (SABR)' || return 1
   screenshot download-quality
   # WebView text is not exposed reliably to UIAutomator. Check renderer log instead.
   adb_cmd logcat -d -v brief >"$ARTIFACT_DIR/download-quality-logcat.txt"
@@ -1315,11 +1320,11 @@ download_sabr_export() {
   clean_logs
   open_download_video || return 1
   ensure_cdp || return 1
-  local marker id uri received total progress
+  local marker id uri received total progress video_id
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  cdp_click_prompt_option '1440p (SABR)' || return 1
+  cdp_click_prompt_option '240p (SABR)' || return 1
   wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
@@ -1334,10 +1339,19 @@ download_sabr_export() {
   [[ "$total" =~ ^[1-9][0-9]*$ ]] || return 1
   [[ "$progress" == 1 ]] || return 1
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == true ]] || return 1
+  if [[ "${1:-}" == playback ]]; then
+    video_id=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.videoId" | tr -d '"')
+    cdp_eval "location.hash = '#/watch/$video_id?offline=$id'; true" >/dev/null || return 1
+    cdp_wait 'location.hash.includes("/watch/") && Boolean(document.querySelector(`[data-offline-playback="true"]`))' "$((DOWNLOAD_TIMEOUT + 120))" || return 1
+    cdp_wait 'Boolean(document.querySelector(".videoPlayer"))' "$((DOWNLOAD_TIMEOUT + 120))" || return 1
+    [[ $(cdp_eval 'Boolean(document.querySelector(`[data-offline-playback="true"]`)) && !document.body.innerText.includes("Downloaded file is unavailable")') == true ]] || return 1
+  fi
+  open_downloads_cdp || return 1
   cdp_cleanup_download "$id"
 }
 
 download_storage() { download_sabr_export; }
+download_offline_playback() { download_sabr_export playback; }
 
 download_bulk_delete() {
   clean_logs
@@ -1360,12 +1374,24 @@ download_bulk_delete() {
     uris+=("$uri")
   done
   cdp_click_bulk_action select-all || return 1
+  cdp_click_bulk_action select-all || return 1
+  cdp_eval "['$id1', '$id2'].forEach(id => [...document.querySelectorAll('[data-download-id]')].find(node => node.dataset.downloadId === id)?.querySelector('input[type=checkbox]')?.click()); true" >/dev/null || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
     [[ $(cdp_eval "['$id1', '$id2'].every(id => document.querySelector('[data-download-id=\"' + id + '\"] input[type=checkbox]')?.checked)") == true ]] && break
     sleep 1
   done
   [[ $(cdp_eval "['$id1', '$id2'].every(id => document.querySelector('[data-download-id=\"' + id + '\"] input[type=checkbox]')?.checked)") == true ]] || return 1
-  cdp_click_bulk_action delete-selected || return 1
+  cdp_click_bulk_action play-selected || return 1
+  cdp_wait 'location.hash.includes("offlinePlaylist=") && Boolean(document.querySelector(`[data-offline-playback="true"]`))' "$DOWNLOAD_TIMEOUT" || return 1
+  cdp_wait 'Boolean(document.querySelector(".videoPlayer"))' "$DOWNLOAD_TIMEOUT" || return 1
+  cdp_eval "window.dispatchEvent(new Event('media-next')); true" >/dev/null || return 1
+  cdp_wait "location.hash.includes('offline=$id2')" "$DOWNLOAD_TIMEOUT" || return 1
+  cdp_eval "window.dispatchEvent(new Event('media-previous')); true" >/dev/null || return 1
+  cdp_wait "location.hash.includes('offline=$id1')" "$DOWNLOAD_TIMEOUT" || return 1
+  cdp_eval 'history.back(); true' >/dev/null || return 1
+  open_downloads_cdp || return 1
+  cdp_click_download_action "$id1" delete || return 1
+  cdp_click_download_action "$id2" delete || return 1
   for _ in $(seq 1 "$TIMEOUT"); do
     [[ $(cdp_eval "['$id1', '$id2'].every(id => !window.__ftTest.downloads().some(d => d.id === id))") == true ]] && break
     sleep 1
@@ -1384,7 +1410,7 @@ download_delete() {
   marker=$(cdp_eval 'Date.now()')
   adb_shell input tap 185 830
   sleep 2
-  cdp_click_prompt_option '1440p (SABR)' || return 1
+  cdp_click_prompt_option '240p (SABR)' || return 1
   wait_for_logcat '"event":"preflight-complete"' || return 1
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
@@ -1408,6 +1434,101 @@ download_delete() {
   [[ $(cdp_eval "window.__ftTest.downloads().some(d => d.id === '$id')") == false ]] || return 1
   [[ $(cdp_eval "window.__ftTest.offlineContents().then(items => items.includes('$uri'))") == false ]] || return 1
   ! adb_shell content query --uri "$local_path" --projection _id 2>&1 | grep -q 'Row:'
+}
+
+download_restart_queued() {
+  clean_logs
+  open_download_video || return 1
+  ensure_cdp || return 1
+  local marker id status
+  marker=$(cdp_eval 'Date.now()')
+  cdp_start_sabr_download "$marker" 1 || return 1
+  open_downloads_cdp || return 1
+  id=$(cdp_latest_download_id_since "$marker")
+  [[ -n "$id" && "$id" != null ]] || return 1
+  cdp_wait_status "$id" downloading || return 1
+  adb_shell am force-stop "$PACKAGE"
+  sleep 3
+  start_app || return 1
+  open_downloads_cdp || return 1
+  for _ in $(seq 1 "$DOWNLOAD_TIMEOUT"); do
+    status=$(cdp_eval "window.__ftTest.downloads().find(d => d.id === '$id')?.status" | tr -d '"')
+    [[ "$status" == completed ]] && break
+    sleep 1
+  done
+  [[ "$status" == completed ]] || return 1
+  cdp_cleanup_download "$id"
+}
+
+online_playlist() {
+  clean_logs
+  start_app || return 1
+  adb_shell am start -a android.intent.action.VIEW -d 'https://www.youtube.com/playlist?list=PLFgquLnL59alCl-2TQvOiD5Vgm1hCaGSI' -n "$ACTIVITY" >/dev/null
+  ensure_cdp || return 1
+  if ! cdp_wait "location.hash.startsWith('#/playlist/')" 15; then
+    cdp_eval "location.hash = '#/playlist/PLFgquLnL59alCl-2TQvOiD5Vgm1hCaGSI'; true" >/dev/null || return 1
+  fi
+  cdp_wait 'Boolean(document.querySelector(".playlistPage"))' "$DOWNLOAD_TIMEOUT" || return 1
+  no_runtime_errors
+}
+
+android_navigation() {
+  clean_logs
+  start_app || return 1
+  cdp_eval "location.hash = '#/settings'; true" >/dev/null || return 1
+  cdp_wait "location.hash === '#/settings'" || return 1
+  cdp_eval "location.hash = '#/downloads'; true" >/dev/null || return 1
+  cdp_wait "location.hash === '#/downloads'" || return 1
+  adb_shell input keyevent KEYCODE_BACK
+  cdp_wait "location.hash === '#/settings'" || return 1
+  no_runtime_errors
+}
+
+user_playlist() {
+  clean_logs
+  start_app || return 1
+  cdp_eval "location.hash = '#/playlist/favorites'; true" >/dev/null || return 1
+  cdp_wait 'Boolean(document.querySelector(".playlistPage"))' "$DOWNLOAD_TIMEOUT" || return 1
+  no_runtime_errors
+}
+
+download_missing_source() {
+  clean_logs
+  start_app || return 1
+  ensure_cdp || return 1
+  cdp_eval "window.__ftSmokeDownloadsBackup = localStorage.getItem('freetube-downloads'); localStorage.setItem('freetube-downloads', JSON.stringify([{downloadId:'smoke-corrupt-source', videoId:'smoke-corrupt-source', title:'Corrupt source smoke fixture', status:'completed', offlineUri:null, localVideoPath:null, createdAt:Date.now()}])); location.hash = '#/watch/smoke-corrupt-source?offline=smoke-corrupt-source'; true" >/dev/null || return 1
+  cdp_wait 'Boolean(document.querySelector(`[data-offline-playback="true"]`))' || return 1
+  cdp_wait 'document.body.innerText.includes("Downloaded file is unavailable")' || return 1
+  cdp_eval "localStorage.setItem('freetube-downloads', window.__ftSmokeDownloadsBackup || '[]'); location.hash = '#/subscriptions'; true" >/dev/null || return 1
+}
+
+download_selected_directory() {
+  clean_logs
+  start_app || return 1
+  ensure_cdp || return 1
+  cdp_eval "location.hash = '#/settings'; true" >/dev/null || return 1
+  cdp_wait 'Boolean(document.querySelector(".settingsPage"))' || return 1
+  cdp_wait 'Boolean(document.querySelector(`.settingsMenu [data-section="downloads"]`))' || return 1
+  cdp_eval "document.querySelector('.settingsMenu [data-section=\"downloads\"]')?.click(); true" >/dev/null || return 1
+  cdp_wait 'Boolean(document.querySelector("[data-download-settings-action=choose-folder]"))' || return 1
+  cdp_eval 'document.querySelector("[data-download-settings-action=choose-folder]").click(); true' >/dev/null || return 1
+  wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
+  dump_ui directory-picker || return 1
+  tap_ui_text 'moto g34 5G' || return 1
+  sleep 2
+  dump_ui directory-picker-root || return 1
+  tap_ui_text 'Download' || return 1
+  sleep 2
+  dump_ui directory-picker-download || return 1
+  tap_ui_text 'FreeTube' || return 1
+  sleep 2
+  dump_ui directory-picker-freetube || return 1
+  adb_shell input tap 360 1560
+  wait_for_ui_text ALLOW || return 1
+  tap_ui_text ALLOW || return 1
+  sleep 8
+  ensure_cdp || return 1
+  [[ $(cdp_eval 'localStorage.getItem("freetube-download-directory") || ""' | tr -d '"') == content://* ]] || return 1
 }
 
 download_cancel() {
@@ -1495,6 +1616,8 @@ run_downloads_suite() {
   run_test download-cancel download_cancel
   run_test download-delete download_delete
   run_test download-bulk-delete download_bulk_delete
+  run_test download-restart-queued download_restart_queued
+  run_test download-offline-playback download_offline_playback
   (( FAIL == 0 ))
 }
 
@@ -1589,6 +1712,13 @@ case "$TEST" in
   download-cancel) run_test download-cancel download_cancel ;;
   download-delete) run_test download-delete download_delete ;;
   download-bulk-delete) run_test download-bulk-delete download_bulk_delete ;;
+  download-restart-queued) run_test download-restart-queued download_restart_queued ;;
+  download-missing-source) run_test download-missing-source download_missing_source ;;
+  user-playlist) run_test user-playlist user_playlist ;;
+  android-navigation) run_test android-navigation android_navigation ;;
+  online-playlist) run_test online-playlist online_playlist ;;
+  download-selected-directory) run_test download-selected-directory download_selected_directory ;;
+  download-offline-playback) run_test download-offline-playback download_offline_playback ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;

@@ -44,6 +44,61 @@ test('Android default downloads use public Freetube folder', () => {
   assert.match(source, /IS_PENDING, 1/)
 })
 
+test('download Settings names native file directory scope', () => {
+  const locale = readFileSync(new URL('../static/locales/en-US.yaml', import.meta.url), 'utf8')
+  const settings = readFileSync(new URL('../src/renderer/components/DownloadsSettings.vue', import.meta.url), 'utf8')
+  assert.ok(locale.includes("Download folder: 'Native file download folder: {directory}'"))
+  assert.ok(locale.includes('Native only: Used for native file downloads. SABR offline storage stays inside the app.'))
+  assert.ok(locale.includes('Concurrent downloads: Concurrent SABR and native downloads'))
+  assert.ok(settings.includes("t('Downloads.Settings.Native only')"))
+})
+
+test('directory reset and legacy migration use canonical default', () => {
+  const source = readFileSync(new URL('../src/renderer/components/DownloadsSettings.vue', import.meta.url), 'utf8')
+  assert.ok(source.includes('if (directory.value !== savedDirectory) localStorage.setItem'))
+  assert.ok(source.includes('function resetDirectory()'))
+  assert.ok(source.includes('directory.value = DEFAULT_DIRECTORY'))
+  assert.ok(source.includes('localStorage.setItem(\'freetube-download-directory\', DEFAULT_DIRECTORY)'))
+  assert.ok(source.includes('window.dispatchEvent(new CustomEvent(\'download-settings-changed\'))'))
+})
+
+test('MediaStore target uses Android Q pending publication lifecycle', () => {
+  const source = readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
+  const service = readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
+  assert.ok(source.includes('Build.VERSION_CODES.Q'))
+  assert.ok(source.includes('MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)'))
+  assert.ok(source.includes('put(MediaStore.MediaColumns.IS_PENDING, 1)'))
+  assert.ok(service.includes('put(MediaStore.MediaColumns.IS_PENDING, 0)'))
+})
+
+test('SAF directory URI keeps permission and creates a writable target', () => {
+  const source = readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
+  assert.ok(source.includes('Intent.ACTION_OPEN_DOCUMENT_TREE'))
+  assert.ok(source.includes('takePersistableUriPermission'))
+  assert.ok(source.includes('DocumentFile.fromTreeUri(activity, Uri.parse(directory))'))
+  assert.ok(source.includes('tree.canWrite()'))
+  assert.ok(source.includes('tree.createFile("video/mp4", fileName)'))
+})
+
+test('default directory is shared across Settings and native download helper', () => {
+  const settings = readFileSync(new URL('../src/renderer/components/DownloadsSettings.vue', import.meta.url), 'utf8')
+  const downloads = readFileSync(new URL('../src/renderer/helpers/android/downloads.js', import.meta.url), 'utf8')
+  assert.ok(settings.includes("const DEFAULT_DIRECTORY = 'data://downloads/FreeTube'"))
+  assert.ok(downloads.includes("? 'data://downloads/FreeTube'"))
+  assert.ok(downloads.includes('createDownloadFile?.(downloadDirectory()'))
+})
+
+test('legacy download directories migrate to FreeTube default', () => {
+  const settings = readFileSync(new URL('../src/renderer/components/DownloadsSettings.vue', import.meta.url), 'utf8')
+  const downloads = readFileSync(new URL('../src/renderer/helpers/android/downloads.js', import.meta.url), 'utf8')
+  for (const legacy of ['data://downloads', 'data://downloads/Freetube', 'data://downloads/FreetTube']) {
+    assert.ok(settings.includes(`'${legacy}'`))
+    assert.ok(downloads.includes(`'${legacy}'`))
+  }
+  assert.ok(settings.includes("? DEFAULT_DIRECTORY : savedDirectory"))
+  assert.ok(downloads.includes("? 'data://downloads/FreeTube'"))
+})
+
 test('notification reports initial progress without byte totals', () => {
   assert.deepEqual(getDownloadNotificationPayload({ downloadId: '1', title: 'video', status: 'downloading', progress: 0 }), {
     downloadId: '1', title: 'video', text: 'Downloading 0%', progress: 0, actions: ['pause', 'cancel']

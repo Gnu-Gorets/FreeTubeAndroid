@@ -11,9 +11,12 @@ const source = fs.readFileSync(new URL('../src/renderer/helpers/android/download
   .replace(/const requestSaveDialog = .*$/m, 'const requestSaveDialog = () => {}')
   .replace(/const setupSabrScheme = .*$/m, 'const setupSabrScheme = () => {}')
 const downloadServiceSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
+const mainActivitySource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
 const androidBridgeSource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
 const watchSource = fs.readFileSync(new URL('../src/renderer/views/Watch/Watch.js', import.meta.url), 'utf8')
+const watchViewSource = fs.readFileSync(new URL('../src/renderer/views/Watch/Watch.vue', import.meta.url), 'utf8')
 const downloadsViewSource = fs.readFileSync(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
+const watchVideoInfoSource = fs.readFileSync(new URL('../src/renderer/components/WatchVideoInfo/WatchVideoInfo.vue', import.meta.url), 'utf8')
 const sabrSchemeSource = fs.readFileSync(new URL('../src/renderer/helpers/player/SabrSchemePlugin.js', import.meta.url), 'utf8')
 
 const storage = new Map()
@@ -34,7 +37,7 @@ const context = vm.createContext({
 })
 vm.runInContext(source, context)
 
-const { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
+const { downloadProgressiveVideo, getDownloadFormats, getProgressSnapshot, getSabrDownloadFormats, mergeDownloadProgress, mergeNativeDownload, normalizeDownloadMetadata, preflightSabrDownload, recordDownloadMetadata, selectSabrDownloadTrack, selectSabrStorageTracks, storeSabrDownload, updateDownloadMetadata } = context
 
 function sabrManifest(formats) {
   return `data:application/sabr+json,${encodeURIComponent(JSON.stringify({ formats }))}`
@@ -340,6 +343,45 @@ test('download metadata preserves channel and playback details', () => {
   })
 })
 
+test('recording same downloadId upserts metadata instead of duplicating it', () => {
+  storage.delete('freetube-downloads')
+  recordDownloadMetadata({ downloadId: 'duplicate', title: 'Initial', status: 'queued' })
+  recordDownloadMetadata({ downloadId: 'duplicate', title: 'Updated', status: 'downloading' })
+  assert.deepEqual(JSON.parse(storage.get('freetube-downloads')), [{ downloadId: 'duplicate', title: 'Updated', status: 'downloading' }])
+})
+
+test('download records contain required identity and playback fields', () => {
+  const sabrStart = watchSource.indexOf('recordDownloadMetadata({')
+  const sabrEnd = watchSource.indexOf('let lastProgress', sabrStart)
+  const sabrRecord = watchSource.slice(sabrStart, sabrEnd)
+  const nativeStart = source.indexOf('const metadata = {')
+  const nativeEnd = source.indexOf('const downloads = recordDownloadMetadata(metadata)', nativeStart)
+  const nativeRecord = source.slice(nativeStart, nativeEnd)
+  for (const field of ['downloadId', 'videoId', 'title', 'thumbnail', 'engine', 'status', 'createdAt']) {
+    const fieldPattern = new RegExp(`\\b${field}(?:\\s*:|\\s*,)`)
+    assert.match(sabrRecord, fieldPattern, `missing SABR field ${field}`)
+    assert.match(nativeRecord, fieldPattern, `missing native field ${field}`)
+  }
+  assert.ok(sabrRecord.includes('manifestSrc:'))
+  assert.ok(watchSource.includes('offlineUri: content.offlineUri'))
+  assert.ok(nativeRecord.includes('localPath:'))
+  assert.ok(source.includes('videoUrl: video.videoUrl'))
+})
+
+test('legacy download metadata gets stable playback fields', () => {
+  const [legacy, current, malformed] = normalizeDownloadMetadata([
+    { videoId: 'video-1', title: 'Legacy', localPath: 'data://legacy', createdAt: 42, status: 'completed' },
+    { downloadId: 'current', videoId: 'video-2', engine: 'sabr', status: 'downloading' },
+    null
+  ])
+  assert.equal(legacy.downloadId, 'legacy-video-1-42')
+  assert.equal(legacy.engine, 'native')
+  assert.equal(legacy.thumbnail, '')
+  assert.equal(current.downloadId, 'current')
+  assert.equal(current.engine, 'sabr')
+  assert.equal(malformed, null)
+})
+
 test('download progress handles missing totals and clamps SABR snapshots', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(mergeDownloadProgress({ downloadId: 'one' }, {
     status: 'downloading', received: 5, total: 0, speedBps: 0
@@ -375,6 +417,95 @@ test('quality picker keeps multiple options and dispatches selected format', () 
   assert.ok(watchSource.includes('this.downloadSabr(formats?.height, formats?.label, qualityClickAt)'))
 })
 
+test('Watch Download falls back to native MP4 when SABR has no options', () => {
+  const start = watchSource.indexOf('async downloadVideo()')
+  const end = watchSource.indexOf('getDownloadMetadata() {', start)
+  const flow = watchSource.slice(start, end)
+  assert.ok(flow.includes('getDownloadFormats([], this.downloadFormats)[0]'))
+  assert.ok(flow.includes('return downloadProgressiveVideo({'))
+  assert.ok(flow.includes('videoUrl: video.url'))
+  assert.ok(flow.includes('audioUrl: audio?.url'))
+})
+
+test('Watch Download button routes through SABR download flow', () => {
+  const start = watchSource.indexOf('async downloadVideo()')
+  const end = watchSource.indexOf('getDownloadMetadata() {', start)
+  assert.ok(start >= 0 && end > start)
+  const downloadButtonFlow = watchSource.slice(start, end)
+  assert.ok(downloadButtonFlow.includes('getSabrDownloadFormats(this.manifestSrc)'))
+  assert.ok(downloadButtonFlow.includes('return this.downloadSabr(formats.height, formats.label, qualityClickAt)'))
+})
+
+test('download metadata uses only SABR and native engines', () => {
+  assert.ok(watchSource.includes("engine: 'sabr'"))
+  assert.ok(source.includes("engine: 'native'"))
+  assert.equal((watchSource.match(/engine:\s*'/g) || []).length, 1)
+  assert.equal((source.match(/engine:\s*'/g) || []).length, 1)
+})
+
+test('download contract separates status from processing phase', () => {
+  const allSources = `${source}\n${watchSource}\n${downloadsViewSource}\n${downloadServiceSource}`
+  for (const status of ['queued', 'downloading', 'paused', 'completed', 'failed', 'canceled']) {
+    assert.match(allSources, new RegExp(`status[^\\n]*(?:'${status}'|"${status}")`), `missing status ${status}`)
+  }
+  assert.ok(downloadServiceSource.includes('put("phase", "processing")'))
+  assert.equal(downloadServiceSource.includes('put("status", "processing")'), false)
+})
+
+test('native queue overlays metadata by downloadId only', () => {
+  assert.ok(downloadsViewSource.includes('queue.find(item => item.id === download.downloadId)'))
+  assert.equal(downloadsViewSource.includes('queue.find(item => item.videoId === download.videoId)'), false)
+})
+
+test('download events persist merged UI state atomically', () => {
+  const start = downloadsViewSource.indexOf('function handleDownloadEvent(event)')
+  const end = downloadsViewSource.indexOf('\nonMounted(() =>', start)
+  const handler = downloadsViewSource.slice(start, end)
+  const merged = handler.indexOf('Object.assign(download, mergeDownloadProgress(download, changes, native))')
+  const persisted = handler.indexOf('writeDownloadMetadata(downloads.value)', merged)
+  assert.ok(merged >= 0)
+  assert.ok(persisted > merged)
+})
+
+test('Downloads view exposes Play selected for ordered completed records', () => {
+  assert.ok(downloadsViewSource.includes('data-download-action="play-selected"'))
+  assert.ok(downloadsViewSource.includes('selectedCompletedDownloads.length > 1'))
+  assert.ok(downloadsViewSource.includes('getPlayableDownloadRecords'))
+  assert.ok(downloadsViewSource.includes('getLocalPlaybackUrl'))
+  assert.ok(downloadsViewSource.includes('createDownloadedPlaylistRoute(selected.map(download => download.downloadId))'))
+  assert.ok(downloadsViewSource.includes("t('Downloads.Play selected')"))
+})
+
+test('Watch offline playlist resolves downloads in route order', () => {
+  const start = watchSource.indexOf('getOfflinePlaylistDownloads: function ()')
+  const end = watchSource.indexOf('\n    navigateOfflinePlaylist:', start)
+  const method = watchSource.slice(start, end)
+  assert.match(method, /return ids[\s\S]*?\.map\(id => stored\.find\(download => download\?\.downloadId === id/)
+  assert.match(method, /\.filter\(download => download && getPlaybackSource\(download/)
+  assert.ok(watchSource.includes('const index = downloads.findIndex(download => download.downloadId === currentId)'))
+  assert.ok(watchSource.includes('const target = downloads[index + direction]'))
+})
+
+test('Watch offline playlist skips deleted records and stops at boundaries', () => {
+  const playlistStart = watchSource.indexOf('getOfflinePlaylistDownloads: function ()')
+  const playlistEnd = watchSource.indexOf('\n    navigateOfflinePlaylist:', playlistStart)
+  const playlist = watchSource.slice(playlistStart, playlistEnd)
+  assert.match(playlist, /\.map\(id => stored\.find\(download => download\?\.downloadId === id && download\.status === 'completed'\)/)
+  assert.match(playlist, /\.filter\(download => download && getPlaybackSource\(download/)
+
+  const navigationStart = watchSource.indexOf('navigateOfflinePlaylist: function')
+  const navigationEnd = watchSource.indexOf('\n    setViewingModeOnFirstLoad:', navigationStart)
+  const navigation = watchSource.slice(navigationStart, navigationEnd)
+  assert.ok(navigation.includes('const target = downloads[index + direction]'))
+  assert.ok(navigation.includes('if (!target) return'))
+})
+
+test('Downloads playlist action reports missing local sources', () => {
+  assert.ok(downloadsViewSource.includes("showToast(t('Downloads.Player source unavailable'))"))
+  assert.ok(downloadsViewSource.includes('selected.length !== selectedIds.length'))
+  assert.ok(downloadsViewSource.includes('selectedCompletedDownloads'))
+})
+
 test('Downloads view exposes cancel, retry, play and delete flows', () => {
   for (const action of ["control(download, 'cancel')", "control(download, 'pause')", "control(download, 'resume')", "control(download, 'retry')"]) assert.ok(downloadsViewSource.includes(action))
   assert.ok(downloadsViewSource.includes("download.status === 'completed'"))
@@ -389,7 +520,7 @@ test('Downloads allows immediate offline-only deletion', () => {
   const load = downloadsViewSource.slice(downloadsViewSource.indexOf('function load()'), downloadsViewSource.indexOf('async function retry('))
   assert.ok(load.includes("download.status === 'downloading'"))
   assert.ok(downloadsViewSource.includes('v-if="selectableDownloads.length > 0"'))
-  assert.ok(downloadsViewSource.includes('v-if="download.status === \'completed\'"'))
+  assert.ok(downloadsViewSource.includes('v-if="playableDownloadIds.has(download.downloadId)"'))
   assert.ok(downloadsViewSource.includes('stored.find(item => item.offlineUri === download.offlineUri)'))
 })
 
@@ -477,6 +608,83 @@ test('direct download queues honest initial totals, including unknown sizes', as
   })
 })
 
+test('native target deletion handles data MediaStore and SAF URIs', () => {
+  assert.ok(androidBridgeSource.includes('if (uri.startsWith("data://")) java.io.File(dataDirectory, uri.removePrefix("data://")).delete()'))
+  assert.ok(androidBridgeSource.includes('resolvedUri.authority == MediaStore.AUTHORITY'))
+  assert.ok(androidBridgeSource.includes('DocumentFile.fromSingleUri(activity, resolvedUri)?.delete() == true'))
+  assert.ok(androidBridgeSource.includes('fun deleteDownloadFile(uri: String): String = asyncFileOperation'))
+  assert.ok(androidBridgeSource.includes('fun fileExists(uri: String): Boolean'))
+})
+
+test('native queue recovers queued and downloading items after app restart', () => {
+  assert.ok(downloadServiceSource.includes('items.getJSONObject(it).optString("status") == "queued"'))
+  assert.ok(downloadServiceSource.includes('items.getJSONObject(it).optString("status") == "downloading"'))
+  assert.ok(downloadServiceSource.includes('if (item.optString("status") == "downloading")'))
+  assert.ok(downloadServiceSource.includes('item.put("status", "queued")'))
+  assert.ok(downloadServiceSource.includes('return START_STICKY'))
+  assert.ok(mainActivitySource.includes('DownloadService.resumeIfNeeded(this)'))
+})
+
+test('native retry uses bounded retryable error policy', () => {
+  assert.ok(downloadServiceSource.includes('ACTION_RESUME, ACTION_RETRY -> update(intent.getStringExtra(EXTRA_ID), "queued")'))
+  assert.ok(downloadServiceSource.includes('private const val MAX_RETRIES = 4'))
+  assert.ok(downloadServiceSource.includes('withRetries { downloadSingleFile'))
+  assert.ok(downloadServiceSource.includes('withRetries { downloadToFile'))
+  assert.ok(downloadServiceSource.includes('is IOException -> true'))
+  assert.ok(downloadServiceSource.includes('HTTP (408|429|5\\\\d{2})'))
+  assert.ok(downloadServiceSource.includes('attempt++ >= MAX_RETRIES'))
+})
+
+test('native cancel disconnects and deletes target', () => {
+  assert.ok(downloadServiceSource.includes('ACTION_CANCEL -> cancel(intent.getStringExtra(EXTRA_ID))'))
+  assert.ok(downloadServiceSource.includes('connections[id]?.disconnect()'))
+  assert.ok(downloadServiceSource.includes('item.put("status", "canceled")'))
+  assert.ok(downloadServiceSource.includes('delete(item.optString("targetUri"))'))
+  assert.ok(downloadServiceSource.includes('currentState == "paused" || currentState == "canceled"'))
+})
+
+test('native pause and resume transition queue state', () => {
+  assert.ok(downloadServiceSource.includes('ACTION_PAUSE -> update(intent.getStringExtra(EXTRA_ID), "paused")'))
+  assert.ok(downloadServiceSource.includes('ACTION_RESUME, ACTION_RETRY -> update(intent.getStringExtra(EXTRA_ID), "queued")'))
+  assert.ok(downloadServiceSource.includes('if (status == "paused") connections[id]?.disconnect()'))
+  assert.ok(downloadServiceSource.includes('item.optString("status") == "queued" && activeDownloads.add(id)'))
+})
+
+test('native completion verifies, renames and publishes target', () => {
+  const completionStart = downloadServiceSource.indexOf('download(item)')
+  const completionEnd = downloadServiceSource.indexOf('private fun targetFile', completionStart)
+  const completion = downloadServiceSource.slice(completionStart, completionEnd)
+  assert.ok(completion.includes('verifyCompletedTarget(item)'))
+  assert.ok(completion.includes('item.put("status", "completed")'))
+  assert.ok(completion.includes('rename(item.optString("targetUri"), item.optString("finalName"))'))
+  assert.ok(completion.includes('publish(item.optString("targetUri"))'))
+  assert.ok(completion.includes('item.put("fileSize", length(Uri.parse(item.optString("targetUri"))))'))
+})
+
+test('native adaptive download exposes processing mux lifecycle', () => {
+  assert.ok(downloadServiceSource.includes('item.put("phase", "processing")'))
+  assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title"), "Processing"'))
+  assert.ok(downloadServiceSource.includes('muxMp4(videoFile, audioFile, outputFile)'))
+  assert.ok(downloadServiceSource.includes('outputFile.inputStream().use { input -> input.copyTo(stream) }'))
+  assert.ok(downloadServiceSource.includes('videoExtractor.getTrackFormat(it).getString'))
+  assert.ok(downloadServiceSource.includes('audioExtractor.getTrackFormat(it).getString'))
+})
+
+test('native download loop publishes progress telemetry', () => {
+  assert.ok(downloadServiceSource.includes('item.put("progress", progress'))
+  assert.ok(downloadServiceSource.includes('.put("received", received)'))
+  assert.ok(downloadServiceSource.includes('.put("speedBps", speed)'))
+  assert.ok(downloadServiceSource.includes('saveItem(item)'))
+  assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title")'))
+})
+
+test('native queue starts queued items within concurrency limit', () => {
+  assert.ok(downloadServiceSource.includes('item.put("status", "queued")'))
+  assert.ok(downloadServiceSource.includes('item.optString("status") == "queued" && activeDownloads.add(id)'))
+  assert.ok(downloadServiceSource.includes('item.put("status", "downloading")'))
+  assert.ok(downloadServiceSource.includes('prefs().getInt("maxConcurrent", 5).coerceIn(1, 5)'))
+})
+
 test('native GET totals stay explicit across Kotlin and renderer boundaries', () => {
   const mainActivitySource = fs.readFileSync(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
   assert.match(downloadServiceSource, /val total = if \(request\.contentLengthLong > 0\) receivedStart \+ request\.contentLengthLong else 0L/)
@@ -501,6 +709,24 @@ test('native downloads use canonical statuses and exact final file size', () => 
   assert.ok(source.includes('preflightSabrDownload'))
   assert.ok(watchSource.includes('total: preflight.total'))
   assert.equal(watchSource.includes('exportSabrDownload'), false)
+})
+
+test('stale active native queue entries become removable failed records', () => {
+  assert.ok(downloadsViewSource.includes("['queued', 'downloading', 'paused'].includes(item.status) && !knownIds.has(item.id)"))
+  assert.ok(downloadsViewSource.includes("error: 'Download metadata is missing'"))
+  assert.ok(downloadsViewSource.includes('staleNative: true'))
+  assert.ok(downloadsViewSource.includes("download.status === 'failed' && !download.staleNative"))
+  assert.ok(downloadsViewSource.includes("|| download.staleNative"))
+})
+
+test('completed downloads require an existing local file target', () => {
+  const start = downloadsViewSource.indexOf('function load()')
+  const end = downloadsViewSource.indexOf('async function retry(', start)
+  const load = downloadsViewSource.slice(start, end)
+  assert.ok(load.includes("download.status === 'completed' && download.localPath"))
+  assert.ok(load.includes('window.Android?.fileExists'))
+  assert.ok(load.includes('!window.Android.fileExists(download.localPath)'))
+  assert.ok(load.includes('return []'))
 })
 
 test('Downloads view supports filtered bulk selection and stale selection cleanup', () => {
@@ -543,6 +769,27 @@ test('Downloads action hover is limited to hover-capable devices', () => {
   assert.ok(downloadsViewSource.includes('color: var(--text-with-main-color);\n    background: var(--primary-color-hover);'))
 })
 
+test('download metadata is removed only after storage deletion succeeds', () => {
+  const start = downloadsViewSource.indexOf('async function removeMany(')
+  const end = downloadsViewSource.indexOf('async function remove(download)', start)
+  const removeMany = downloadsViewSource.slice(start, end)
+  const storageDelete = removeMany.indexOf('await storage.remove(content.offlineUri)')
+  const result = removeMany.indexOf('results.push({ download, ok: true })', storageDelete)
+  const metadataFilter = removeMany.indexOf('downloads.value = downloads.value.filter', result)
+  assert.ok(storageDelete >= 0)
+  assert.ok(result > storageDelete)
+  assert.ok(metadataFilter > result)
+  assert.ok(removeMany.includes('results.filter(result => result.ok)'))
+})
+
+test('Downloads search keeps bulk delete scoped to selected ids', () => {
+  assert.ok(downloadsViewSource.includes("import { filterDownloads } from '../../helpers/android/download-search.mjs'"))
+  assert.ok(downloadsViewSource.includes('const filteredDownloads = computed(() => filterDownloads(downloads.value, searchQuery.value))'))
+  assert.ok(downloadsViewSource.includes('async function removeMany(items = downloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId)))'))
+  assert.ok(downloadsViewSource.includes('selectedDownloadIds.value.has(download.downloadId)'))
+  assert.ok(downloadsViewSource.includes('const selectedIds = filteredDownloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))'))
+})
+
 test('Downloads view supports fast bulk selection and deletion', () => {
   assert.ok(downloadsViewSource.includes('selectedDownloadIds'))
   assert.ok(downloadsViewSource.includes('data-download-action="select-all"'))
@@ -559,6 +806,197 @@ test('native queue progress replaces stale UI progress fields', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
     downloadId: 'one', status: 'downloading', progress: 0.4, received: 40, total: 100, fileSize: 0, totalExact: true, speedBps: 30, etaSeconds: 2, error: null
   })
+})
+
+test('native queue state overlays playback target and terminal error', () => {
+  const result = mergeNativeDownload({ downloadId: 'one', status: 'downloading', localPath: 'old://target' }, {
+    status: 'failed', targetUri: 'new://target', received: 10, total: 20, totalExact: true, error: 'network', fileSize: 10, phase: 'failed', speedBps: 0, etaSeconds: 0
+  })
+  assert.equal(result.status, 'failed')
+  assert.equal(result.localPath, 'new://target')
+  assert.equal(result.error, 'network')
+  assert.equal(result.phase, 'failed')
+  assert.equal(result.fileSize, 10)
+})
+
+test('selected offline source has no network metadata request', () => {
+  const localStart = watchSource.indexOf('loadOfflineDownload: function')
+  const localFlow = watchSource.slice(localStart, watchSource.indexOf('setViewingModeOnFirstLoad', localStart))
+  assert.ok(localFlow.includes('if (!download) return false'))
+  assert.ok(localFlow.includes('this.offlinePlayback = true'))
+  assert.ok(localFlow.includes('return true'))
+  const selectionStart = watchSource.indexOf('enableDownloadedFormat: function')
+  const selectionFlow = watchSource.slice(selectionStart, watchSource.indexOf('enableOnlineFormat', selectionStart))
+  assert.equal(selectionFlow.includes('getVideoInformation'), false)
+})
+
+test('offline playlist Watch navigation stays local and ordered', () => {
+  assert.ok(watchSource.includes("const playlist = String(this.$route.query.offlinePlaylist || '').split(',').filter(Boolean)"))
+  assert.ok(watchSource.includes('getOfflinePlaylistDownloads: function ()'))
+  assert.ok(watchSource.includes('this.$router.push({'))
+  assert.ok(watchSource.includes('query: { ...this.$route.query, offline: target.downloadId }'))
+  assert.ok(watchSource.includes('this.navigateOfflinePlaylist(1)'))
+  assert.ok(watchSource.includes('this.navigateOfflinePlaylist(-1)'))
+})
+
+test('offline playlist next and previous keep local route state', () => {
+  const start = watchSource.indexOf('navigateOfflinePlaylist: function')
+  const end = watchSource.indexOf('\n    setViewingModeOnFirstLoad:', start)
+  const navigation = watchSource.slice(start, end)
+  assert.ok(navigation.includes('const target = downloads[index + direction]'))
+  assert.ok(navigation.includes('path: `/watch/${target.videoId}`'))
+  assert.ok(navigation.includes('query: { ...this.$route.query, offline: target.downloadId }'))
+
+  const skipStart = watchSource.indexOf('handleSkipToNext: function')
+  const skipEnd = watchSource.indexOf('\n    abortAutoplayCountdown:', skipStart)
+  const skip = watchSource.slice(skipStart, skipEnd)
+  assert.ok(skip.includes('this.navigateOfflinePlaylist(1)'))
+  assert.ok(skip.includes('handleSkipToPrev: function'))
+  assert.ok(skip.includes('this.navigateOfflinePlaylist(-1)'))
+})
+
+test('offline playlist does not fall back to online information', () => {
+  const reloadStart = watchSource.indexOf('async reloadView()')
+  const reloadEnd = watchSource.indexOf('resetVideoState:', reloadStart)
+  const reload = watchSource.slice(reloadStart, reloadEnd)
+  assert.ok(reload.includes('this.$route.query.offline || this.$route.query.offlinePlaylist'))
+  assert.ok(reload.includes("this.errorMessage = this.$t('Downloads.Player source unavailable')"))
+  assert.ok(reload.indexOf('loadOfflineDownload()') < reload.indexOf('getVideoInformationLocal()'))
+  const mountStart = watchSource.indexOf('onMountedDependOnLocalStateLoading()')
+  const mountEnd = watchSource.indexOf('loadDownloadedFormats:', mountStart)
+  const mount = watchSource.slice(mountStart, mountEnd)
+  assert.ok(mount.includes("if (this.$route.query.offlinePlaylist)"))
+  assert.ok(mount.includes('return'))
+})
+
+test('offline playlist bypasses online metadata APIs', () => {
+  const reloadStart = watchSource.indexOf('if (this.$route.query.offline || this.$route.query.offlinePlaylist) {', watchSource.indexOf('async reloadView()'))
+  const reloadEnd = watchSource.indexOf('\n      switch (this.backendPreference)', reloadStart)
+  const reloadOfflineBranch = watchSource.slice(reloadStart, reloadEnd)
+  assert.ok(reloadOfflineBranch.includes('this.loadOfflineDownload()'))
+  assert.equal(reloadOfflineBranch.includes('getVideoInformationLocal'), false)
+  assert.equal(reloadOfflineBranch.includes('getVideoInformationInvidious'), false)
+
+  const mountStart = watchSource.indexOf('onMountedDependOnLocalStateLoading() {')
+  const mountEnd = watchSource.indexOf('\n\n      this.checkIfPlaylist()', mountStart)
+  const mountOfflineBranch = watchSource.slice(mountStart, mountEnd)
+  assert.ok(mountOfflineBranch.includes('this.loadOfflineDownload()'))
+  assert.equal(mountOfflineBranch.includes('getVideoInformationLocal'), false)
+  assert.equal(mountOfflineBranch.includes('getVideoInformationInvidious'), false)
+})
+
+test('Watch falls back to online information when local source is absent', () => {
+  const startup = watchSource.slice(watchSource.indexOf('if (this.loadOfflineDownload()) return'), watchSource.indexOf('document.removeEventListener', watchSource.indexOf('if (this.loadOfflineDownload()) return')))
+  assert.ok(startup.includes('if (this.loadOfflineDownload()) return'))
+  assert.ok(startup.includes('this.getVideoInformationInvidious()'))
+  assert.ok(startup.includes('this.getVideoInformationLocal()'))
+  const localStart = watchSource.indexOf('loadOfflineDownload: function')
+  const localFlow = watchSource.slice(localStart, watchSource.indexOf('setViewingModeOnFirstLoad', localStart))
+  assert.ok(localFlow.includes('if (!download) return false'))
+})
+
+test('local source has priority over online information on Watch startup', () => {
+  const startupIndex = watchSource.indexOf('if (this.loadOfflineDownload()) return')
+  const localIndex = watchSource.indexOf('loadOfflineDownload: function')
+  const onlineIndex = watchSource.indexOf('getVideoInformationInvidious()', startupIndex)
+  assert.ok(startupIndex >= 0)
+  assert.ok(localIndex >= 0)
+  assert.ok(onlineIndex > startupIndex)
+  const localFlow = watchSource.slice(localIndex, watchSource.indexOf('setViewingModeOnFirstLoad', localIndex))
+  assert.ok(localFlow.includes("item.status === 'completed'"))
+  assert.ok(localFlow.includes('return true'))
+})
+
+test('offline Watch exposes explicit Play Online action', () => {
+  assert.ok(watchVideoInfoSource.includes("t('Change Format.Play Online')"))
+  assert.ok(watchVideoInfoSource.includes("value: 'online'"))
+  assert.ok(watchSource.includes("if (format === 'online')"))
+  const onlineStart = watchSource.indexOf('enableOnlineFormat: function')
+  const onlineFlow = watchSource.slice(onlineStart, watchSource.indexOf('enableDashFormat', onlineStart))
+  assert.ok(onlineFlow.includes('this.offlinePlayback = false'))
+  assert.ok(onlineFlow.includes('this.getVideoInformationInvidious()'))
+  assert.ok(onlineFlow.includes('this.getVideoInformationLocal()'))
+})
+
+test('local format selection changes player source without information request', () => {
+  const selectStart = watchSource.indexOf('enableDownloadedFormat: function')
+  const selectFlow = watchSource.slice(selectStart, watchSource.indexOf('enableOnlineFormat', selectStart))
+  assert.ok(selectFlow.includes("this.activeFormat = 'offline'"))
+  assert.ok(selectFlow.includes('this.manifestSrc = null'))
+  assert.ok(selectFlow.includes('this.offlineUri = downloaded.source.offlineUri || null'))
+  assert.equal(selectFlow.includes('getVideoInformation'), false)
+})
+
+test('Watch prefers completed local record before network information', () => {
+  const localStart = watchSource.indexOf('loadOfflineDownload: function')
+  const localFlow = watchSource.slice(localStart, watchSource.indexOf('setViewingModeOnFirstLoad', localStart))
+  assert.ok(localFlow.includes('item.videoId === videoId'))
+  assert.ok(localFlow.includes("item.status === 'completed'"))
+  assert.ok(localFlow.includes('if (!download) return false'))
+  assert.ok(watchSource.includes('if (this.loadOfflineDownload()) return'))
+})
+
+test('Watch format picker passes downloaded source descriptor to player', () => {
+  assert.ok(watchVideoInfoSource.includes("t('Change Format.Use Downloaded Formats')"))
+  assert.ok(watchVideoInfoSource.includes("type: 'downloaded', source: props.downloadedFormats[0]"))
+  assert.ok(watchVideoInfoSource.includes('props.downloadedFormats.length > 0'))
+  assert.ok(watchSource.includes('getDownloadedSources'))
+  assert.ok(watchSource.includes('format?.type === \'downloaded\''))
+  assert.ok(watchSource.includes('this.enableDownloadedFormat(format.source)'))
+  assert.ok(watchSource.includes('this.offlineUri = downloaded.source.offlineUri || null'))
+  assert.ok(watchViewSource.includes(':downloaded-formats="downloadedFormats"'))
+})
+
+test('Downloads hides Play for records without a playable source', () => {
+  assert.ok(downloadsViewSource.includes('playableDownloadIds.has(download.downloadId)'))
+  assert.ok(downloadsViewSource.includes('const playableDownloadIds = computed'))
+  assert.ok(downloadsViewSource.includes('if (!playableDownloadIds.value.has(download.downloadId)) return'))
+})
+
+test('Downloads items distinguish processing and terminal statuses visually', () => {
+  assert.ok(downloadsViewSource.includes(":class=\"`downloadItem downloadItem--${download.phase === 'processing' ? 'processing' : download.status}`\""))
+  for (const status of ['processing', 'paused', 'failed', 'completed']) {
+    assert.ok(downloadsViewSource.includes(`.downloadItem--${status}`))
+  }
+})
+
+test('Downloads metadata shows engine source type', () => {
+  assert.ok(downloadsViewSource.includes('function formatDownloadEngine(download)'))
+  assert.ok(downloadsViewSource.includes("download.engine === 'sabr' || download.offlineUri"))
+  assert.ok(downloadsViewSource.includes("download.engine === 'native' || download.localPath"))
+  assert.ok(downloadsViewSource.includes('const engine = formatDownloadEngine(download)'))
+})
+
+test('processing phase is shown instead of download progress', () => {
+  assert.ok(downloadsViewSource.includes("download.phase !== 'processing'"))
+  assert.ok(downloadsViewSource.includes("t('Downloads.Processing')"))
+  assert.ok(downloadsViewSource.includes('const processing = download.phase === \'processing\''))
+  assert.ok(downloadsViewSource.includes('const hasProgress = !processing'))
+})
+
+test('unknown totals stay indeterminate across download layers', () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(getProgressSnapshot({ size: 100 }, 0))), {
+    received: 100, total: 0, totalExact: false, progress: null
+  })
+  assert.ok(downloadsViewSource.includes('download.total > 0 && download.progress != null'))
+  assert.ok(downloadServiceSource.includes('progress ?: JSONObject.NULL'))
+  assert.ok(downloadServiceSource.includes('builder.setProgress(0, 0, true)'))
+})
+
+test('transport bytes stay diagnostic while stored bytes drive progress', () => {
+  const storeStart = source.indexOf('let transportBytes = 0')
+  const storeEnd = source.indexOf('export async function recoverSabrDownload', storeStart)
+  const store = source.slice(storeStart, storeEnd)
+  assert.ok(store.includes('transportBytes += bytes'))
+  assert.ok(store.includes('received: snapshot.received'))
+  assert.ok(store.includes('networkBytes: transportBytes'))
+  assert.equal(store.includes('received: transportBytes'), false)
+})
+
+test('active downloads reserve 100 percent for terminal completion', () => {
+  assert.equal(getProgressSnapshot({ size: 80 }, 1, 100, true, false).progress, 0.8)
+  assert.ok(source.includes('Math.min(Math.max(rawProgressValue, 0), 0.99)'))
+  assert.ok(downloadServiceSource.includes('item.put("status", "completed").put("phase", "completed").put("progress", 1)'))
 })
 
 test('SABR progress uses Shaka progress and stays below 100 before terminal', () => {
@@ -681,6 +1119,58 @@ test('download progress persistence is throttled', () => {
   assert.ok(source.includes('now - lastUpdatedAt < DOWNLOAD_PROGRESS_UPDATE_MS'))
   assert.ok(source.includes('const nearCompletion = Number(changes.progress) >= 0.99'))
   assert.match(downloadServiceSource, /now - lastPublishedAt >= 250_000_000L/)
+})
+
+test('Watch route leave keeps active SABR download recoverable', () => {
+  const leaveStart = watchSource.indexOf('beforeRouteLeave: function')
+  const leaveEnd = watchSource.indexOf('setup: function', leaveStart)
+  const leave = watchSource.slice(leaveStart, leaveEnd)
+  assert.ok(leave.includes('this.handleRouteChange()'))
+  assert.ok(leave.includes('this.destroyPlayer()'))
+  assert.equal(leave.includes('cancelSabrDownload('), false)
+
+  const downloadStart = watchSource.indexOf('async downloadSabr(')
+  const record = watchSource.indexOf('recordDownloadMetadata({', downloadStart)
+  const store = watchSource.indexOf('content = await storeSabrDownload', record)
+  assert.ok(record > downloadStart && store > record)
+})
+
+test('SABR state transitions keep paused, canceled and interrupted distinct', () => {
+  const controlStart = downloadsViewSource.indexOf('async function control(download, action)')
+  const controlEnd = downloadsViewSource.indexOf('function play(download)', controlStart)
+  const control = downloadsViewSource.slice(controlStart, controlEnd)
+  assert.ok(control.includes("download.status = action === 'pause' ? 'paused' : 'canceled'"))
+  assert.ok(control.includes('interrupted: action === \'pause\''))
+
+  const loadStart = downloadsViewSource.indexOf('function load()')
+  const loadEnd = downloadsViewSource.indexOf('async function retry(', loadStart)
+  const load = downloadsViewSource.slice(loadStart, loadEnd)
+  assert.ok(load.includes("download.status === 'downloading' && !download.interrupted && !hasSabrDownload(download.downloadId)"))
+  assert.ok(load.includes("status: 'queued', interrupted: true"))
+})
+
+test('SABR recovery is guarded against duplicate runs', () => {
+  const start = downloadsViewSource.indexOf('async function recoverSabrDownloads()')
+  const end = downloadsViewSource.indexOf('function handleDownloadControl', start)
+  const recovery = downloadsViewSource.slice(start, end)
+  assert.ok(recovery.includes('if (sabrRecoveryRunning) return'))
+  assert.ok(recovery.includes('sabrRecoveryRunning = true'))
+  assert.ok(recovery.includes('sabrRecoveryRunning = false'))
+  assert.equal((recovery.match(/Promise\.all\(queued\.map\(recover\)\)/g) || []).length, 1)
+})
+
+test('Downloads view recovers interrupted SABR records after app resume', () => {
+  const mountStart = downloadsViewSource.indexOf('onMounted(() =>')
+  const mountEnd = downloadsViewSource.indexOf('\nonBeforeUnmount', mountStart)
+  const mount = downloadsViewSource.slice(mountStart, mountEnd)
+  assert.ok(mount.indexOf('load()') < mount.indexOf('recoverSabrDownloads()'))
+  assert.ok(mount.includes("window.addEventListener('app-resume', load)"))
+
+  const recoveryStart = downloadsViewSource.indexOf('async function recoverSabrDownloads()')
+  const recoveryEnd = downloadsViewSource.indexOf('function handleDownloadControl', recoveryStart)
+  const recovery = downloadsViewSource.slice(recoveryStart, recoveryEnd)
+  assert.ok(recovery.includes("item.status === 'queued' && item.interrupted && item.manifestSrc && item.sabrData"))
+  assert.ok(recovery.includes('await Promise.all(queued.map(recover))'))
 })
 
 test('SABR recovery starts queued downloads together', () => {
