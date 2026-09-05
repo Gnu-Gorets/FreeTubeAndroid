@@ -1,6 +1,7 @@
 <template>
   <div
     class="videoLayout"
+    :data-offline-playback="offlinePlayback ? 'true' : 'false'"
     :class="{
       isLoading,
       useTheatreMode: useTheatreMode && !isLoading,
@@ -156,6 +157,7 @@
         :is-unlisted="isUnlisted"
         :can-save-watched-progress="canSaveWatchProgress"
         :legacy-formats="legacyFormats"
+        :downloaded-formats="downloadedFormats"
         class="watchVideo"
         :class="{ theatreWatchVideo: useTheatreMode }"
         @change-format="handleFormatChange"

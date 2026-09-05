@@ -42,8 +42,10 @@ Downloads:
   Search: Search downloaded files
   No matches: No downloaded files match your search
   Play: Play
+  Play selected: Play selected
   Delete: Delete
   Progress: Download progress
+  Processing: Processing
   Retry: Retry
   Pause: Pause
   Resume: Resume
@@ -55,8 +57,9 @@ Downloads:
   Player source unavailable: Downloaded file is unavailable
   Settings:
     Title: Downloads
-    Concurrent downloads: Concurrent downloads
-    Download folder: 'Download folder: {directory}'
+    Concurrent downloads: Concurrent SABR and native downloads
+    Download folder: 'Native file download folder: {directory}'
+    Native only: Used for native file downloads. SABR offline storage stays inside the app.
     Choose folder: Choose folder
     Use default folder: Use default folder
 
@@ -1036,6 +1039,8 @@ Change Format:
   Use Dash Formats: Use DASH Formats
   Use Legacy Formats: Use Legacy Formats
   Use Audio Formats: Use Audio Formats
+  Use Downloaded Formats: Use Downloaded Formats
+  Play Online: Play Online
   Dash formats are not available for this video: DASH formats are not available for
     this video
   Audio formats are not available for this video: Audio formats are not available

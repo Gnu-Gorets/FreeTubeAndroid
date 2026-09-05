@@ -14,8 +14,12 @@
     <p>
       {{ t('Downloads.Settings.Download folder', { directory: directory === DEFAULT_DIRECTORY ? 'Downloads/FreeTube' : directory }) }}
     </p>
+    <p class="settingsHint">
+      {{ t('Downloads.Settings.Native only') }}
+    </p>
     <button
       type="button"
+      data-download-settings-action="choose-folder"
       @click="chooseDirectory"
     >
       {{ t('Downloads.Settings.Choose folder') }}

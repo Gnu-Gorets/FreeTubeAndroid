@@ -26,6 +26,14 @@
           >
             {{ t('Downloads.Delete') }} {{ selectedDownloadIds.size }}
           </button>
+          <button
+            v-if="selectedCompletedDownloads.length > 1"
+            type="button"
+            data-download-action="play-selected"
+            @click="playSelected"
+          >
+            {{ t('Downloads.Play selected') }}
+          </button>
         </div>
         <FtInput
           class="downloadsSearch"
@@ -54,7 +62,7 @@
       <article
         v-for="download in filteredDownloads"
         :key="download"
-        class="downloadItem"
+        :class="`downloadItem downloadItem--${download.phase === 'processing' ? 'processing' : download.status}`"
         :data-download-id="download.downloadId"
       >
         <input
@@ -76,14 +84,14 @@
             {{ formatDownloadMeta(download) }}
           </p>
           <progress
-            v-if="download.status === 'downloading' && download.received > 0 && download.total > 0 && download.progress != null"
+            v-if="download.status === 'downloading' && download.phase !== 'processing' && download.received > 0 && download.total > 0 && download.progress != null"
             max="1"
             :value="download.progress"
             :aria-label="t('Downloads.Progress')"
           />
           <div class="downloadActions">
             <button
-              v-if="download.status === 'completed'"
+              v-if="playableDownloadIds.has(download.downloadId)"
               type="button"
               data-download-action="play"
               @click="play(download)"
@@ -91,7 +99,7 @@
               {{ t('Downloads.Play') }}
             </button>
             <button
-              v-if="download.status === 'failed'"
+              v-if="download.status === 'failed' && !download.staleNative"
               type="button"
               data-download-action="retry"
               @click="retry(download)"
@@ -145,8 +153,10 @@ import FtFlexBox from '../../components/ft-flex-box/ft-flex-box.vue'
 import FtInput from '../../components/FtInput/FtInput.vue'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
 import { awaitAsyncResult } from '../../helpers/android/jsinterface'
-import { cancelSabrDownload, hasSabrDownload, isSabrDownloadCanceled, isSabrDownloadPaused, mergeDownloadProgress, mergeNativeDownload, pauseSabrDownload, recoverSabrDownload, updateDownloadMetadata } from '../../helpers/android/downloads'
+import { showToast } from '../../helpers/utils'
+import { cancelSabrDownload, hasSabrDownload, isSabrDownloadCanceled, isSabrDownloadPaused, mergeDownloadProgress, mergeNativeDownload, normalizeDownloadMetadata, pauseSabrDownload, readDownloadMetadata, recoverSabrDownload, updateDownloadMetadata, writeDownloadMetadata } from '../../helpers/android/downloads'
 import { filterDownloads } from '../../helpers/android/download-search.mjs'
+import { createDownloadedPlaylistRoute, getPlayableDownloadRecords } from '../../helpers/player/playback-source.mjs'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -158,6 +168,14 @@ const searchQuery = ref('')
 const selectedDownloadIds = ref(new Set())
 const filteredDownloads = computed(() => filterDownloads(downloads.value, searchQuery.value))
 const selectableDownloads = computed(() => filteredDownloads.value)
+const selectedCompletedDownloads = computed(() => filteredDownloads.value.filter(download =>
+  selectedDownloadIds.value.has(download.downloadId) && download.status === 'completed'
+))
+const selectedPlayableDownloads = computed(() => getPlayableDownloadRecords(
+  filteredDownloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId)),
+  window.Android?.getLocalPlaybackUrl
+))
+const playableDownloadIds = computed(() => new Set(getPlayableDownloadRecords(downloads.value, window.Android?.getLocalPlaybackUrl).map(download => download.downloadId)))
 const selectAllLabel = computed(() => {
   const items = selectableDownloads.value
   return items.length > 0 && items.every(download => selectedDownloadIds.value.has(download.downloadId))
@@ -173,6 +191,20 @@ function updateSearchQuery(value) {
 
 function clearSearchQuery() {
   searchQuery.value = ''
+}
+
+function playSelected() {
+  const selectedIds = filteredDownloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))
+  const selected = selectedPlayableDownloads.value
+  if (selected.length !== selectedIds.length || selected.length < 2) {
+    if (selectedIds.length > 1) showToast(t('Downloads.Player source unavailable'))
+    return
+  }
+  if (!selected[0].videoId) return
+  router.push({
+    path: `/watch/${selected[0].videoId}`,
+    ...createDownloadedPlaylistRoute(selected.map(download => download.downloadId))
+  })
 }
 
 function handleThumbnailError(event) {
@@ -191,18 +223,28 @@ function formatProgress(download) {
   const percent = download.progress == null ? '—' : `${Math.round(download.progress * 100)}%`
   const bytes = `${formatBytes(download.received)}/${download.totalExact === false ? '~' : ''}${formatBytes(download.total)}`
   const format = download.selectedFormat?.replace(/\s+\(.+\)$/, '') || ''
-  return `${percent} · ${bytes}${format ? ` · ${format}` : ''} · ${formatSpeed(download.speedBps || 0)}`
+  const engine = formatDownloadEngine(download)
+  return `${percent} · ${bytes}${format ? ` · ${format}` : ''}${engine ? ` · ${engine}` : ''} · ${formatSpeed(download.speedBps || 0)}`
+}
+
+function formatDownloadEngine(download) {
+  if (download.engine === 'sabr' || download.offlineUri) return 'SABR'
+  if (download.engine === 'native' || download.localPath) return 'Native'
+  return ''
 }
 
 function formatDownloadMeta(download) {
-  const parts = [download.status]
-  const hasProgress = download.status === 'downloading' && download.received > 0 && download.total > 0
+  const processing = download.phase === 'processing'
+  const parts = [processing ? t('Downloads.Processing') : download.status]
+  const hasProgress = !processing && download.status === 'downloading' && download.received > 0 && download.total > 0
   if (hasProgress) return formatProgress(download)
   if (download.status === 'completed') {
     const size = download.fileSize || download.received || download.total
     if (size > 0) parts.push(formatBytes(size))
   }
   if (download.selectedFormat) parts.push(download.selectedFormat)
+  const engine = formatDownloadEngine(download)
+  if (engine) parts.push(engine)
   return parts.join(' · ')
 }
 
@@ -221,9 +263,24 @@ function nativeQueue() {
 function load() {
   try {
     const queue = nativeQueue()
-    const stored = JSON.parse(localStorage.getItem('freetube-downloads') || '[]')
+    const stored = normalizeDownloadMetadata(readDownloadMetadata())
     if (!Array.isArray(stored)) throw new Error('Downloads metadata is not an array')
-    downloads.value = stored.flatMap(download => {
+    const knownIds = new Set(stored.map(download => download?.downloadId).filter(Boolean))
+    const staleNative = queue
+      .filter(item => item?.id && ['queued', 'downloading', 'paused'].includes(item.status) && !knownIds.has(item.id))
+      .map(item => ({
+        downloadId: item.id,
+        videoId: item.videoId || '',
+        title: item.title || item.id,
+        thumbnail: '',
+        engine: 'native',
+        status: 'failed',
+        error: 'Download metadata is missing',
+        localPath: item.targetUri || '',
+        staleNative: true,
+        createdAt: Date.now()
+      }))
+    downloads.value = [...stored, ...staleNative].flatMap(download => {
       if (!download || typeof download !== 'object' || Array.isArray(download) || !download.downloadId) {
         console.warn('[Downloads] skipping invalid metadata record')
         return []
@@ -237,7 +294,7 @@ function load() {
     })
     const downloadIds = new Set(downloads.value.map(download => download.downloadId))
     selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => downloadIds.has(id)))
-    localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
+    writeDownloadMetadata(downloads.value)
     console.warn('[Downloads] list loaded', downloads.value.map(download => ({ id: download.downloadId, status: download.status, selectedFormat: download.selectedFormat, hasThumbnail: Boolean(download.thumbnail), hasOfflineUri: Boolean(download.offlineUri) })))
   } catch (error) {
     console.error('[Downloads] unable to load metadata', error)
@@ -295,6 +352,7 @@ async function control(download, action) {
 }
 
 function play(download) {
+  if (!playableDownloadIds.value.has(download.downloadId)) return
   console.warn('[Downloads] playback start', { id: download.downloadId, status: download.status, hasOfflineUri: Boolean(download.offlineUri), hasThumbnail: Boolean(download.thumbnail) })
   router.push({ path: `/watch/${download.videoId}`, query: { offline: download.downloadId } })
 }
@@ -316,7 +374,7 @@ function selectAll() {
 async function removeMany(items = downloads.value.filter(download => selectedDownloadIds.value.has(download.downloadId))) {
   items = [...items]
   if (!items.length) return
-  const active = items.filter(download => ['queued', 'downloading', 'paused'].includes(download.status))
+  const active = items.filter(download => ['queued', 'downloading', 'paused'].includes(download.status) || download.staleNative)
   active.forEach(download => control(download, 'cancel'))
   if (active.some(download => !download.manifestSrc)) await new Promise(resolve => setTimeout(resolve, 300))
 
@@ -339,7 +397,7 @@ async function removeMany(items = downloads.value.filter(download => selectedDow
     const deleted = new Set(results.filter(result => result.ok).map(result => result.download.downloadId))
     downloads.value = downloads.value.filter(download => !deleted.has(download.downloadId))
     selectedDownloadIds.value = new Set([...selectedDownloadIds.value].filter(id => !deleted.has(id)))
-    localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
+    writeDownloadMetadata(downloads.value)
   } finally {
     await storage?.destroy()
     await player?.destroy()
@@ -458,7 +516,7 @@ function handleDownloadEvent(event) {
   const native = nativeQueue().find(item => item.id === detail.id)
   const changes = Object.fromEntries(Object.entries(detail).filter(([, value]) => value !== undefined))
   Object.assign(download, mergeDownloadProgress(download, changes, native))
-  localStorage.setItem('freetube-downloads', JSON.stringify(downloads.value))
+  writeDownloadMetadata(downloads.value)
 }
 
 onMounted(() => {
@@ -529,6 +587,22 @@ onBeforeUnmount(async () => {
   background: var(--card-bg-color);
   border-radius: 4px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+
+.downloadItem--processing {
+  border-inline-start: 4px dashed var(--primary-color);
+}
+
+.downloadItem--paused {
+  border-inline-start: 4px dotted var(--tertiary-text-color);
+}
+
+.downloadItem--failed {
+  border-inline-start: 4px solid var(--red-500);
+}
+
+.downloadItem--completed {
+  border-inline-start: 4px solid var(--primary-color);
 }
 
 .downloadSelect {

@@ -251,6 +251,10 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  downloadedFormats: {
+    type: Array,
+    default: () => []
+  }
 })
 
 const emit = defineEmits([
@@ -328,7 +332,23 @@ const formatTypeOptions = computed(() => [
   {
     label: t('Change Format.Use Audio Formats'),
     value: 'audio'
-  }
+  },
+  ...(
+    props.downloadedFormats.length > 0
+      ? [{
+          label: t('Change Format.Use Downloaded Formats'),
+          value: { type: 'downloaded', source: props.downloadedFormats[0] }
+        }]
+      : []
+  ),
+  ...(
+    props.isOffline
+      ? [{
+          label: t('Change Format.Play Online'),
+          value: 'online'
+        }]
+      : []
+  )
 ])
 
 /**
