@@ -14,14 +14,17 @@ import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegSession
 import com.arthenica.ffmpegkit.ReturnCode
 import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -59,6 +62,7 @@ class DownloadService : Service() {
     private val stopped = AtomicBoolean(false)
     private val activeDownloads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val connections = java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection>()
+    private val ffmpegSessions = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     override fun onCreate() {
         super.onCreate()
@@ -159,13 +163,17 @@ class DownloadService : Service() {
         }
         writeQueue(queue)
         queue.let { q -> (0 until q.length()).map { q.getJSONObject(it) }.firstOrNull { it.optString("id") == id } }?.let(::broadcast)
-        if (status == "paused") connections[id]?.disconnect()
+        if (status == "paused") {
+            connections[id]?.disconnect()
+            cancelFfmpeg(id)
+        }
         executor.execute { process() }
     }
 
     private fun cancel(id: String?) {
         if (id == null) return
         connections[id]?.disconnect()
+        cancelFfmpeg(id)
         val queue = readQueue()
         for (index in 0 until queue.length()) {
             val item = queue.getJSONObject(index)
@@ -274,7 +282,7 @@ class DownloadService : Service() {
                 item.put("phase", "processing").put("progress", 1).put("received", received).put("total", total).put("speedBps", 0).put("etaSeconds", 0)
                 saveItem(item)
                 notify(item.optString("id"), item.optString("title"), "Processing", 1.0, true)
-                muxMp4(videoFile, audioFile, outputFile)
+                muxMp4(item.optString("id"), videoFile, audioFile, outputFile)
                 openTarget(item.getString("targetUri"), "wt").use { stream -> outputFile.inputStream().use { input -> input.copyTo(stream) } }
             } finally {
                 videoFile.delete()
@@ -476,15 +484,35 @@ class DownloadService : Service() {
         broadcast(item)
     }
 
-    private fun muxMp4(videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
-        val session = FFmpegKit.execute(
+    private fun muxMp4(downloadId: String, videoFile: java.io.File, audioFile: java.io.File, outputFile: java.io.File) {
+        val completed = CountDownLatch(1)
+        val result = AtomicReference<FFmpegSession>()
+        val session = FFmpegKit.executeAsync(
             "-y -i ${ffmpegArg(videoFile)} -i ${ffmpegArg(audioFile)} " +
                 "-map 0:v:0 -map 1:a:0 -c copy ${ffmpegArg(outputFile)}"
-        )
-        if (!ReturnCode.isSuccess(session.returnCode)) {
-            val details = session.failStackTrace ?: session.allLogsAsString
-            throw IOException("FFmpeg mux failed: ${details?.takeLast(2000) ?: "unknown error"}")
+        ) {
+            result.set(it)
+            completed.countDown()
         }
+        ffmpegSessions[downloadId] = session.sessionId
+        try {
+            completed.await()
+        } finally {
+            ffmpegSessions.remove(downloadId, session.sessionId)
+        }
+        val finished = result.get() ?: throw IOException("FFmpeg mux returned no session")
+        if (!ReturnCode.isSuccess(finished.returnCode)) {
+            val details = finished.failStackTrace ?: finished.allLogsAsString
+            throw if (ReturnCode.isCancel(finished.returnCode)) {
+                InterruptedException("FFmpeg mux canceled")
+            } else {
+                IOException("FFmpeg mux failed: ${details?.takeLast(2000) ?: "unknown error"}")
+            }
+        }
+    }
+
+    private fun cancelFfmpeg(downloadId: String) {
+        ffmpegSessions.remove(downloadId)?.let(FFmpegKit::cancel)
     }
 
     private fun ffmpegArg(file: java.io.File): String =

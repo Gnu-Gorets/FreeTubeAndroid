@@ -667,7 +667,8 @@ test('native cancel disconnects and deletes target', () => {
 test('native pause and resume transition queue state', () => {
   assert.ok(downloadServiceSource.includes('ACTION_PAUSE -> update(intent.getStringExtra(EXTRA_ID), "paused")'))
   assert.ok(downloadServiceSource.includes('ACTION_RESUME, ACTION_RETRY -> update(intent.getStringExtra(EXTRA_ID), "queued")'))
-  assert.ok(downloadServiceSource.includes('if (status == "paused") connections[id]?.disconnect()'))
+  assert.ok(downloadServiceSource.includes('if (status == "paused") {'))
+  assert.ok(downloadServiceSource.includes('cancelFfmpeg(id)'))
   assert.ok(downloadServiceSource.includes('item.optString("status") == "queued" && activeDownloads.add(id)'))
 })
 
@@ -685,10 +686,12 @@ test('native completion verifies, renames and publishes target', () => {
 test('native adaptive download exposes processing mux lifecycle', () => {
   assert.ok(downloadServiceSource.includes('item.put("phase", "processing")'))
   assert.ok(downloadServiceSource.includes('notify(item.optString("id"), item.optString("title"), "Processing"'))
-  assert.ok(downloadServiceSource.includes('muxMp4(videoFile, audioFile, outputFile)'))
+  assert.ok(downloadServiceSource.includes('muxMp4(item.optString("id"), videoFile, audioFile, outputFile)'))
+  assert.ok(downloadServiceSource.includes('FFmpegKit.executeAsync'))
+  assert.ok(downloadServiceSource.includes('FFmpegKit::cancel'))
   assert.ok(downloadServiceSource.includes('outputFile.inputStream().use { input -> input.copyTo(stream) }'))
-  assert.ok(downloadServiceSource.includes('FFmpegKit.execute'))
-  assert.ok(downloadServiceSource.includes('ReturnCode.isSuccess(session.returnCode)'))
+  assert.ok(downloadServiceSource.includes('FFmpegKit.executeAsync'))
+  assert.ok(downloadServiceSource.includes('ReturnCode.isSuccess(finished.returnCode)'))
   assert.ok(downloadServiceSource.includes('-map 0:v:0 -map 1:a:0 -c copy'))
 })
 
