@@ -1446,7 +1446,6 @@ download_restart_queued() {
   open_downloads_cdp || return 1
   id=$(cdp_latest_download_id_since "$marker")
   [[ -n "$id" && "$id" != null ]] || return 1
-  cdp_wait_status "$id" downloading || return 1
   adb_shell am force-stop "$PACKAGE"
   sleep 3
   start_app || return 1
