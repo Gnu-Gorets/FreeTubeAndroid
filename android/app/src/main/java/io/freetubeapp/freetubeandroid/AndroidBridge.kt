@@ -548,6 +548,16 @@ class AndroidBridge(
         activity.startActivity(Intent.createChooser(sendIntent, null))
     }
 
+    @JavascriptInterface
+    fun shareFile(uri: String, mimeType: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType.ifBlank { "application/octet-stream" }
+            putExtra(Intent.EXTRA_STREAM, Uri.parse(uri))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        activity.startActivity(Intent.createChooser(sendIntent, null))
+    }
+
     private fun updateMediaState(state: Int, position: Long) {
         if (!mediaSession.isActive) return
         mediaSession.setMetadata(MediaMetadata.Builder()

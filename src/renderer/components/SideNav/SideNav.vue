@@ -118,6 +118,28 @@
       </router-link>
       <SideNavMoreOptions />
       <router-link
+        v-if="usingAndroid"
+        class="navOption mobileShow"
+        role="button"
+        to="/downloads"
+        :title="$t('Downloads.Downloads')"
+      >
+        <div
+          class="thumbnailContainer"
+        >
+          <FontAwesomeIcon
+            :icon="['fas', 'download']"
+            class="navIcon"
+            :class="applyNavIconExpand"
+          />
+        </div>
+        <p
+          class="navLabel"
+        >
+          {{ $t("Downloads.Downloads") }}
+        </p>
+      </router-link>
+      <router-link
         class="navOption mobileShow"
         role="button"
         to="/history"
@@ -244,6 +266,7 @@ import { KeyboardShortcuts } from '../../../constants'
 const { locale, t } = useI18n()
 
 const SUPPORTS_LOCAL_API = process.env.SUPPORTS_LOCAL_API
+const usingAndroid = process.env.IS_ANDROID
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const isOpen = computed(() => {

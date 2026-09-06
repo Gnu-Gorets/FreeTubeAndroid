@@ -166,11 +166,16 @@ const defaultInvidiousInstance = computed(() => store.getters.getDefaultInvidiou
 
 const dataReady = ref(false)
 
+function handleOpenDownloads() {
+  if (process.env.IS_ANDROID) router.push('/downloads')
+}
+
 onMounted(async () => {
   if (process.env.IS_ANDROID) {
     window.addEventListener('youtube-link', ({ detail }) => {
       if (detail?.link) handleYoutubeLink(detail.link)
     })
+    window.addEventListener('open-downloads', handleOpenDownloads)
   }
 
   await store.dispatch('grabUserSettings')
@@ -224,6 +229,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleKeyboardShortcuts)
   document.removeEventListener('mousedown', handleMouseDown)
   document.removeEventListener('dragstart', handleDragStart)
+  if (process.env.IS_ANDROID) window.removeEventListener('open-downloads', handleOpenDownloads)
   document.removeEventListener('click', handleClick)
   document.removeEventListener('auxclick', handleAuxClick)
 })

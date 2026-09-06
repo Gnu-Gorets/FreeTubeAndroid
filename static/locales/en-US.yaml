@@ -1009,6 +1009,7 @@ Playlist:
 #* Published
 #& Views
 Downloads:
+  Downloads: Downloads
   Download: Download
   Type: Download type
   Video: Video
@@ -1017,6 +1018,22 @@ Downloads:
   Audio format: Audio format
   Download subtitles: Download subtitles
   Audio format is not available: Audio format is not available
+  ETA: Remaining
+  LabelSeparator: ':'
+  PerSecond: /s
+  Share: Share
+  Empty: No downloads yet
+  Active: Active
+  Paused: Paused
+  Completed: Completed
+  Failed: Failed
+  Pause: Pause
+  Resume: Resume
+  Cancel: Cancel
+  Retry: Retry
+  Open: Open
+  Source: Source video
+  Delete: Delete
 
 Change Format:
   Change Media Formats: Change Media Formats

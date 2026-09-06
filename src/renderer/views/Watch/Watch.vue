@@ -149,7 +149,7 @@
         :get-playlist-state="getPlaylistState"
         :length-seconds="videoLengthSeconds"
         :video-thumbnail="thumbnail"
-        :download-available="process.env.IS_ANDROID && !isUpcoming && !isLive"
+        :download-available="usingAndroid && !isUpcoming && !isLive"
         :in-user-playlist="!!selectedUserPlaylist"
         :is-unlisted="isUnlisted"
         :can-save-watched-progress="canSaveWatchProgress"

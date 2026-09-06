@@ -33,7 +33,7 @@
 
       <div class="buttons">
         <FtButton
-          v-if="process.env.IS_ANDROID"
+          v-if="usingAndroid"
           class="action"
           aria-describedby="youtubeShareImage"
           :icon="['fas', 'share-alt']"
@@ -139,6 +139,7 @@ import FtToggleSwitch from '../FtToggleSwitch/FtToggleSwitch.vue'
 import store from '../../store/index'
 
 const { t } = useI18n()
+const usingAndroid = process.env.IS_ANDROID
 
 const props = defineProps({
   shareTargetType: {
