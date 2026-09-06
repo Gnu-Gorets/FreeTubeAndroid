@@ -130,6 +130,7 @@ export default defineComponent({
   },
   data: function () {
     return {
+      usingAndroid: process.env.IS_ANDROID,
       startNextVideoInFullscreen: false,
       startNextVideoInFullwindow: false,
       startNextVideoInPip: false,
