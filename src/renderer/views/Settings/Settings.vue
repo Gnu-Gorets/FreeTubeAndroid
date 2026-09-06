@@ -222,30 +222,9 @@ function handleUnlock() {
   })
 }
 
-const currentPath = ref(window.location.hash)
-
-function onPopState(_, forcedMobile = true) {
-  currentPath.value = window.location.hash
-  if (currentPath.value === '#/settings') {
-    returnToSettingsMenu()
-  } else {
-    const subPath = currentPath.value.split('#/settings#')[1]
-    if (subPath !== undefined) {
-      navigateToSection(subPath, forcedMobile)
-    }
-  }
-}
-
-function pushState(path) {
-  if (`#/settings${path}` !== window.location.hash) {
-    history.pushState({}, null, `#/settings${path}`)
-  }
-}
-
 onBeforeUnmount(() => {
   document.removeEventListener('scroll', markScrolledToSectionAsActive)
   window.removeEventListener('resize', handleResize)
-  window.removeEventListener('popstate', onPopState)
 })
 
 function showKeyboardShortcutPrompt() {
@@ -266,9 +245,6 @@ function handleMounted() {
 
   // mark first section as active before any scrolling has taken place
   activeSection.value = settingsSectionComponents.value[0].type
-
-  onPopState(undefined, true)
-  window.addEventListener('popstate', onPopState)
 }
 
 const sectionRefs = useTemplateRef('sectionRefs')
@@ -276,7 +252,7 @@ const sectionRefs = useTemplateRef('sectionRefs')
 /**
  * @param {string} sectionType
  */
-function navigateToSection(sectionType, forcedMobile = false) {
+function navigateToSection(sectionType) {
   if (isInDesktopView.value) {
     nextTick(() => {
       const sectionElement = sectionRefs.value.find(sectionRef => {
@@ -289,10 +265,7 @@ function navigateToSection(sectionType, forcedMobile = false) {
       sectionHeading.focus()
       sectionHeading.tabIndex = -1
     })
-  }
-
-  if ((!isInDesktopView.value) || forcedMobile) {
-    pushState(`#${sectionType}`)
+  } else {
     settingsSectionTypeOpenInMobile.value = sectionType
   }
 }
