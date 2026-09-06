@@ -46,8 +46,12 @@
         @click="resetDirectory"
       />
     </FtFlexBox>
-    <p v-if="directory">
-      {{ directory }}
+    <p
+      v-if="directory"
+      class="downloadDirectory"
+      :title="directory"
+    >
+      {{ directoryLabel }}
     </p>
   </FtSettingsSection>
 </template>
@@ -76,6 +80,15 @@ const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideo
 const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
 const preferLocal = computed(() => store.getters.getDownloadsPreferLocal)
 const directory = ref(getDownloadDirectory())
+const directoryLabel = computed(() => {
+  if (!directory.value) return ''
+  try {
+    const path = decodeURIComponent(new URL(directory.value).pathname)
+    return path.split(':').pop()?.split('/').filter(Boolean).pop() || directory.value
+  } catch {
+    return directory.value
+  }
+})
 const videoFormatValues = ['auto', 'mp4', 'webm']
 const audioFormatValues = ['auto', 'm4a', 'webm']
 const videoFormatNames = ['Auto', 'MP4', 'WebM']
@@ -116,3 +129,15 @@ onMounted(() => {
   syncNativeSettings()
 })
 </script>
+
+<style scoped>
+.downloadDirectory {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+</style>
