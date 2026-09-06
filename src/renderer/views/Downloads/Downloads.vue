@@ -84,7 +84,12 @@
                 @click="run('cancelDownload', mission.id)"
               />
               <FtButton
-                v-if="mission.status === 'failed'"
+                v-if="mission.status === 'failed' && mission.needsRefresh && mission.video?.id"
+                :label="t('Downloads.Retry')"
+                @click="refresh(mission)"
+              />
+              <FtButton
+                v-else-if="mission.status === 'failed'"
                 :label="t('Downloads.Retry')"
                 @click="run('retryDownload', mission.id)"
               />
@@ -166,6 +171,13 @@ function formatBytes(value) {
 
 function run(action, id) {
   store.dispatch(action, id)
+}
+
+function refresh(mission) {
+  router.push({
+    path: `/watch/${mission.video.id}`,
+    query: { refreshDownloadId: mission.id }
+  })
 }
 
 function playAll() {

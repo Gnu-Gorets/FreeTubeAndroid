@@ -100,7 +100,8 @@ const props = defineProps({
   video: { type: Object, required: true },
   formats: { type: Array, default: () => [] },
   captions: { type: Array, default: () => [] },
-  refreshFormats: { type: Function, default: null }
+  refreshFormats: { type: Function, default: null },
+  refreshMission: { type: Object, default: null }
 })
 
 const emit = defineEmits(['close', 'queued'])
@@ -123,11 +124,13 @@ const selectedFormat = computed(() => availableFormats.value.find(format => form
 watch([availableFormats, () => props.visible], () => {
   const preferred = mode.value === 'video' ? defaultVideoFormat.value : defaultAudioFormat.value
   selectedFormatId.value = availableFormats.value.find(format => {
+    if (props.refreshMission?.streamSelection && matchesStreamSelection(format, props.refreshMission.streamSelection)) return true
     if (preferred === 'auto') return false
     const preferredMime = preferred === 'm4a' ? 'audio/mp4' : preferred
     return format.mimeType === preferredMime || format.container === preferred
   })?.id ?? availableFormats.value[0]?.id ?? ''
-  selectedAudioId.value = adaptiveFormats.value[0]?.id ?? ''
+  const refreshAudio = props.refreshMission?.parts?.find(part => part.kind === 'audio')
+  selectedAudioId.value = adaptiveFormats.value.find(format => refreshAudio && matchesStreamSelection(format, refreshAudio))?.id ?? adaptiveFormats.value[0]?.id ?? ''
   selectedCaptionIds.value = []
   error.value = ''
 }, { immediate: true })
@@ -194,7 +197,13 @@ async function enqueueCandidates(formats, audios, directoryUri) {
         error = new Error(validation.error)
         continue
       }
-      return { id: await store.dispatch('enqueueDownload', request), error: null }
+      if (props.refreshMission) {
+        const refreshed = await store.dispatch('refreshDownload', { id: props.refreshMission.id, request })
+        if (refreshed) return { id: props.refreshMission.id, error: null }
+        error = new Error('No matching replacement stream found')
+      } else {
+        return { id: await store.dispatch('enqueueDownload', request), error: null }
+      }
     }
   }
   return { id: null, error }
@@ -204,7 +213,7 @@ async function submit() {
   if (!selectedFormat.value) return
   error.value = ''
   try {
-    const directoryUri = await selectDownloadDirectory()
+    const directoryUri = props.refreshMission?.directoryUri || await selectDownloadDirectory()
     if (!directoryUri) return
 
     const selectedAudio = audioFormats.value.find(format => format.id === selectedAudioId.value)
@@ -213,8 +222,10 @@ async function submit() {
     }
 
     const enqueueResult = await enqueueCandidates(
-      [selectedFormat.value, ...availableFormats.value.filter(format => format.id !== selectedFormat.value.id)],
-      selectedAudio ? [selectedAudio] : [],
+      props.refreshMission
+        ? [selectedFormat.value]
+        : [selectedFormat.value, ...availableFormats.value.filter(format => format.id !== selectedFormat.value.id)],
+      props.refreshMission ? [selectedAudio] : (selectedAudio ? [selectedAudio] : []),
       directoryUri
     )
     let videoMissionId = enqueueResult.id
@@ -235,7 +246,7 @@ async function submit() {
     }
     if (!videoMissionId) throw enqueueResult.error || new Error('No downloadable stream found')
 
-    if (mode.value === 'video' && selectedCaptionIds.value.length > 0) {
+    if (!props.refreshMission && mode.value === 'video' && selectedCaptionIds.value.length > 0) {
       for (const caption of props.captions) {
         try {
           const language = sanitize(caption.language || 'und')

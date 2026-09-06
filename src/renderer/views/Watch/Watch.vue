@@ -232,6 +232,7 @@
       :formats="downloadFormats"
       :captions="captions"
       :refresh-formats="refreshDownloadFormats"
+      :refresh-mission="refreshMission"
       @close="downloadDialogVisible = false"
       @queued="downloadDialogVisible = false"
     />
