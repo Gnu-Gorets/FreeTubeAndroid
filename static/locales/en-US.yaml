@@ -1008,6 +1008,16 @@ Playlist:
 # On Video Watch Page
 #* Published
 #& Views
+Downloads:
+  Download: Download
+  Type: Download type
+  Video: Video
+  Audio: Audio
+  Format: Format
+  Audio format: Audio format
+  Download subtitles: Download subtitles
+  Audio format is not available: Audio format is not available
+
 Change Format:
   Change Media Formats: Change Media Formats
   Use Dash Formats: Use DASH Formats

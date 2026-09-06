@@ -12,6 +12,7 @@ import CommentSection from '../../components/CommentSection/CommentSection.vue'
 import WatchVideoLiveChat from '../../components/WatchVideoLiveChat/WatchVideoLiveChat.vue'
 import WatchVideoPlaylist from '../../components/WatchVideoPlaylist/WatchVideoPlaylist.vue'
 import WatchVideoRecommendations from '../../components/WatchVideoRecommendations/WatchVideoRecommendations.vue'
+import DownloadDialog from '../../components/DownloadDialog/DownloadDialog.vue'
 import FtAgeRestricted from '../../components/FtAgeRestricted/FtAgeRestricted.vue'
 import { calculateColorLuminance } from '../../helpers/colors'
 import {
@@ -65,6 +66,29 @@ const UNAVAILABLE_VIDEO_THUMBNAILS = {
   dark: 'https://www.youtube.com/img/desktop/unavailable/unavailable_video_dark_theme.png'
 }
 
+function normalizeDownloadFormat(format, kind, index) {
+  const mimeType = format.mime_type || format.mimeType || format.type || ''
+  const [container, codecs] = mimeType.split(';')
+  const hasVideo = container.startsWith('video/')
+  const hasAudio = container.startsWith('audio/')
+  return {
+    id: `${kind}-${format.itag || index}`,
+    kind,
+    url: format.freeTubeUrl || format.url,
+    mimeType: container,
+    codecs: codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
+    extension: format.container || container.split('/')[1],
+    quality: format.qualityLabel || format.quality || '',
+    label: format.qualityLabel || format.quality || format.container || container,
+    size: format.content_length || format.clen || format.size || '',
+    width: format.width,
+    height: format.height,
+    bitrate: format.bitrate,
+    hasVideo,
+    hasAudio
+  }
+}
+
 export default defineComponent({
   name: 'Watch',
   components: {
@@ -77,6 +101,7 @@ export default defineComponent({
     'watch-video-live-chat': WatchVideoLiveChat,
     'watch-video-playlist': WatchVideoPlaylist,
     'watch-video-recommendations': WatchVideoRecommendations,
+    'download-dialog': DownloadDialog,
     'ft-age-restricted': FtAgeRestricted
   },
   beforeRouteLeave: async function (to, from, next) {
@@ -144,6 +169,8 @@ export default defineComponent({
       /** @type {SabrData | null} */
       sabrData: null,
       legacyFormats: [],
+      downloadFormats: [],
+      downloadDialogVisible: false,
       captions: [],
       /** @type {'EQUIRECTANGULAR' | 'EQUIRECTANGULAR_THREED_TOP_BOTTOM' | 'MESH'| null} */
       vrProjection: null,
@@ -436,6 +463,8 @@ export default defineComponent({
       this.manifestMimeType = MANIFEST_TYPE_DASH
       this.sabrData = null
       this.legacyFormats = []
+      this.downloadFormats = []
+      this.downloadDialogVisible = false
       this.captions = []
       this.vrProjection = null
       this.recommendedVideos = []
@@ -846,6 +875,11 @@ export default defineComponent({
 
             if (result.streaming_data.formats.length > 0) {
               this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
+              this.downloadFormats = result.streaming_data.formats
+                .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
+                .concat(result.streaming_data.adaptive_formats
+                  .filter(format => format.url)
+                  .map((format, index) => normalizeDownloadFormat(format, format.mime_type.startsWith('video/') ? 'video' : 'audio', index)))
             }
 
             if (result.captions) {
@@ -1137,6 +1171,10 @@ export default defineComponent({
             this.streamingDataExpiryDate = this.extractExpiryDateFromStreamingUrl(result.adaptiveFormats[0].url)
 
             this.legacyFormats = result.formatStreams.map(mapInvidiousLegacyFormat)
+            this.downloadFormats = result.formatStreams
+              .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
+              .concat(result.adaptiveFormats
+                .map((format, index) => normalizeDownloadFormat(format, format.type.startsWith('video/') ? 'video' : 'audio', index)))
 
             if (!process.env.SUPPORTS_LOCAL_API || this.proxyVideos) {
               this.legacyFormats.forEach(format => {
