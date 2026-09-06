@@ -83,6 +83,8 @@ class DownloadStorage(
         return file.parentFile?.usableSpace?.let { it >= requiredBytes } == true
     }
 
+    fun deleteOutput(uri: String): Boolean = contentResolver.delete(Uri.parse(uri), null, null) > 0
+
     fun deleteTemporaryFile(file: File): Boolean = !file.exists() || file.delete()
 
     fun loadMetadata(): JSONArray {

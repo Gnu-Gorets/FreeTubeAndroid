@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -16,6 +17,7 @@ internal class DownloadManager(
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val missions = LinkedHashMap<String, JSONObject>()
     private val active = HashMap<String, DownloadMission>()
+    private val listeners = CopyOnWriteArrayList<(JSONArray) -> Unit>()
     private val lock = Any()
 
     init {
@@ -60,6 +62,14 @@ internal class DownloadManager(
 
     fun snapshot(): JSONArray = synchronized(lock) { snapshotLocked() }
 
+    fun addListener(listener: (JSONArray) -> Unit) {
+        listeners.addIfAbsent(listener)
+    }
+
+    fun removeListener(listener: (JSONArray) -> Unit) {
+        listeners.remove(listener)
+    }
+
     fun pause(id: String): Boolean {
         synchronized(lock) {
             val mission = missions[id] ?: return false
@@ -82,6 +92,31 @@ internal class DownloadManager(
             mission.put("status", DownloadMission.STATUS_QUEUED)
             persistLocked()
             startNextLocked()
+            return true
+        }
+    }
+
+    fun retry(id: String): Boolean {
+        synchronized(lock) {
+            val mission = missions[id] ?: return false
+            if (mission.optString("status") != DownloadMission.STATUS_FAILED) return false
+            mission.remove("error")
+            mission.remove("errorCode")
+            mission.remove("needsRefresh")
+            mission.put("status", DownloadMission.STATUS_QUEUED)
+            persistLocked()
+            startNextLocked()
+            return true
+        }
+    }
+
+    fun delete(id: String): Boolean {
+        synchronized(lock) {
+            if (active.containsKey(id)) return false
+            val mission = missions.remove(id) ?: return false
+            storage.deleteTemporaryFile(File(mission.optString("temporaryPath")))
+            mission.optString("outputUri").takeIf { it.isNotBlank() }?.let(storage::deleteOutput)
+            persistLocked()
             return true
         }
     }
@@ -135,6 +170,7 @@ internal class DownloadManager(
         val snapshot = snapshotLocked()
         storage.saveMetadata(snapshot)
         onChanged(snapshot)
+        listeners.forEach { it(snapshot) }
     }
 
     private fun snapshotLocked(): JSONArray {
