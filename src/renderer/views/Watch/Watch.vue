@@ -152,6 +152,7 @@
         :get-playlist-state="getPlaylistState"
         :length-seconds="videoLengthSeconds"
         :video-thumbnail="thumbnail"
+        :download-available="process.env.IS_ANDROID && !isUpcoming && !isLive"
         :in-user-playlist="!!selectedUserPlaylist"
         :is-unlisted="isUnlisted"
         :content-disclosures="contentDisclosures"
@@ -231,6 +232,14 @@
         @pause-player="pausePlayer"
       />
     </div>
+    <DownloadDialog
+      :visible="downloadDialogVisible"
+      :video="{ id: videoId, title: videoTitle, author: channelName, duration: videoLengthSeconds, thumbnail }"
+      :formats="downloadFormats"
+      :captions="captions"
+      @close="downloadDialogVisible = false"
+      @queued="downloadDialogVisible = false"
+    />
   </div>
 </template>
 
