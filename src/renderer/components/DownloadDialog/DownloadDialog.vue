@@ -111,10 +111,10 @@ const selectedCaptionIds = ref([])
 const error = ref('')
 
 const progressiveFormats = computed(() => props.formats.filter(format => format.kind === 'progressive' && format.hasVideo === (mode.value === 'video')))
-const videoFormats = computed(() => props.formats.filter(format => format.kind === 'video'))
+const videoFormats = computed(() => props.formats.filter(format => format.kind === 'video' && format.mimeType === 'video/mp4'))
 const audioFormats = computed(() => props.formats.filter(format => format.kind === 'audio'))
 const availableFormats = computed(() => mode.value === 'video' ? [...progressiveFormats.value, ...videoFormats.value] : audioFormats.value)
-const adaptiveFormats = computed(() => audioFormats.value)
+const adaptiveFormats = computed(() => audioFormats.value.filter(format => format.mimeType === 'audio/mp4'))
 const selectedFormat = computed(() => availableFormats.value.find(format => format.id === selectedFormatId.value))
 
 watch([availableFormats, () => props.visible], () => {
