@@ -51,6 +51,7 @@ const config = {
     ]
   },
   externals: {
+    android: '{}',
     'youtubei.js': '{}',
     googlevideo: '{}'
   },
@@ -176,6 +177,9 @@ const config = {
       'process.env.IS_ELECTRON': false,
       'process.env.IS_ELECTRON_MAIN': false,
       'process.env.SUPPORTS_LOCAL_API': false,
+      'process.env.SWIPER_VERSION': `'${swiperVersion}'`,
+      'process.env.IS_ANDROID': false,
+      'process.env.IS_RELEASE': !isDevMode,
       __VUE_OPTIONS_API__: 'true',
       __VUE_PROD_DEVTOOLS__: 'false',
       __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
@@ -227,6 +231,7 @@ config.plugins.push(
     'process.env.SHAKA_LOCALE_MAPPINGS': JSON.stringify(SHAKA_LOCALE_MAPPINGS),
     'process.env.SHAKA_LOCALES_PREBUNDLED': JSON.stringify(SHAKA_LOCALES_PREBUNDLED)
   }),
+
 )
 
 module.exports = config
