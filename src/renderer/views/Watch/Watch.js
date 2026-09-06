@@ -67,9 +67,30 @@ const UNAVAILABLE_VIDEO_THUMBNAILS = {
   dark: 'https://www.youtube.com/img/desktop/unavailable/unavailable_video_dark_theme.png'
 }
 
+function normalizeVideoQuality(value) {
+  const height = String(value).match(/\d{3,4}/)?.[0]
+  return height ? `${height}p` : value
+}
+
+function formatDownloadSize(value) {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes < 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KiB', 'MiB', 'GiB']
+  let amount = bytes
+  let unit = 'B'
+  for (const nextUnit of units) {
+    amount /= 1024
+    unit = nextUnit
+    if (amount < 1024 || nextUnit === units.at(-1)) break
+  }
+  return `${amount.toFixed(amount < 10 ? 1 : 0)} ${unit}`
+}
+
 function normalizeDownloadFormat(format, kind, index) {
   const mimeType = format.mime_type || format.mimeType || format.type || ''
   const [container, codecs] = mimeType.split(';')
+  const size = format.content_length || format.clen || format.size || ''
   const hasVideo = container.startsWith('video/')
   const hasAudio = container.startsWith('audio/')
   return {
@@ -80,14 +101,17 @@ function normalizeDownloadFormat(format, kind, index) {
     codecs: codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
     extension: format.container || container.split('/')[1],
     quality: format.qualityLabel || format.quality || '',
-    label: [
-      format.qualityLabel || format.quality || container,
-      format.container || container.split('/')[1],
-      kind === 'progressive' ? 'combined' : kind,
-      codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
-      format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : ''
-    ].filter(Boolean).join(' · '),
-    size: format.content_length || format.clen || format.size || '',
+    label: kind === 'audio'
+      ? [
+          format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : 'unknown quality',
+          container === 'audio/mp4' ? 'm4a' : format.container || container.split('/')[1]
+        ].filter(Boolean).join(' · ')
+      : [
+          format.height ? `${format.height}p` : normalizeVideoQuality(format.qualityLabel || format.quality || format.container || container),
+          format.container || container.split('/')[1],
+          formatDownloadSize(size)
+        ].filter(Boolean).join(' · '),
+    size,
     width: format.width,
     height: format.height,
     bitrate: format.bitrate,
