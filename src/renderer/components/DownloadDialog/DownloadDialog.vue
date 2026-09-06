@@ -152,10 +152,29 @@ async function submit() {
       mimeType: format.mimeType,
       extension,
       fileName,
-      directoryUri,
-      captions: selectedCaptionIds.value.length > 0 ? props.captions : []
+      directoryUri
     }
-    await store.dispatch('enqueueDownload', request)
+    const videoMissionId = await store.dispatch('enqueueDownload', request)
+    if (mode.value === 'video' && selectedCaptionIds.value.length > 0) {
+      for (const caption of props.captions) {
+        try {
+          const language = sanitize(caption.language || 'und')
+          await store.dispatch('enqueueDownload', {
+            video: props.video,
+            kind: 'subtitle',
+            parentId: videoMissionId,
+            parts: [{ ...caption, kind: 'subtitle', extension: 'vtt' }],
+            url: caption.url,
+            mimeType: 'text/vtt',
+            extension: 'vtt',
+            fileName: `${sanitize(props.video.title)}.${language}.vtt`,
+            directoryUri
+          })
+        } catch (subtitleException) {
+          error.value = subtitleException.message
+        }
+      }
+    }
     emit('queued')
     close()
   } catch (exception) {
