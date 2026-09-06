@@ -836,6 +836,16 @@ Playlist:
     VideoDurationDescending: Продолжительность (Длиннейшие)
     PublishedNewest: Дата публикации (Сначала новые)
     PublishedOldest: Дата публикации (Сначала старые)
+Downloads:
+  Download: Скачать
+  Type: Тип загрузки
+  Video: Видео
+  Audio: Аудио
+  Format: Формат
+  Audio format: Аудиоформат
+  Download subtitles: Скачать субтитры
+  Audio format is not available: Аудиоформат недоступен
+
 Change Format:
   Change Media Formats: 'Изменить форматы видео'
   Use Dash Formats: 'Использовать форматы DASH'
