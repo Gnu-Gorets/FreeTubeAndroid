@@ -3,14 +3,41 @@ import { awaitAsyncResult } from './jsinterface'
 
 const isAndroid = process.env.IS_ANDROID
 
-export async function selectDownloadDirectory() {
+const DOWNLOAD_DIRECTORY_KEY = 'android-download-directory'
+
+export async function selectDownloadDirectory(force = false) {
   if (!isAndroid) return null
+  if (!force) {
+    const saved = localStorage.getItem(DOWNLOAD_DIRECTORY_KEY)
+    if (saved && android.isTreeAccessible(saved)) return saved
+  }
   const uri = await awaitAsyncResult(android.requestDirectoryAccessDialog())
-  return uri === 'USER_CANCELED' ? null : uri
+  if (uri === 'USER_CANCELED') return null
+  localStorage.setItem(DOWNLOAD_DIRECTORY_KEY, uri)
+  return uri
+}
+
+export function getDownloadDirectory() {
+  return isAndroid ? localStorage.getItem(DOWNLOAD_DIRECTORY_KEY) : null
+}
+
+export function resetDownloadDirectory() {
+  if (!isAndroid) return
+  const uri = getDownloadDirectory()
+  if (uri) android.revokeDownloadDirectory(uri)
+  localStorage.removeItem(DOWNLOAD_DIRECTORY_KEY)
 }
 
 export function getDownloads() {
   return isAndroid ? JSON.parse(android.getDownloads()) : []
+}
+
+export function getDownloadSettings() {
+  return isAndroid ? JSON.parse(android.getDownloadSettings()) : { wifiOnly: false, concurrency: 1 }
+}
+
+export function updateDownloadSettings(settings) {
+  return isAndroid && android.updateDownloadSettings(JSON.stringify(settings))
 }
 
 export function enqueueDownload(request) {
@@ -32,6 +59,10 @@ export function cancelDownload(id) {
 
 export function retryDownload(id) {
   return isAndroid && android.retryDownload(id)
+}
+
+export function refreshDownload(id, request) {
+  return isAndroid && android.refreshDownload(id, JSON.stringify(request))
 }
 
 export function deleteDownload(id) {

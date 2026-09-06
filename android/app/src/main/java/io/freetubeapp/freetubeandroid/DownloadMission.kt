@@ -87,6 +87,16 @@ internal class DownloadMission(
                     if (error is DownloadException && error.needsRefresh) {
                         data.put("needsRefresh", true)
                         data.put("errorCode", ERROR_NEEDS_REFRESH)
+                        data.put("errorClass", ERROR_CLASS_RESUMABLE)
+                    } else if (error is IOException && !storage.isNetworkAvailable()) {
+                        data.put("errorCode", ERROR_NETWORK_UNAVAILABLE)
+                        data.put("errorClass", ERROR_CLASS_RESUMABLE)
+                    } else {
+                        data.put("errorClass", if (error is DownloadException && error.retryable) {
+                            ERROR_CLASS_RETRYABLE
+                        } else {
+                            ERROR_CLASS_TERMINAL
+                        })
                     }
                     data.put("error", error.message ?: error.javaClass.simpleName)
                     updateStatus(STATUS_FAILED)
@@ -270,12 +280,17 @@ internal class DownloadMission(
         const val STATUS_PAUSED = "paused"
         const val STATUS_COMPLETED = "completed"
         const val STATUS_FAILED = "failed"
+        const val STATUS_MISSING = "missing"
         const val STATUS_CANCELED = "canceled"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1_000L
         const val ERROR_NEEDS_REFRESH = "needs-refresh"
+        const val ERROR_NETWORK_UNAVAILABLE = "network-unavailable"
+        const val ERROR_CLASS_RESUMABLE = "resumable"
+        const val ERROR_CLASS_RETRYABLE = "retryable"
+        const val ERROR_CLASS_TERMINAL = "terminal"
         private val SUPPORTED_MIME_TYPES = setOf("video/mp4", "video/webm", "audio/mp4", "audio/webm", "text/vtt")
 
         fun validateRequest(request: JSONObject) {

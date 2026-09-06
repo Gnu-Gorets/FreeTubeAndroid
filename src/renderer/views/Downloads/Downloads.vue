@@ -130,7 +130,8 @@ const sections = computed(() => [
   { status: 'post-processing', label: t('Downloads.Post processing'), items: missions.value.filter(mission => mission.status === 'post-processing') },
   { status: 'paused', label: t('Downloads.Paused'), items: missions.value.filter(mission => mission.status === 'paused') },
   { status: 'completed', label: t('Downloads.Completed'), items: missions.value.filter(mission => mission.status === 'completed') },
-  { status: 'failed', label: t('Downloads.Failed'), items: missions.value.filter(mission => mission.status === 'failed') }
+  { status: 'failed', label: t('Downloads.Failed'), items: missions.value.filter(mission => mission.status === 'failed') },
+  { status: 'missing', label: t('Downloads.Missing'), items: missions.value.filter(mission => mission.status === 'missing') }
 ])
 
 onMounted(() => {
