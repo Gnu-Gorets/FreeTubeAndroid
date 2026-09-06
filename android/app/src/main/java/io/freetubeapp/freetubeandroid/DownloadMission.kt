@@ -188,6 +188,7 @@ internal class DownloadMission(
             require(request.optString("directoryUri").isNotBlank()) { "Missing downloads directory" }
             require(request.optString("fileName").isNotBlank()) { "Missing output filename" }
             require(request.optString("mimeType").isNotBlank()) { "Missing output MIME type" }
+            require(request.optJSONArray("parts")?.length() == 1) { "Adaptive downloads are not available yet" }
         }
     }
 
