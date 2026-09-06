@@ -12,12 +12,14 @@ import org.json.JSONArray
 
 class DownloadService : Service() {
     private lateinit var manager: DownloadManager
+    private val downloadListener: (JSONArray) -> Unit = ::updateNotification
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(null))
-        manager = DownloadManager(this, ::updateNotification)
+        manager = DownloadRuntime.manager(this)
+        manager.addListener(downloadListener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -29,7 +31,7 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
-        manager.shutdown()
+        manager.removeListener(downloadListener)
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
         super.onDestroy()
     }
