@@ -169,6 +169,8 @@ import {
 } from '../../helpers/utils.js'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser.js'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin.js'
+import { STATE_BUFFERING, STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session.js'
+import android from 'android'
 
 const props = defineProps({
   format: {
@@ -1167,6 +1169,11 @@ function handlePlay() {
     window.ftElectron.startPowerSaveBlocker()
   }
 
+  if (process.env.IS_ANDROID) {
+    android.enableKeepScreenOn()
+    updateMediaSessionState(STATE_PLAYING)
+  }
+
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = 'playing'
   }
@@ -1174,6 +1181,11 @@ function handlePlay() {
 
 function handlePause() {
   stopPowerSaveBlocker()
+
+  if (process.env.IS_ANDROID) {
+    android.disableKeepScreenOn()
+    updateMediaSessionState(STATE_PAUSED, Math.floor(video.value.currentTime * 1000))
+  }
 
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = 'paused'
@@ -1196,6 +1208,25 @@ function handleCanPlay() {
     startInPip = false
     window.ftElectron.requestPiP()
   }
+}
+
+function handleMediaPlay() {
+  video.value?.play()
+}
+
+function handleMediaPause() {
+  video.value?.pause()
+}
+
+function handleAppPause() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {})
+  }
+  ui?.configure({ enableFullscreenOnRotation: false })
+}
+
+function handleAppResume() {
+  ui?.configure({ enableFullscreenOnRotation: enterFullscreenOnDisplayRotate.value })
 }
 
 function updateVolume() {
@@ -1224,6 +1255,10 @@ function updateVolume() {
 function handleTimeupdate() {
   if (video.value) {
     const currentTime = video.value.currentTime
+
+    if (process.env.IS_ANDROID) {
+      updateMediaSessionState(video.value.paused ? STATE_PAUSED : STATE_PLAYING, Math.floor(currentTime * 1000))
+    }
 
     emit('timeupdate', currentTime)
 
@@ -2697,6 +2732,13 @@ const initLoadWaitTimeToastAC = new AbortController()
 onMounted(async () => {
   const videoElement = video.value
 
+  if (process.env.IS_ANDROID) {
+    window.addEventListener('media-play', handleMediaPlay)
+    window.addEventListener('media-pause', handleMediaPause)
+    window.addEventListener('app-pause', handleAppPause)
+    window.addEventListener('app-resume', handleAppResume)
+  }
+
   const volume = sessionStorage.getItem('volume')
   if (volume !== null) {
     videoElement.volume = parseFloat(volume)
@@ -2736,6 +2778,9 @@ onMounted(async () => {
 
   player.addEventListener('buffering', event => {
     isBuffering.value = event.buffering
+    if (process.env.IS_ANDROID && event.buffering) {
+      updateMediaSessionState(STATE_BUFFERING, Math.floor(videoElement.currentTime * 1000))
+    }
   })
 
   player.addEventListener('error', event => handleError(event.detail, 'shaka error handler'))
@@ -3207,6 +3252,13 @@ onBeforeUnmount(() => {
 
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = 'none'
+  }
+
+  if (process.env.IS_ANDROID) {
+    window.removeEventListener('media-play', handleMediaPlay)
+    window.removeEventListener('media-pause', handleMediaPause)
+    window.removeEventListener('app-pause', handleAppPause)
+    window.removeEventListener('app-resume', handleAppResume)
   }
 
   skippedSponsorBlockSegments.value.forEach(segment => clearTimeout(segment.timeoutId))
