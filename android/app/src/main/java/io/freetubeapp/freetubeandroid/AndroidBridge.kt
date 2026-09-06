@@ -61,6 +61,7 @@ class AndroidBridge(
     private var pendingFile: Triple<String, String, String>? = null
     private val downloadManager = DownloadRuntime.manager(activity)
     private val downloadListener: (org.json.JSONArray) -> Unit = { snapshot ->
+        if (hasRunningDownload(snapshot)) DownloadService.start(activity)
         activity.runOnUiThread {
             mainWebView.evaluateJavascript(
                 "window.dispatchEvent(new CustomEvent('download-update', {detail: ${snapshot}}))",
@@ -80,6 +81,17 @@ class AndroidBridge(
         Log.i("FreeTubeDownloads", "enqueue kind=${request.optString("kind")} mime=${request.optString("mimeType")} parts=${request.optJSONArray("parts")?.length() ?: 0}")
         DownloadService.start(activity)
         return downloadManager.enqueue(request).toString()
+    }
+
+    private fun hasRunningDownload(snapshot: org.json.JSONArray): Boolean {
+        for (index in 0 until snapshot.length()) {
+            val status = snapshot.optJSONObject(index)?.optString("status")
+            if (status == DownloadMission.STATUS_QUEUED ||
+                status == DownloadMission.STATUS_DOWNLOADING ||
+                status == DownloadMission.STATUS_POST_PROCESSING
+            ) return true
+        }
+        return false
     }
 
     private fun validateDownloadUrls(request: JSONObject) {
@@ -132,20 +144,31 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun refreshDownload(id: String, requestJson: String): Boolean =
-        downloadManager.replaceUrls(id, JSONObject(requestJson))
+    fun refreshDownload(id: String, requestJson: String): Boolean {
+        val result = downloadManager.replaceUrls(id, JSONObject(requestJson))
+        if (result) DownloadService.start(activity)
+        return result
+    }
 
     @JavascriptInterface
     fun pauseDownload(id: String): Boolean = downloadManager.pause(id)
 
     @JavascriptInterface
-    fun resumeDownload(id: String): Boolean = downloadManager.resume(id)
+    fun resumeDownload(id: String): Boolean {
+        val result = downloadManager.resume(id)
+        if (result) DownloadService.start(activity)
+        return result
+    }
 
     @JavascriptInterface
     fun cancelDownload(id: String): Boolean = downloadManager.cancel(id)
 
     @JavascriptInterface
-    fun retryDownload(id: String): Boolean = downloadManager.retry(id)
+    fun retryDownload(id: String): Boolean {
+        val result = downloadManager.retry(id)
+        if (result) DownloadService.start(activity)
+        return result
+    }
 
     @JavascriptInterface
     fun deleteDownload(id: String): Boolean = downloadManager.delete(id)
