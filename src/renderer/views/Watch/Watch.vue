@@ -150,7 +150,7 @@
         :get-playlist-state="getPlaylistState"
         :length-seconds="videoLengthSeconds"
         :video-thumbnail="thumbnail"
-        :download-available="usingAndroid && !isUpcoming && !isLive"
+        :download-available="usingAndroid && !isUpcoming && !isLive && !downloadedMission"
         :in-user-playlist="!!selectedUserPlaylist"
         :is-unlisted="isUnlisted"
         :can-save-watched-progress="canSaveWatchProgress"
@@ -159,7 +159,7 @@
         @change-format="handleFormatChange"
         @pause-player="pausePlayer"
         @save-watched-progress="handleWatchProgressManualSave"
-        @download="downloadDialogVisible = true"
+        @download="openDownloadDialog"
       />
       <watch-video-chapters
         v-if="!hideChapters && !isLoading && videoChapters.length > 0"
@@ -233,6 +233,7 @@
       :video="{ id: videoId, title: videoTitle, author: channelName, duration: videoLengthSeconds, thumbnail }"
       :formats="downloadFormats"
       :captions="captions"
+      :refresh-formats="refreshDownloadFormats"
       @close="downloadDialogVisible = false"
       @queued="downloadDialogVisible = false"
     />

@@ -137,6 +137,7 @@ const sections = computed(() => [
   { status: 'paused', label: t('Downloads.Paused'), items: missions.value.filter(mission => mission.status === 'paused') },
   { status: 'completed', label: t('Downloads.Completed'), items: missions.value.filter(mission => mission.status === 'completed') },
   { status: 'failed', label: t('Downloads.Failed'), items: missions.value.filter(mission => mission.status === 'failed') },
+  { status: 'canceled', label: t('Downloads.Canceled'), items: missions.value.filter(mission => mission.status === 'canceled') },
   { status: 'missing', label: t('Downloads.Missing'), items: missions.value.filter(mission => mission.status === 'missing') }
 ])
 
