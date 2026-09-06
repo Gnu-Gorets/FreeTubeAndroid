@@ -600,6 +600,12 @@ function removeSearchHistoryEntryInDbAndCache(query) {
 
 function toggleSearchContainer() {
   showSearchContainer.value = !showSearchContainer.value
+  if (showSearchContainer.value) {
+    nextTick(() => {
+      searchInput.value?.focus()
+      searchInput.value?.select()
+    })
+  }
 }
 
 /**
