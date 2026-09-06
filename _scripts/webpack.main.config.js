@@ -54,6 +54,7 @@ const config = {
     filename: '[name].js',
     libraryTarget: 'commonjs2',
     path: path.join(__dirname, '../dist'),
+    publicPath: ''
   },
   target: 'electron-main',
 }
