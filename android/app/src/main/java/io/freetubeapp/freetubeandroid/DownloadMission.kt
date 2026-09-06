@@ -276,7 +276,7 @@ internal class DownloadMission(
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1_000L
         const val ERROR_NEEDS_REFRESH = "needs-refresh"
-        private val SUPPORTED_MIME_TYPES = setOf("video/mp4", "video/webm", "audio/mp4", "audio/webm")
+        private val SUPPORTED_MIME_TYPES = setOf("video/mp4", "video/webm", "audio/mp4", "audio/webm", "text/vtt")
 
         fun validateRequest(request: JSONObject) {
             val parts = request.optJSONArray("parts")
@@ -297,6 +297,9 @@ internal class DownloadMission(
                 require(mimeType == "video/mp4") { "Adaptive output must be video/mp4" }
                 require(parts.getJSONObject(0).optString("kind") == "video") { "Video part must come first" }
                 require(parts.getJSONObject(1).optString("kind") == "audio") { "Audio part is missing" }
+            }
+            if (mimeType == "text/vtt") {
+                require(parts.length() == 1 && parts.getJSONObject(0).optString("kind") == "subtitle") { "Invalid subtitle mission" }
             }
         }
     }
