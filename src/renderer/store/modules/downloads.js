@@ -5,7 +5,8 @@ import {
   getDownloads as getNativeDownloads,
   pauseDownload as pauseNativeDownload,
   resumeDownload as resumeNativeDownload,
-  retryDownload as retryNativeDownload
+  retryDownload as retryNativeDownload,
+  refreshDownload as refreshNativeDownload
 } from '../../helpers/android/downloads'
 
 const state = {
@@ -57,6 +58,12 @@ const actions = {
 
   retryDownload({ dispatch }, id) {
     const result = retryNativeDownload(id)
+    dispatch('grabDownloads')
+    return result
+  },
+
+  refreshDownload({ dispatch }, { id, request }) {
+    const result = refreshNativeDownload(id, request)
     dispatch('grabDownloads')
     return result
   },
