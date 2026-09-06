@@ -180,6 +180,7 @@ const state = {
   downloadsConcurrency: 1,
   downloadsDefaultVideoFormat: 'auto',
   downloadsDefaultAudioFormat: 'auto',
+  downloadsPreferLocal: true,
   disableSmoothScrolling: false,
   disableChannelLinks: false,
   displayVideoPlayButton: false,
