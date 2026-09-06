@@ -13,12 +13,14 @@
       >
         <FtButton
           :label="t('Downloads.Video')"
-          :background-color="mode === 'video' ? 'var(--accent-color)' : null"
+          :text-color="mode === 'video' ? 'var(--text-with-accent-color)' : 'var(--primary-text-color)'"
+          :background-color="mode === 'video' ? 'var(--accent-color)' : 'var(--card-bg-color)'"
           @click="mode = 'video'"
         />
         <FtButton
           :label="t('Downloads.Audio')"
-          :background-color="mode === 'audio' ? 'var(--accent-color)' : null"
+          :text-color="mode === 'audio' ? 'var(--text-with-accent-color)' : 'var(--primary-text-color)'"
+          :background-color="mode === 'audio' ? 'var(--accent-color)' : 'var(--card-bg-color)'"
           @click="mode = 'audio'"
         />
       </div>
@@ -46,7 +48,10 @@
           </option>
         </select>
       </label>
-      <label v-if="captions.length > 0">
+      <label
+        v-if="captions.length > 0"
+        class="subtitleToggle"
+      >
         <input
           v-model="selectedCaptionIds"
           type="checkbox"
@@ -292,6 +297,7 @@ function sanitize(value = '') {
 .downloadDialog { display: flex; flex-direction: column; gap: 1rem; min-width: min(30rem, 80vw); }
 .downloadModes, .dialogActions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .downloadDialog label { display: flex; flex-direction: column; gap: .35rem; text-align: start; }
+.downloadDialog .subtitleToggle { flex-direction: row; align-items: center; }
 .downloadDialog select { padding: .5rem; color: var(--text-color); background: var(--card-bg-color); }
 .formatDetails { margin: 0; text-align: start; }
 .formatSize::before { content: ' '; }
