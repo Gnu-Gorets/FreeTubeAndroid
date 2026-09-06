@@ -14,6 +14,7 @@ import {
   getRelativeTimeFromDate,
 } from '../utils'
 import { parseVideoClipsParams } from './shared'
+import { generatePOToken, runDecipherScript } from '../android/potokens'
 
 const TRACKING_PARAM_NAMES = [
   'utm_source',
@@ -55,6 +56,8 @@ if (process.env.SUPPORTS_LOCAL_API) {
 
         window.addEventListener('message', listener)
         iframe.contentWindow.postMessage(JSON.stringify({ id: messageId, code }), '*')
+      } else if (process.env.IS_ANDROID) {
+        runDecipherScript(messageId, code).then(resolve).catch(reject)
       } else {
         reject(new Error('Please setup the eval function for the n/sig deciphering'))
       }
@@ -100,7 +103,6 @@ async function createInnertube({ withPlayer = false, location = undefined, safet
     location: location,
     enable_safety_mode: !!safetyMode,
     client_type: clientType,
-
     // use browser fetch
     fetch: (fetchFunc ?? ((input, init) => fetch(input, init))),
     cache,
@@ -608,6 +610,14 @@ export async function getLocalVideoInfo(id) {
       console.error('Local API, poToken generation failed', error)
       throw error
     }
+  } else if (process.env.IS_ANDROID) {
+    contentPoToken = await generatePOToken(
+      id,
+      JSON.stringify(htmlExtracts.session.context),
+      JSON.stringify(htmlExtracts.initialAttestationData),
+      JSON.stringify(htmlExtracts.ytConfig)
+    )
+    player.po_token = contentPoToken
   }
 
   let playerResponse
