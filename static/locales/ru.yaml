@@ -837,6 +837,7 @@ Playlist:
     PublishedNewest: Дата публикации (Сначала новые)
     PublishedOldest: Дата публикации (Сначала старые)
 Downloads:
+  Downloads: Загрузки
   Download: Скачать
   Type: Тип загрузки
   Video: Видео
@@ -845,6 +846,22 @@ Downloads:
   Audio format: Аудиоформат
   Download subtitles: Скачать субтитры
   Audio format is not available: Аудиоформат недоступен
+  ETA: Осталось
+  LabelSeparator: ':'
+  PerSecond: /с
+  Share: Поделиться
+  Empty: Загрузок пока нет
+  Active: Активные
+  Paused: Приостановленные
+  Completed: Завершённые
+  Failed: Ошибки
+  Pause: Пауза
+  Resume: Продолжить
+  Cancel: Отменить
+  Retry: Повторить
+  Open: Открыть
+  Source: Исходное видео
+  Delete: Удалить
 
 Change Format:
   Change Media Formats: 'Изменить форматы видео'
