@@ -92,14 +92,15 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FtButton from '../FtButton/FtButton.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
-import { selectDownloadDirectory } from '../../helpers/android/downloads'
+import { selectDownloadDirectory, validateDownloadUrls } from '../../helpers/android/downloads'
 import store from '../../store'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   video: { type: Object, required: true },
   formats: { type: Array, default: () => [] },
-  captions: { type: Array, default: () => [] }
+  captions: { type: Array, default: () => [] },
+  refreshFormats: { type: Function, default: null }
 })
 
 const emit = defineEmits(['close', 'queued'])
@@ -135,33 +136,105 @@ function close() {
   emit('close')
 }
 
+function matchesStreamSelection(format, target) {
+  if (!target) return false
+  if (format.kind !== target.kind || format.mimeType !== target.mimeType) return false
+  if (target.height && format.height) return target.height === format.height
+  if (target.quality && format.quality) return target.quality === format.quality
+  return !target.bitrate || !format.bitrate || target.bitrate === format.bitrate
+}
+
+async function enqueueCandidates(formats, audios, directoryUri) {
+  let error
+  for (const format of formats) {
+    if (mode.value === 'video' && format.kind === 'video' && audios.length === 0) continue
+    const audioCandidates = mode.value === 'video' && format.kind === 'video' ? audios : [null]
+    for (const audio of audioCandidates) {
+      const parts = [{ ...format }]
+      if (audio) parts.push({ ...audio })
+      const extension = extensionFor(format.mimeType)
+      const suffix = mode.value === 'audio' ? ' - audio' : ''
+      const request = {
+        video: props.video,
+        kind: mode.value,
+        parts,
+        url: parts[0].url,
+        sourceUrl: `https://www.youtube.com/watch?v=${props.video.id}`,
+        streamSelection: {
+          id: format.id,
+          kind: format.kind,
+          mimeType: format.mimeType,
+          quality: format.quality,
+          width: format.width,
+          height: format.height,
+          bitrate: format.bitrate
+        },
+        mimeType: format.mimeType,
+        extension,
+        fileName: `${sanitize(props.video.title)}${suffix}.${extension}`,
+        directoryUri
+      }
+      console.warn('[Downloads] Validate candidate ' + JSON.stringify({
+        videoId: props.video.id,
+        partIds: parts.map(part => part.id),
+        kind: format.kind,
+        mimeType: format.mimeType,
+        quality: format.quality,
+        width: format.width,
+        height: format.height,
+        bitrate: format.bitrate
+      }))
+      const validation = validateDownloadUrls(request)
+      console.warn('[Downloads] Candidate validation ' + JSON.stringify({
+        partIds: parts.map(part => part.id),
+        ok: validation.ok,
+        error: validation.error || null
+      }))
+      if (!validation.ok) {
+        error = new Error(validation.error)
+        continue
+      }
+      return { id: await store.dispatch('enqueueDownload', request), error: null }
+    }
+  }
+  return { id: null, error }
+}
+
 async function submit() {
   if (!selectedFormat.value) return
   error.value = ''
   try {
-    const format = selectedFormat.value
-    const parts = [{ ...format }]
-    if (mode.value === 'video' && format.kind === 'video') {
-      const audio = audioFormats.value.find(item => item.id === selectedAudioId.value)
-      if (!audio) throw new Error(t('Downloads.Audio format is not available'))
-      parts.push({ ...audio })
-    }
     const directoryUri = await selectDownloadDirectory()
     if (!directoryUri) return
-    const extension = extensionFor(format.mimeType)
-    const suffix = mode.value === 'audio' ? ' - audio' : ''
-    const fileName = `${sanitize(props.video.title)}${suffix}.${extension}`
-    const request = {
-      video: props.video,
-      kind: mode.value,
-      parts,
-      url: parts[0].url,
-      mimeType: format.mimeType,
-      extension,
-      fileName,
-      directoryUri
+
+    const selectedAudio = audioFormats.value.find(format => format.id === selectedAudioId.value)
+    if (mode.value === 'video' && availableFormats.value.some(format => format.kind === 'video') && !selectedAudio) {
+      throw new Error(t('Downloads.Audio format is not available'))
     }
-    const videoMissionId = await store.dispatch('enqueueDownload', request)
+
+    const enqueueResult = await enqueueCandidates(
+      [selectedFormat.value, ...availableFormats.value.filter(format => format.id !== selectedFormat.value.id)],
+      selectedAudio ? [selectedAudio] : [],
+      directoryUri
+    )
+    let videoMissionId = enqueueResult.id
+    if (!videoMissionId && props.refreshFormats) {
+      const refreshedFormats = await props.refreshFormats()
+      console.warn('[Downloads] Refreshed candidate count ' + JSON.stringify({ total: refreshedFormats.length, mode: mode.value }))
+      const refreshedAvailable = refreshedFormats.filter(format => {
+        const available = mode.value === 'video'
+          ? (format.kind === 'progressive' && format.hasVideo) || (format.kind === 'video' && format.mimeType === 'video/mp4')
+          : format.kind === 'audio'
+        return available && matchesStreamSelection(format, selectedFormat.value)
+      })
+      const refreshedAudio = refreshedFormats.find(format => format.kind === 'audio' && format.mimeType === 'audio/mp4' && matchesStreamSelection(format, selectedAudio))
+      const refreshedAudios = refreshedAudio ? [refreshedAudio] : []
+      const refreshedResult = await enqueueCandidates(refreshedAvailable, refreshedAudios, directoryUri)
+      videoMissionId = refreshedResult.id
+      if (!videoMissionId) enqueueResult.error = refreshedResult.error
+    }
+    if (!videoMissionId) throw enqueueResult.error || new Error('No downloadable stream found')
+
     if (mode.value === 'video' && selectedCaptionIds.value.length > 0) {
       for (const caption of props.captions) {
         try {
