@@ -80,7 +80,13 @@ function normalizeDownloadFormat(format, kind, index) {
     codecs: codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
     extension: format.container || container.split('/')[1],
     quality: format.qualityLabel || format.quality || '',
-    label: format.qualityLabel || format.quality || format.container || container,
+    label: [
+      format.qualityLabel || format.quality || container,
+      format.container || container.split('/')[1],
+      kind === 'progressive' ? 'combined' : kind,
+      codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
+      format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : ''
+    ].filter(Boolean).join(' · '),
     size: format.content_length || format.clen || format.size || '',
     width: format.width,
     height: format.height,
