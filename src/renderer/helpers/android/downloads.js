@@ -37,3 +37,7 @@ export function retryDownload(id) {
 export function deleteDownload(id) {
   return isAndroid && android.deleteDownload(id)
 }
+
+export function shareDownload(uri, mimeType) {
+  if (isAndroid) android.shareFile(uri, mimeType)
+}
