@@ -363,12 +363,33 @@ function handleUnlock() {
   })
 }
 
+const currentPath = ref(window.location.hash)
+
+function onPopState(_, forcedMobile = true) {
+  currentPath.value = window.location.hash
+  if (currentPath.value === '#/settings') {
+    returnToSettingsMenu()
+  } else {
+    const subPath = currentPath.value.split('#/settings#')[1]
+    if (subPath !== undefined) {
+      navigateToSection(subPath, forcedMobile)
+    }
+  }
+}
+
+function pushState(path) {
+  if (`#/settings${path}` !== window.location.hash) {
+    history.pushState({}, null, `#/settings${path}`)
+  }
+}
+
 onBeforeUnmount(() => {
   document.removeEventListener('scroll', markScrolledToSectionAsActive)
   document.removeEventListener('keydown', handleSearchShortcut)
   window.removeEventListener('resize', handleResize)
   searchObserver?.disconnect()
   clearSearchHighlight()
+  window.removeEventListener('popstate', onPopState)
 })
 
 function showKeyboardShortcutPrompt() {
@@ -400,6 +421,9 @@ function handleMounted() {
 
   // mark first section as active before any scrolling has taken place
   activeSection.value = settingsSectionComponents.value[0].type
+
+  onPopState(undefined, true)
+  window.addEventListener('popstate', onPopState)
 }
 
 function refreshSearchEntries() {
@@ -547,7 +571,7 @@ const sectionRefs = useTemplateRef('sectionRefs')
 /**
  * @param {string} sectionType
  */
-function navigateToSection(sectionType) {
+function navigateToSection(sectionType, forcedMobile = false) {
   if (searchQuery.value.trim()) {
     searchStartScrollY = null
     updateSearchQuery('')
@@ -565,7 +589,10 @@ function navigateToSection(sectionType) {
       sectionHeading.focus()
       sectionHeading.tabIndex = -1
     })
-  } else {
+  }
+
+  if ((!isInDesktopView.value) || forcedMobile) {
+    pushState(`#${sectionType}`)
     settingsSectionTypeOpenInMobile.value = sectionType
   }
 }

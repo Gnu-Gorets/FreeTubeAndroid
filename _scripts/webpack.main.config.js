@@ -79,7 +79,8 @@ const config = {
               ]
             }
           }
-        ]
+        ],
+    publicPath: ''
   },
   target: 'electron-main',
 }
