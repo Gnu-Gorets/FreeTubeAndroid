@@ -26,6 +26,7 @@ internal class DownloadManager(
                 for (index in 0 until saved.length()) {
                     val mission = saved.optJSONObject(index) ?: continue
                     if (!mission.optString("id").isNullOrBlank()) {
+                        migratePartPaths(mission)
                         if (mission.optString("status") == DownloadMission.STATUS_DOWNLOADING ||
                             mission.optString("status") == DownloadMission.STATUS_POST_PROCESSING
                         ) {
@@ -42,15 +43,23 @@ internal class DownloadManager(
     fun enqueue(request: JSONObject): String {
         DownloadMission.validateRequest(request)
         val id = UUID.randomUUID().toString()
-        val extension = request.optString("extension", "part")
-        val temporaryFile = storage.createTemporaryFile(id, "progressive", extension)
         val mission = JSONObject(request.toString()).apply {
             put("id", id)
             put("status", DownloadMission.STATUS_QUEUED)
-            put("temporaryPath", temporaryFile.absolutePath)
+            put("temporaryPath", "")
             put("downloadedBytes", 0)
             put("totalBytes", -1)
             put("createdAt", System.currentTimeMillis())
+            val parts = getJSONArray("parts")
+            for (index in 0 until parts.length()) {
+                val part = parts.getJSONObject(index)
+                val temporaryFile = storage.createTemporaryFile(
+                    id,
+                    part.optString("id", "part-$index"),
+                    part.optString("extension", "part")
+                )
+                part.put("temporaryPath", temporaryFile.absolutePath)
+            }
         }
         synchronized(lock) {
             missions[id] = mission
@@ -164,6 +173,25 @@ internal class DownloadManager(
             it.optString("status") == DownloadMission.STATUS_QUEUED && !active.containsKey(it.optString("id"))
         } ?: return
         startMissionLocked(next.getString("id"))
+    }
+
+    private fun migratePartPaths(mission: JSONObject) {
+        val parts = mission.optJSONArray("parts") ?: return
+        for (index in 0 until parts.length()) {
+            val part = parts.optJSONObject(index) ?: continue
+            if (part.optString("temporaryPath").isNotBlank()) continue
+            val legacyPath = mission.optString("temporaryPath")
+            val temporaryFile = if (index == 0 && legacyPath.isNotBlank()) {
+                File(legacyPath)
+            } else {
+                storage.createTemporaryFile(
+                    mission.getString("id"),
+                    part.optString("id", "part-$index"),
+                    part.optString("extension", "part")
+                )
+            }
+            part.put("temporaryPath", temporaryFile.absolutePath)
+        }
     }
 
     private fun persistLocked() {
