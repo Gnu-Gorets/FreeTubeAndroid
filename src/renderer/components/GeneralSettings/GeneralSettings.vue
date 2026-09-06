@@ -16,7 +16,6 @@
           :default-value="backendFallback"
           :compact="true"
           :tooltip="t('Tooltips.General Settings.Fallback to Non-Preferred Backend on Failure')"
-          :disabled="usingBrowser"
           @change="updateBackendFallback"
         />
         <FtToggleSwitch
@@ -54,13 +53,6 @@
           :default-value="hideToTrayOnMinimize"
           :compact="true"
           @change="updateHideToTrayOnMinimize"
-        />
-        <FtToggleSwitch
-          v-if="USING_ANDROID"
-          :label="t('General Settings.Show Tap Highlight')"
-          :default-value="showTapHighlight"
-          :compact="true"
-          @change="updateShowTapHighlight"
         />
       </div>
     </div>
@@ -203,8 +195,7 @@ const currentInvidiousInstanceInputRef = useTemplateRef('currentInvidiousInstanc
 const USING_ELECTRON = !!process.env.IS_ELECTRON
 const SUPPORTS_LOCAL_API = !!process.env.SUPPORTS_LOCAL_API
 const IS_MAC = process.platform === 'darwin'
-const USING_BROWSER = !process.env.IS_ELECTRON && !process.env.IS_ANDROID
-const USING_ANDROID = process.env.IS_ANDROID
+
 const { t } = useI18n()
 const router = useRouter()
 
@@ -257,12 +248,6 @@ const hideToTrayOnMinimize = computed(() => store.getters.getHideToTrayOnMinimiz
  */
 function updateHideToTrayOnMinimize(value) {
   store.dispatch('updateHideToTrayOnMinimize', value)
-}
-
-const showTapHighlight = computed(() => store.getters.getTapHighlight)
-
-function updateShowTapHighlight(value) {
-  store.dispatch('updateTapHighlight', value)
 }
 
 /** @type {import('vue').ComputedRef<boolean>} */
