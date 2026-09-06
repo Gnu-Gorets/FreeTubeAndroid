@@ -371,9 +371,11 @@ export default defineComponent({
   },
   watch: {
     async $route() {
+      console.warn('[Downloads] Watch route changed')
       await this.reloadView()
     },
     userPlaylistsReady() {
+      console.warn('[Downloads] userPlaylistsReady changed ' + JSON.stringify({ value: this.userPlaylistsReady }))
       this.onMountedDependOnLocalStateLoading()
     },
     thumbnail() {
@@ -381,6 +383,7 @@ export default defineComponent({
     }
   },
   created: function () {
+    console.warn('[Downloads] Watch created ' + JSON.stringify({ videoId: this.$route.params.id }))
     this.videoId = this.$route.params.id
     this.activeFormat = this.defaultVideoFormat
     // So that the value for this session remains unchanged even if setting changed
@@ -391,6 +394,7 @@ export default defineComponent({
     this.currentPlaybackRate = this.$store.getters.getDefaultPlayback
   },
   mounted: function () {
+    console.warn('[Downloads] Watch mounted ' + JSON.stringify({ videoId: this.videoId, userPlaylistsReady: this.userPlaylistsReady }))
     if (process.env.IS_ANDROID) {
       window.addEventListener('media-next', this.handleSkipToNext)
       window.addEventListener('media-previous', this.handleSkipToPrev)
@@ -408,6 +412,7 @@ export default defineComponent({
   },
   methods: {
     async reloadView() {
+      console.warn('[Downloads] reloadView start ' + JSON.stringify({ routeId: this.$route.params.id, backendPreference: this.backendPreference }))
       await this.handleRouteChange()
 
       if (this.$refs.player) {
@@ -486,10 +491,14 @@ export default defineComponent({
     },
 
     async onMountedDependOnLocalStateLoading() {
+      console.warn('[Downloads] onMounted state ' + JSON.stringify({ onMountedRun: this.onMountedRun, userPlaylistsReady: this.userPlaylistsReady, isUserPlaylistRequested: this.isUserPlaylistRequested, videoId: this.videoId }))
       // Prevent running twice
       if (this.onMountedRun) { return }
       // Stuff that require user playlists to be ready
-      if (this.isUserPlaylistRequested && !this.userPlaylistsReady) { return }
+      if (this.isUserPlaylistRequested && !this.userPlaylistsReady) {
+        console.warn('[Downloads] onMounted waiting for user playlists')
+        return
+      }
 
       this.onMountedRun = true
 
@@ -500,6 +509,11 @@ export default defineComponent({
       // this has to be below checkIfPlaylist() as theatrePossible needs to know if there is a playlist or not
       this.setViewingModeOnFirstLoad()
 
+      console.warn('[Downloads] Watch backend branch ' + JSON.stringify({
+        supportsLocalApi: Boolean(process.env.SUPPORTS_LOCAL_API),
+        backendPreference: this.backendPreference,
+        videoId: this.videoId
+      }))
       if (!process.env.SUPPORTS_LOCAL_API || this.backendPreference === 'invidious') {
         this.getVideoInformationInvidious()
       } else {
@@ -581,7 +595,30 @@ export default defineComponent({
       }
     },
 
+    openDownloadDialog: function () {
+      console.warn('[Downloads] Open dialog ' + JSON.stringify({
+        backendPreference: this.backendPreference,
+        downloadFormats: this.downloadFormats.length,
+        videoId: this.videoId
+      }))
+      this.downloadDialogVisible = true
+    },
+
+    refreshDownloadFormats: async function () {
+      console.warn('[Downloads] Refresh download formats ' + JSON.stringify({ videoId: this.videoId }))
+      const { info } = await getLocalVideoInfo(this.videoId)
+      const streamingData = info.streaming_data
+      if (!streamingData) return []
+      this.downloadFormats = streamingData.formats
+        .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
+        .concat(streamingData.adaptive_formats
+          .filter(format => format.url)
+          .map((format, index) => normalizeDownloadFormat(format, format.mime_type.startsWith('video/') ? 'video' : 'audio', index)))
+      return this.downloadFormats
+    },
+
     getVideoInformationLocal: async function () {
+      console.warn('[Downloads] Local information request ' + JSON.stringify({ videoId: this.videoId }))
       if (this.firstLoad) {
         this.isLoading = true
       }
@@ -918,6 +955,11 @@ export default defineComponent({
               .concat(result.streaming_data.adaptive_formats
                 .filter(format => format.url)
                 .map((format, index) => normalizeDownloadFormat(format, format.mime_type.startsWith('video/') ? 'video' : 'audio', index)))
+            console.warn('[Downloads] Local normalized formats ' + JSON.stringify({
+              progressive: result.streaming_data.formats.length,
+              adaptive: result.streaming_data.adaptive_formats.length,
+              downloadable: this.downloadFormats.length
+            }))
 
             if (result.captions) {
               const captionTracks = result.captions?.caption_tracks?.map((caption) => {
@@ -1060,6 +1102,7 @@ export default defineComponent({
     },
 
     getVideoInformationInvidious: function () {
+      console.warn('[Downloads] Invidious information request ' + JSON.stringify({ videoId: this.videoId }))
       if (this.firstLoad) {
         this.isLoading = true
       }
@@ -1213,6 +1256,11 @@ export default defineComponent({
               .concat(result.adaptiveFormats
                 .filter(format => format.url)
                 .map((format, index) => normalizeDownloadFormat(format, format.type.startsWith('video/') ? 'video' : 'audio', index)))
+            console.warn('[Downloads] Invidious normalized formats ' + JSON.stringify({
+              progressive: result.formatStreams.length,
+              adaptive: result.adaptiveFormats.length,
+              downloadable: this.downloadFormats.length
+            }))
 
             if (!process.env.SUPPORTS_LOCAL_API || this.proxyVideos) {
               this.legacyFormats.forEach(format => {
