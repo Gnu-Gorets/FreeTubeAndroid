@@ -45,6 +45,11 @@ Use explicit `--user 0` for install/start/stop/grant. Never use or switch to wor
 - UI belongs in `src/renderer/`; Android lifecycle/bridge in `android/app/src/main/java/`. Preserve Electron/PWA/Android boundaries.
 - Read callers before adding helpers/branches, reuse existing interfaces, and keep JS-exposed bridge methods narrow.
 
-## Commits
+## Git workflow
 
-Use Conventional Commits: `<type>[optional scope]: <description>`.
+- Direct commits and force pushes to `development` are allowed only to synchronize rebased history with `upstream/development`.
+- Do not use direct commits or pushes for development changes.
+- Start each change from current `development` in a separate feature branch.
+- Push feature branch and merge only through a PR targeting `development`.
+- Use GitHub `Squash and merge`; do not use merge commits or rebase merge.
+- Use Conventional Commits: `<type>[optional scope]: <description>`.
