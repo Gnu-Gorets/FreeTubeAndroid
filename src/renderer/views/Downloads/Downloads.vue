@@ -11,6 +11,11 @@
         />
         {{ t('Downloads.Downloads') }}
       </h2>
+      <FtButton
+        v-if="completedVideos.length > 0"
+        :label="t('Downloads.Play all')"
+        @click="playAll"
+      />
       <p
         v-if="missions.length === 0"
         class="message"
@@ -124,6 +129,7 @@ import { openDownload, shareDownload } from '../../helpers/android/downloads'
 const { t } = useI18n()
 const router = useRouter()
 const missions = computed(() => store.getters.getDownloadMissions)
+const completedVideos = computed(() => missions.value.filter(mission => mission.status === 'completed' && mission.kind === 'video' && mission.video?.id && mission.outputUri))
 
 const sections = computed(() => [
   { status: 'active', label: t('Downloads.Active'), items: missions.value.filter(mission => ['queued', 'downloading'].includes(mission.status)) },
@@ -159,6 +165,15 @@ function formatBytes(value) {
 
 function run(action, id) {
   store.dispatch(action, id)
+}
+
+function playAll() {
+  const first = [...completedVideos.value].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))[0]
+  if (!first) return
+  router.push({
+    path: `/watch/${first.video.id}`,
+    query: { playlistId: 'downloads', playlistType: 'downloaded' }
+  })
 }
 
 function open(uri, mimeType) {

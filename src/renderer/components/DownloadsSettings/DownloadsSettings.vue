@@ -6,6 +6,12 @@
       :compact="true"
       @change="updateWifiOnly"
     />
+    <FtToggleSwitch
+      :label="t('Downloads.Prefer local files')"
+      :default-value="preferLocal"
+      :compact="true"
+      @change="value => store.dispatch('updateDownloadsPreferLocal', value)"
+    />
     <FtSelect
       :placeholder="t('Downloads.Concurrent downloads')"
       :value="String(concurrency)"
@@ -68,6 +74,7 @@ const wifiOnly = computed(() => store.getters.getDownloadsWifiOnly)
 const concurrency = computed(() => store.getters.getDownloadsConcurrency)
 const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideoFormat)
 const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
+const preferLocal = computed(() => store.getters.getDownloadsPreferLocal)
 const directory = ref(getDownloadDirectory())
 const videoFormatValues = ['auto', 'mp4', 'webm']
 const audioFormatValues = ['auto', 'm4a', 'webm']
