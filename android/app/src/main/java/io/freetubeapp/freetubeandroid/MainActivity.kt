@@ -150,6 +150,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         Log.i("FreeTubeLifecycle", "onDestroy finishing=$isFinishing changingConfigurations=$isChangingConfigurations")
         androidBridge.cancelMediaNotification()
+        androidBridge.dispose()
         webView.destroy()
         super.onDestroy()
     }
