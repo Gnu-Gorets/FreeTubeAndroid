@@ -30,6 +30,8 @@ import android.webkit.WebViewClient
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -39,6 +41,9 @@ class AndroidBridge(
     private val mainWebView: WebView,
     private val parent: ViewGroup
 ) {
+    private companion object {
+        const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+    }
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()
     private var pendingDirectoryRequest: String? = null
@@ -70,8 +75,48 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun enqueueDownload(requestJson: String): String {
+        val request = JSONObject(requestJson)
+        validateDownloadUrls(request)
+        Log.i("FreeTubeDownloads", "enqueue kind=${request.optString("kind")} mime=${request.optString("mimeType")} parts=${request.optJSONArray("parts")?.length() ?: 0}")
         DownloadService.start(activity)
-        return downloadManager.enqueue(JSONObject(requestJson)).toString()
+        return downloadManager.enqueue(request).toString()
+    }
+
+    private fun validateDownloadUrls(request: JSONObject) {
+        val parts = request.getJSONArray("parts")
+        for (index in 0 until parts.length()) {
+            val part = parts.getJSONObject(index)
+            val url = URL(part.getString("url"))
+            val connection = (url.openConnection() as? HttpURLConnection)
+                ?: throw IllegalStateException("Unsupported stream URL")
+            try {
+                connection.instanceFollowRedirects = true
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 15_000
+                connection.setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+                connection.setRequestProperty("Accept", "*/*")
+                connection.setRequestProperty("Accept-Encoding", "*")
+                connection.setRequestProperty("Referer", "https://www.youtube.com/")
+                connection.setRequestProperty("Range", "bytes=0-")
+                val responseCode = connection.responseCode
+                Log.i("FreeTubeDownloads", "validate source=${request.optString("sourceUrl").isNotEmpty()} part=${part.optString("id")} response=$responseCode type=${connection.contentType} length=${connection.contentLengthLong} range=${connection.getHeaderField("Content-Range")} etag=${connection.getHeaderField("ETag") != null} lastModified=${connection.getHeaderField("Last-Modified") != null} host=${url.host}")
+                if (responseCode !in 200..299) {
+                    throw IllegalStateException("Stream URL validation failed: HTTP $responseCode")
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun validateDownloadUrls(requestJson: String): String {
+        return try {
+            validateDownloadUrls(JSONObject(requestJson))
+            JSONObject().put("ok", true).toString()
+        } catch (error: Exception) {
+            JSONObject().put("ok", false).put("error", error.message ?: "Stream URL validation failed").toString()
+        }
     }
 
     @JavascriptInterface

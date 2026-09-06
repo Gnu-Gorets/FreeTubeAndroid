@@ -764,7 +764,61 @@ export async function getLocalVideoInfo(id) {
     info.storyboards = trailerInfo.storyboards
   }
 
+  const hasDirectDownloadFormats = info.streaming_data?.formats?.some(format => Boolean(format.url)) ||
+    info.streaming_data?.adaptive_formats?.some(format => Boolean(format.url))
+
+  console.warn('[Downloads] Local source response ' + JSON.stringify({
+    formats: info.streaming_data?.formats?.length || 0,
+    adaptiveFormats: info.streaming_data?.adaptive_formats?.length || 0,
+    hasDirectDownloadFormats: Boolean(hasDirectDownloadFormats),
+    hasSabr: Boolean(info.streaming_data?.server_abr_streaming_url)
+  }))
+
+  if (info.streaming_data && !hasDirectDownloadFormats) {
+    for (const [clientName, clientType] of [['VISIONOS', ClientType.VISIONOS], ['ANDROID', ClientType.ANDROID], ['IOS', ClientType.IOS]]) {
+      try {
+        const alternate = await createInnertube({ clientType })
+        alternate.session.context.client.visitorData = context.client.visitorData
+        alternate.session.player = player
+        const alternateInfo = await alternate.getBasicInfo(id, { client: clientName })
+        const alternateStreaming = alternateInfo.streaming_data
+        const directFormats = [
+          ...(alternateStreaming?.formats || []),
+          ...(alternateStreaming?.adaptive_formats || [])
+        ].filter(format => Boolean(format.url))
+        console.warn('[Downloads] Alternate stream response ' + JSON.stringify({
+          client: clientName,
+          formats: alternateStreaming?.formats?.length || 0,
+          adaptiveFormats: alternateStreaming?.adaptive_formats?.length || 0,
+          directUrls: directFormats.length,
+          directVideoUrls: directFormats.filter(format => format.mime_type?.startsWith('video/')).length,
+          directAudioUrls: directFormats.filter(format => format.mime_type?.startsWith('audio/')).length,
+          signedAdaptiveFormats: alternateStreaming?.adaptive_formats?.filter(format => Boolean(format.signature_cipher || format.cipher)).length || 0
+        }))
+        if (alternateStreaming && directFormats.length > 0) {
+          info.streaming_data = alternateStreaming
+          info.captions = alternateInfo.captions
+          info.storyboards = alternateInfo.storyboards
+          console.warn('[Downloads] Selected alternate download client ' + clientName)
+          break
+        }
+      } catch (error) {
+        console.warn('[Downloads] Alternate stream fallback failed ' + clientName, error)
+      }
+    }
+  }
+
   if (info.streaming_data) {
+    console.warn('[Downloads] Local stream response ' + JSON.stringify({
+      formats: info.streaming_data.formats.length,
+      adaptiveFormats: info.streaming_data.adaptive_formats.length,
+      directAdaptiveUrls: info.streaming_data.adaptive_formats.filter(format => Boolean(format.url)).length,
+      signedAdaptiveFormats: info.streaming_data.adaptive_formats.filter(format => Boolean(format.signature_cipher || format.cipher)).length,
+      hasDashManifest: Boolean(info.streaming_data.dash_manifest_url),
+      hasHlsManifest: Boolean(info.streaming_data.hls_manifest_url),
+      hasSabr: Boolean(info.streaming_data.server_abr_streaming_url),
+      adaptiveMimeTypes: [...new Set(info.streaming_data.adaptive_formats.map(format => format.mime_type).filter(Boolean))]
+    }))
     await decipherFormats(info.streaming_data.formats, player)
 
     if (info.streaming_data.server_abr_streaming_url) {

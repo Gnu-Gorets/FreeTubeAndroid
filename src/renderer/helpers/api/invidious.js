@@ -54,7 +54,14 @@ function invidiousAPICall({ resource, id = '', params = {}, doLogError = true, s
   return new Promise((resolve, reject) => {
     const requestUrl = getCurrentInstanceUrl() + '/api/v1/' + resource + '/' + id + (!isNullOrEmpty(subResource) ? `/${subResource}` : '') + '?' + new URLSearchParams(params).toString()
     invidiousFetch(requestUrl)
-      .then((response) => response.json())
+      .then(async (response) => {
+        const body = await response.text()
+        const contentType = response.headers.get('content-type') || ''
+        if (!contentType.includes('json')) {
+          throw new Error(`Invidious returned ${response.status} ${contentType || 'non-JSON response'}`)
+        }
+        return JSON.parse(body)
+      })
       .then((json) => {
         if (json.error !== undefined) {
           // community is empty, no need to display error.
@@ -457,10 +464,33 @@ export async function fetchAllInvidiousPlaylistVideos(playlistId, initialOffset 
  * }>}
  */
 export async function invidiousGetVideoInformation(videoId) {
-  return await invidiousAPICall({
-    resource: 'videos',
-    id: videoId,
-  })
+  const instances = store.getters.getInvidiousInstancesList || []
+  const current = store.getters.getCurrentInvidiousInstance
+  const start = Math.max(instances.indexOf(current), -1)
+  let lastError
+
+  for (let offset = 0; offset < Math.max(instances.length, 1); offset++) {
+    if (offset > 0 && instances.length > 1) {
+      store.commit('setCurrentInvidiousInstance', instances[(start + offset) % instances.length])
+    }
+    const instance = store.getters.getCurrentInvidiousInstanceUrl
+    console.warn('[Downloads] Invidious video request ' + JSON.stringify({ instance, attempt: offset + 1 }))
+    try {
+      const result = await invidiousAPICall({ resource: 'videos', id: videoId })
+      console.warn('[Downloads] Invidious stream response ' + JSON.stringify({
+        instance,
+        formatStreams: result.formatStreams?.length || 0,
+        adaptiveFormats: result.adaptiveFormats?.length || 0,
+        directFormatUrls: [...(result.formatStreams || []), ...(result.adaptiveFormats || [])].filter(format => Boolean(format.url)).length
+      }))
+      return result
+    } catch (error) {
+      lastError = error
+      console.warn('[Downloads] Invidious video request failed ' + JSON.stringify({ instance, error: error.message }))
+    }
+  }
+
+  throw lastError || new Error('No Invidious instance available')
 }
 
 /**
