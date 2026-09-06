@@ -33,7 +33,6 @@ import {
   faCirclePlay,
   faCircleUser,
   faClapperboard,
-  faCircleXmark,
   faClock,
   faClockRotateLeft,
   faClone,
@@ -78,7 +77,6 @@ import {
   faLinkSlash,
   faList,
   faLocationDot,
-  faMicrochip,
   faLock,
   faMessage,
   faMoneyCheckDollar,
@@ -108,7 +106,6 @@ import {
   faStepBackward,
   faStepForward,
   faSync,
-  faTerminal,
   faThumbsDown,
   faThumbsUp,
   faThumbtack,
@@ -116,7 +113,6 @@ import {
   faTimesCircle,
   faTowerBroadcast,
   faTrash,
-  faTriangleExclamation,
   faTrophy,
   faUserCheck,
   faUserLock,
@@ -134,6 +130,7 @@ import {
   faDotCircle as farDotCircle
 } from '@fortawesome/free-regular-svg-icons'
 import {
+  faBitcoin,
   faGithub,
   faMastodon,
   faMatrix,
@@ -164,7 +161,6 @@ library.add(
   faCirclePlay,
   faCircleUser,
   faClapperboard,
-  faCircleXmark,
   faClock,
   faClockRotateLeft,
   faClone,
@@ -209,7 +205,6 @@ library.add(
   faLinkSlash,
   faList,
   faLocationDot,
-  faMicrochip,
   faLock,
   faMessage,
   faMoneyCheckDollar,
@@ -219,7 +214,6 @@ library.add(
   faPhotoFilm,
   faPlay,
   faPlus,
-  faPhotoFilm,
   faPodcast,
   faQuestionCircle,
   faRandom,
@@ -240,7 +234,6 @@ library.add(
   faStepBackward,
   faStepForward,
   faSync,
-  faTerminal,
   faThumbsDown,
   faThumbsUp,
   faThumbtack,
@@ -248,7 +241,6 @@ library.add(
   faTimesCircle,
   faTowerBroadcast,
   faTrash,
-  faTriangleExclamation,
   faTrophy,
   faUserCheck,
   faUserLock,
@@ -267,6 +259,7 @@ library.add(
 
   // brand icons
   faGithub,
+  faBitcoin,
   faMastodon,
   faMatrix,
 )
