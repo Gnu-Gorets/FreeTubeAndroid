@@ -8,7 +8,10 @@ import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-internal class DownloadManager(context: Context) {
+internal class DownloadManager(
+    context: Context,
+    private val onChanged: (JSONArray) -> Unit = {}
+) {
     private val storage = DownloadStorage(context)
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val missions = LinkedHashMap<String, JSONObject>()
@@ -107,15 +110,13 @@ internal class DownloadManager(context: Context) {
         val downloadMission = DownloadMission(storage, mission) { changed ->
             synchronized(lock) {
                 missions[id] = changed
+                val isActive = changed.optString("status") in setOf(
+                    DownloadMission.STATUS_DOWNLOADING,
+                    DownloadMission.STATUS_POST_PROCESSING
+                )
+                if (!isActive) active.remove(id)
                 persistLocked()
-                if (changed.optString("status") !in setOf(
-                        DownloadMission.STATUS_DOWNLOADING,
-                        DownloadMission.STATUS_POST_PROCESSING
-                    )
-                ) {
-                    active.remove(id)
-                    startNextLocked()
-                }
+                if (!isActive) startNextLocked()
             }
         }
         active[id] = downloadMission
@@ -131,7 +132,9 @@ internal class DownloadManager(context: Context) {
     }
 
     private fun persistLocked() {
-        storage.saveMetadata(snapshotLocked())
+        val snapshot = snapshotLocked()
+        storage.saveMetadata(snapshot)
+        onChanged(snapshot)
     }
 
     private fun snapshotLocked(): JSONArray {
