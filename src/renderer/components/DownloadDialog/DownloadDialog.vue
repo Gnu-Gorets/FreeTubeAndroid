@@ -25,7 +25,8 @@
         />
       </div>
       <label>
-        {{ t('Downloads.Format') }}
+        <span v-if="mode === 'video'">{{ t('Downloads.Video format') }}</span>
+        <span v-else>{{ t('Downloads.Audio format') }}</span>
         <select v-model="selectedFormatId">
           <option
             v-for="format in availableFormats"
