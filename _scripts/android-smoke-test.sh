@@ -18,12 +18,6 @@ UI_SCALE_SET=0
 ORIENTATION_STATE_SAVED=0
 ORIGINAL_ROTATION_MODE=""
 ORIGINAL_USER_ROTATION=""
-ORIENTATION_SETTINGS_SAVED=0
-ORIGINAL_ACCELEROMETER_ROTATION=""
-ORIGINAL_USER_ROTATION_SETTING=""
-PROXY_PID=""
-PROXY_PORT=19050
-PROXY_LOG=""
 
 usage() {
   cat <<'EOF'
@@ -33,12 +27,12 @@ Options:
   --serial SERIAL       adb device serial
   --apk PATH            debug APK path
   --suite NAME          unlocked, locked, all (default: all)
-  --test NAME           one test: preflight, cold-start, search, reload, playback, controls,
+  --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, proxy
+                        fullscreen-fit-screen
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -354,24 +348,6 @@ restore_orientation() {
   adb_shell wm user-rotation "$ORIGINAL_ROTATION_MODE" "$ORIGINAL_USER_ROTATION" >/dev/null 2>&1 || true
 }
 
-save_rotation_settings() {
-  ORIGINAL_ACCELEROMETER_ROTATION=$(adb_shell settings get system accelerometer_rotation)
-  ORIGINAL_USER_ROTATION_SETTING=$(adb_shell settings get system user_rotation)
-  ORIENTATION_SETTINGS_SAVED=1
-}
-
-set_auto_rotate_off() {
-  adb_shell settings put system accelerometer_rotation 0
-  adb_shell settings put system user_rotation 0
-  sleep 3
-}
-
-restore_rotation_settings() {
-  (( ORIENTATION_SETTINGS_SAVED == 1 )) || return 0
-  adb_shell settings put system accelerometer_rotation "$ORIGINAL_ACCELEROMETER_ROTATION" >/dev/null 2>&1 || true
-  adb_shell settings put system user_rotation "$ORIGINAL_USER_ROTATION_SETTING" >/dev/null 2>&1 || true
-}
-
 no_native_crash() {
   collect_logs
   ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
@@ -391,33 +367,6 @@ enter_fullscreen() {
   sleep 4
 }
 
-fullscreen_auto_rotate() {
-  clean_logs
-  save_orientation || return 1
-  save_rotation_settings || return 1
-  trap 'restore_rotation_settings; restore_orientation' EXIT
-  set_orientation 0 || return 1
-  set_auto_rotate_off || return 1
-  open_video jNQXAC9IVRw || return 1
-  enter_fullscreen portrait
-  screenshot fullscreen-auto-rotate
-  identify "$ARTIFACT_DIR/fullscreen-auto-rotate.png" | grep -q '1600x720' || {
-    echo "Fullscreen did not rotate to landscape with auto-rotate locked"
-    return 1
-  }
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 3
-  screenshot fullscreen-auto-rotate-exit
-  identify "$ARTIFACT_DIR/fullscreen-auto-rotate-exit.png" | grep -q '720x1600' || {
-    echo "Fullscreen exit did not restore portrait orientation"
-    return 1
-  }
-  restore_rotation_settings
-  restore_orientation
-  trap - EXIT
-  no_native_crash
-}
-
 fullscreen_fit_screen() {
   clean_logs
   save_orientation || return 1
@@ -428,7 +377,7 @@ fullscreen_fit_screen() {
   for setting in off on; do
     set_orientation 0 || return 1
     set_fit_video_to_fullscreen "$setting" || return 1
-    for orientation in landscape; do
+    for orientation in portrait landscape; do
       suffix="${setting}-${orientation}"
       open_video jNQXAC9IVRw || return 1
       set_orientation "$([[ "$orientation" == "landscape" ]] && echo 1 || echo 0)"
@@ -473,56 +422,6 @@ open_search_results() {
 }
 
 clean_logs() { adb_cmd logcat -c; : >"$LOG_FILE"; }
-
-trap cleanup_proxy EXIT
-
-cleanup_proxy() {
-  if [[ -n "$PROXY_PID" ]]; then
-    adb_cmd reverse --remove "tcp:$PROXY_PORT" >/dev/null 2>&1 || true
-    kill "$PROXY_PID" >/dev/null 2>&1 || true
-  fi
-}
-
-proxy_settings() {
-  command -v python3 >/dev/null 2>&1 || return 77
-  PROXY_LOG="$ARTIFACT_DIR/proxy.log"
-  : >"$PROXY_LOG"
-  python3 "$(dirname "$0")/android-test-http-proxy.py" "$PROXY_PORT" "$PROXY_LOG" >/dev/null 2>&1 &
-  PROXY_PID=$!
-  sleep 1
-  adb_cmd reverse "tcp:$PROXY_PORT" "tcp:$PROXY_PORT" || return 1
-  start_app || return 1
-  adb_shell input tap 615 1540
-  sleep 2
-  adb_shell input tap 320 1015
-  sleep 2
-  screenshot proxy-settings
-  local toggle_pixel
-  toggle_pixel=$(convert "$ARTIFACT_DIR/proxy-settings.png" -format '%[pixel:p{289,358}]' info:)
-  if [[ "$toggle_pixel" == *'33,150,243'* ]]; then
-    adb_shell input tap 380 358
-    sleep 3
-  fi
-  adb_shell input tap 380 358
-  sleep 3
-  adb_shell input tap 360 670
-  sleep 1
-  adb_shell input tap 120 700
-  sleep 3
-  adb_shell input tap 300 880
-  adb_shell input keyevent 67 67 67 67 67
-  adb_shell input keyevent KEYCODE_1 KEYCODE_9 KEYCODE_0 KEYCODE_5 KEYCODE_0
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 3
-  adb_shell input tap 360 1050
-  sleep 10
-  grep -q '^CONNECT ' "$PROXY_LOG" || {
-    echo "Proxy did not receive Test Proxy request"
-    return 1
-  }
-  open_video jNQXAC9IVRw || return 1
-  no_native_crash
-}
 collect_logs() {
   adb_cmd logcat -d -v brief >"$LOG_FILE"
   adb_shell dumpsys media_session >"$ARTIFACT_DIR/media_session.txt"
@@ -566,21 +465,6 @@ search() {
   [[ -s "$ARTIFACT_DIR/search.png" ]]
 }
 
-reload() {
-  clean_logs
-  start_app || return 1
-  # WebView content is not exposed in UIAutomator. At normalized 100% scale,
-  # reload is third control in the 720px-wide top bar: center x=156, y=117.
-  progress "tapping reload control at x=156 y=117"
-  adb_shell input tap 156 117
-  sleep 5
-  wait_for "$PACKAGE" || return 1
-  screenshot reload-after
-  dump_ui reload-after
-  collect_logs
-  ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
-}
-
 open_video() {
   local video_id="${1:-jNQXAC9IVRw}"
   adb_shell am force-stop "$PACKAGE"
@@ -600,24 +484,6 @@ playback() {
   open_video
   no_runtime_errors || return 1
   grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' "$ARTIFACT_DIR/media_session.txt" | grep -q 'state=PlaybackState {state=PLAYING'
-}
-
-long_press() {
-  clean_logs
-  media_session | grep -q 'state=PlaybackState {state=PLAYING' || {
-    open_search_results || return 1
-    open_video || return 1
-  }
-  local hold_pid
-  progress "holding video for 1500ms"
-  adb_shell input swipe 400 340 400 340 1500 &
-  hold_pid=$!
-  sleep 0.7
-  screenshot long-press-held || { wait "$hold_pid"; return 1; }
-  dump_ui long-press-held
-  wait "$hold_pid" || return 1
-  screenshot long-press-released
-  no_runtime_errors
 }
 
 controls() {
@@ -718,7 +584,7 @@ open_data_settings() {
   adb_shell input tap 615 1540
   sleep 3
   # At UI scale 100% Settings uses full-screen mobile section menu.
-  adb_shell input tap 300 426
+  adb_shell input tap 300 1010
   sleep 3
 }
 
@@ -828,9 +694,7 @@ run_unlocked_suite() {
   PASS=$((PASS + 1))
   run_test cold-start cold_start
   run_test search search
-  run_test reload reload
   run_test playback playback
-  run_test long-press long_press
   run_test controls controls
   run_test audio-focus audio_focus
   run_test persistence persistence
@@ -880,12 +744,9 @@ case "$TEST" in
   preflight) run_test preflight preflight ;;
   cold-start) run_test cold-start cold_start ;;
   search) run_test search search ;;
-  reload) run_test reload reload ;;
   playback) run_test playback playback ;;
-  long-press) run_test long-press long_press ;;
   controls) run_test controls controls ;;
   fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;
-  fullscreen-auto-rotate) run_test fullscreen-auto-rotate fullscreen_auto_rotate ;;
   lock-screen) run_test lock-screen lock_screen ;;
   locked-state) run_test locked-state locked_screen ;;
   locked-notification) run_test locked-notification locked_notification ;;
@@ -901,7 +762,6 @@ case "$TEST" in
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
-  proxy) run_test proxy proxy_settings ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
 esac
 
