@@ -71,6 +71,8 @@ const shakaControlKeysToShortcuts = {
 /** @type {Map<string, string>} */
 const LOCALE_MAPPINGS = new Map(process.env.SHAKA_LOCALE_MAPPINGS)
 
+let [onAppPause, onAppResume] = [() => {}, () => {}]
+
 export default defineComponent({
   name: 'FtShakaVideoPlayer',
   props: {
@@ -315,6 +317,25 @@ export default defineComponent({
         enableFullscreenOnRotation: newValue
       })
     })
+    onAppPause = () => {
+      try {
+        document.exitFullscreen()
+      } catch {
+        // pass
+      }
+      ui.configure({
+        enableFullscreenOnRotation: false
+      })
+    }
+
+    onAppResume = () => {
+      ui.configure({
+        enableFullscreenOnRotation: enterFullscreenOnDisplayRotate.value
+      })
+    }
+    window.addEventListener('app-pause', onAppPause)
+
+    window.addEventListener('app-resume', onAppResume)
 
     /** @type {import('vue').ComputedRef<boolean>} */
     const fitVideoToFullscreen = computed(() => {
@@ -3688,5 +3709,9 @@ export default defineComponent({
       showValueChangePopup,
       invertValueChangeContentOrder,
     }
+  },
+  unmounted: function () {
+    window.removeEventListener('app-pause', onAppPause)
+    window.removeEventListener('app-resume', onAppResume)
   }
 })

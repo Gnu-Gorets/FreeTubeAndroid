@@ -568,6 +568,7 @@ function importYouTubeSubscriptions(textDecode) {
  */
 function importOpmlYouTubeSubscriptions(data) {
   let xmlDom
+  const subscriptions = []
   const domParser = new DOMParser()
   try {
     xmlDom = domParser.parseFromString(data, 'application/xml')
@@ -598,11 +599,6 @@ function importOpmlYouTubeSubscriptions(data) {
     showToast(message)
     return
   }
-
-  const subscriptions = []
-
-  store.commit('setShowProgressBar', true)
-  store.commit('setProgressBarPercentage', 0)
 
   let count = 0
 
@@ -1702,5 +1698,17 @@ async function exportSettings() {
 // #endregion settings
 
 </script>
+<style scoped>
+.data-directory-heading {
+  margin-block-start: 20px;
+}
+
+.data-directory {
+  word-wrap: break-word;
+  font-family: monospace;
+  max-inline-size: 70vw;
+  margin-block-start: -10px;
+}
+</style>
 
 <style scoped src="./DataSettings.css" />

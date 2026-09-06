@@ -15,6 +15,7 @@ import {
   getRelativeTimeFromDate,
 } from '../utils'
 import { parseVideoClipsParams } from './shared'
+import { generatePOToken, runDecipherScript } from '../android/potokens'
 
 const TRACKING_PARAM_NAMES = [
   'utm_source',
@@ -111,7 +112,6 @@ async function createSession({ withPlayer = false, location = undefined, safetyM
     location: location,
     enable_safety_mode: !!safetyMode,
     client_type: clientType,
-
     // use browser fetch
     fetch: (fetchFunc ?? ((input, init) => fetch(input, init))),
     cache,
