@@ -54,6 +54,47 @@ class AndroidBridge(
     private var mediaDuration = 0L
     private var mediaThumbnail: android.graphics.Bitmap? = null
     private var pendingFile: Triple<String, String, String>? = null
+    private val downloadManager = DownloadRuntime.manager(activity)
+    private val downloadListener: (org.json.JSONArray) -> Unit = { snapshot ->
+        activity.runOnUiThread {
+            mainWebView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('download-update', {detail: ${snapshot}}))",
+                null
+            )
+        }
+    }
+
+    init {
+        downloadManager.addListener(downloadListener)
+    }
+
+    @JavascriptInterface
+    fun enqueueDownload(requestJson: String): String {
+        DownloadService.start(activity)
+        return downloadManager.enqueue(JSONObject(requestJson)).toString()
+    }
+
+    @JavascriptInterface
+    fun getDownloads(): String = downloadManager.snapshot().toString()
+
+    @JavascriptInterface
+    fun pauseDownload(id: String): Boolean = downloadManager.pause(id)
+
+    @JavascriptInterface
+    fun resumeDownload(id: String): Boolean = downloadManager.resume(id)
+
+    @JavascriptInterface
+    fun cancelDownload(id: String): Boolean = downloadManager.cancel(id)
+
+    @JavascriptInterface
+    fun retryDownload(id: String): Boolean = downloadManager.retry(id)
+
+    @JavascriptInterface
+    fun deleteDownload(id: String): Boolean = downloadManager.delete(id)
+
+    fun dispose() {
+        downloadManager.removeListener(downloadListener)
+    }
 
     @JavascriptInterface
     fun isLandscape(): Boolean {
