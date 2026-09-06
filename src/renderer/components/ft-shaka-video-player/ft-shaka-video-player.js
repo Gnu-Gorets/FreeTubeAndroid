@@ -33,7 +33,8 @@ import {
 } from '../../helpers/utils'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
-import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
+import { STATE_BUFFERING, STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
+import android from 'android'
 import { getNetworkType } from '../../helpers/android/network'
 import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
 import { isPlayerMenuOpen } from '../../helpers/player/player-menu.mjs'
@@ -2933,6 +2934,7 @@ export default defineComponent({
     const mediaSeekForwardStart = () => startMediaSeek(1)
     const mediaSeekBackwardStart = () => startMediaSeek(-1)
     const mediaSeekStop = () => clearInterval(mediaSeekInterval)
+    let updateBufferInterval = null
 
     onMounted(async () => {
       const videoElement = video.value
@@ -2945,9 +2947,22 @@ export default defineComponent({
         window.addEventListener('media-seek-forward-start', mediaSeekForwardStart)
         window.addEventListener('media-seek-backward-start', mediaSeekBackwardStart)
         window.addEventListener('media-seek-stop', mediaSeekStop)
-        videoElement.addEventListener('play', () => updateMediaSessionState(STATE_PLAYING))
-        videoElement.addEventListener('pause', () => updateMediaSessionState(STATE_PAUSED))
-        videoElement.addEventListener('timeupdate', () => updateMediaSessionState(videoElement.paused ? STATE_PAUSED : STATE_PLAYING, Math.floor(videoElement.currentTime * 1000)))
+        videoElement.addEventListener('play', () => {
+          android.enableKeepScreenOn()
+          updateMediaSessionState(STATE_PLAYING)
+        })
+        videoElement.addEventListener('pause', () => {
+          android.disableKeepScreenOn()
+          updateMediaSessionState(STATE_PAUSED)
+        })
+        videoElement.addEventListener('timeupdate', () => {
+          updateMediaSessionState(videoElement.paused ? STATE_PAUSED : STATE_PLAYING, Math.floor(videoElement.currentTime * 1000))
+        })
+        updateBufferInterval = setInterval(() => {
+          if (videoElement.buffered.length === 0) {
+            updateMediaSessionState(videoElement.paused ? STATE_PAUSED : STATE_BUFFERING, Math.floor(videoElement.currentTime * 1000))
+          }
+        }, 0)
       }
 
       const volume = sessionStorage.getItem('volume')
@@ -3500,6 +3515,7 @@ export default defineComponent({
       window.removeEventListener('media-seek-backward-start', mediaSeekBackwardStart)
       window.removeEventListener('media-seek-stop', mediaSeekStop)
       clearInterval(mediaSeekInterval)
+      clearInterval(updateBufferInterval)
     })
 
     // #endregion tear down

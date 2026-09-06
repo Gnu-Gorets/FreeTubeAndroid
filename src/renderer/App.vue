@@ -131,7 +131,7 @@ import { translateWindowTitle } from './helpers/strings'
 import { getLocalClip } from './helpers/api/local.js'
 import { getClipInvidious } from './helpers/api/invidious.js'
 
-import { updateAndroidTheme } from './helpers/android/system'
+import { getUpdateInfo, updateAndroidTheme } from './helpers/android/system'
 
 const route = useRoute()
 const router = useRouter()
@@ -285,6 +285,7 @@ const latestVersionNumber = ref('')
 const showReleaseNotes = ref(false)
 const changeLogTitle = ref('')
 const updateChangelog = ref('')
+const updateLink = ref('https://freetubeapp.io#download')
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const checkForUpdates = computed(() => store.getters.getCheckForUpdates)
@@ -297,6 +298,18 @@ const updateBannerMessage = computed(() => {
 
 async function checkForNewUpdates() {
   if (!checkForUpdates.value) {
+    return
+  }
+
+  if (process.env.IS_ANDROID) {
+    const info = await getUpdateInfo()
+    if (info.updateAvailable) {
+      updateChangelog.value = info.changeLog.body
+      changeLogTitle.value = info.changeLog.title
+      latestVersionNumber.value = info.version
+      updateLink.value = info.downloadLink
+      showUpdatesBanner.value = true
+    }
     return
   }
 
@@ -351,7 +364,7 @@ function handleUpdateBannerClick(response) {
 }
 
 function openDownloadsPage() {
-  openExternalLink('https://freetubeapp.io#download')
+  openExternalLink(updateLink.value)
   showReleaseNotes.value = false
   showUpdatesBanner.value = false
 }

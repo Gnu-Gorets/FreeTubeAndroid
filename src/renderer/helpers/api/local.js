@@ -1,6 +1,7 @@
 import { ClientType, Constants, Innertube, Misc, Mixins, Parser, Platform, Player, Session, UniversalCache, Utils, YT, YTNodes } from 'youtubei.js'
 import Autolinker from 'autolinker'
 import { parseLooseJSON } from 'bgutils-js/utils'
+import { generatePOToken, runDecipherScript } from '../android/potokens'
 
 import { SEARCH_CHAR_LIMIT } from '../../../constants'
 import { PlayerCache } from './PlayerCache'
@@ -57,23 +58,7 @@ if (process.env.SUPPORTS_LOCAL_API) {
         window.addEventListener('message', listener)
         iframe.contentWindow.postMessage(JSON.stringify({ id: messageId, code }), '*')
       } else if (process.env.IS_ANDROID) {
-        const listener = () => {
-          window.removeEventListener(`${messageId}-resolve`, listener)
-          window.removeEventListener(`${messageId}-reject`, rejectListener)
-          try {
-            resolve(JSON.parse(window.Android.getSyncMessage(messageId)))
-          } catch (error) {
-            reject(error)
-          }
-        }
-        const rejectListener = () => {
-          window.removeEventListener(`${messageId}-resolve`, listener)
-          window.removeEventListener(`${messageId}-reject`, rejectListener)
-          reject(window.Android.getSyncMessage(messageId))
-        }
-        window.addEventListener(`${messageId}-resolve`, listener)
-        window.addEventListener(`${messageId}-reject`, rejectListener)
-        window.Android.runDecipherScript(messageId, code, 10000)
+        runDecipherScript(messageId, code).then(resolve).catch(reject)
       } else {
         reject(new Error('Please setup the eval function for the n/sig deciphering'))
       }
@@ -670,30 +655,12 @@ async function getLocalVideoInfoUncached(id) {
       throw error
     }
   } else if (process.env.IS_ANDROID) {
-    const tokenId = crypto.randomUUID()
-    contentPoToken = await new Promise((resolve, reject) => {
-      const resolveEvent = () => {
-        cleanup()
-        resolve(window.Android.getSyncMessage(tokenId))
-      }
-      const rejectEvent = () => {
-        cleanup()
-        reject(window.Android.getSyncMessage(tokenId))
-      }
-      const cleanup = () => {
-        window.removeEventListener(`${tokenId}-resolve`, resolveEvent)
-        window.removeEventListener(`${tokenId}-reject`, rejectEvent)
-      }
-      window.addEventListener(`${tokenId}-resolve`, resolveEvent)
-      window.addEventListener(`${tokenId}-reject`, rejectEvent)
-      window.Android.generatePOToken(
-        tokenId,
-        id,
-        JSON.stringify(htmlExtracts.session.context),
-        JSON.stringify(htmlExtracts.initialAttestationData),
-        JSON.stringify(htmlExtracts.ytConfig)
-      )
-    })
+    contentPoToken = await generatePOToken(
+      id,
+      JSON.stringify(htmlExtracts.session.context),
+      JSON.stringify(htmlExtracts.initialAttestationData),
+      JSON.stringify(htmlExtracts.ytConfig)
+    )
     player.po_token = contentPoToken
   }
 
