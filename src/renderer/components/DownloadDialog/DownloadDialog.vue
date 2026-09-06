@@ -141,8 +141,9 @@ async function submit() {
     }
     const directoryUri = await selectDownloadDirectory()
     if (!directoryUri) return
-    const extension = format.extension || extensionFor(format.mimeType)
-    const fileName = `${sanitize(props.video.title)}.${extension}`
+    const extension = extensionFor(format.mimeType)
+    const suffix = mode.value === 'audio' ? ' - audio' : ''
+    const fileName = `${sanitize(props.video.title)}${suffix}.${extension}`
     const request = {
       video: props.video,
       kind: mode.value,
