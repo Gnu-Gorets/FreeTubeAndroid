@@ -24,6 +24,7 @@ class MainActivity : Activity() {
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
         const val DIRECTORY_REQUEST = 1003
+        const val OPEN_DOWNLOADS_EXTRA = "open_downloads"
     }
 
     private lateinit var webView: WebView
@@ -55,6 +56,9 @@ class MainActivity : Activity() {
                 super.onPageFinished(view, url)
                 pendingDeepLink?.let {
                     dispatchDeepLink(it)
+                    if (it.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false)) {
+                        webView.evaluateJavascript("window.dispatchEvent(new Event('open-downloads'))", null)
+                    }
                     pendingDeepLink = null
                 }
             }
@@ -149,6 +153,9 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('open-downloads'))", null)
+        }
         when (intent?.action) {
             "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
             "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
