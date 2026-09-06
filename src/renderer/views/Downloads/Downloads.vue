@@ -86,7 +86,7 @@
               <FtButton
                 v-if="mission.status === 'completed' && mission.outputUri"
                 :label="t('Downloads.Open')"
-                @click="open(mission.outputUri)"
+                @click="open(mission.outputUri, mission.mimeType)"
               />
               <FtButton
                 v-if="mission.status === 'completed' && mission.outputUri"
@@ -119,7 +119,7 @@ import FtButton from '../../components/FtButton/FtButton.vue'
 import FtCard from '../../components/ft-card/ft-card.vue'
 import store from '../../store'
 import { formatDurationAsTimestamp, openExternalLink } from '../../helpers/utils'
-import { shareDownload } from '../../helpers/android/downloads'
+import { openDownload, shareDownload } from '../../helpers/android/downloads'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -159,8 +159,8 @@ function run(action, id) {
   store.dispatch(action, id)
 }
 
-function open(uri) {
-  openExternalLink(uri)
+function open(uri, mimeType) {
+  if (!openDownload(uri, mimeType)) openExternalLink(uri)
 }
 
 function share(uri, mimeType) {
