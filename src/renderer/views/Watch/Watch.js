@@ -1045,6 +1045,7 @@ export default defineComponent({
               ?.projection_type ?? null
 
             if (
+              !result.streaming_data.adaptive_formats.some(format => format.url || format.signature_cipher || format.cipher) &&
               videoInfo.info.streaming_data?.server_abr_streaming_url &&
               videoInfo.info.player_config.media_common_config.media_ustreamer_request_config
             ) {
@@ -1083,8 +1084,12 @@ export default defineComponent({
 
         if (this.activeFormat === 'legacy' && (this.isLive || this.isPostLiveDvr || this.legacyFormats.length === 0)) {
           // Legacy wanted as default but unavailable
-          showToast(this.t('Change Format.Legacy formats are not available for this video'))
-          this.handleActiveFormatUnavailable()
+          if (this.manifestSrc !== null) {
+            this.enableDashFormat()
+          } else {
+            showToast(this.t('Change Format.Legacy formats are not available for this video'))
+            this.handleActiveFormatUnavailable()
+          }
         }
 
         this.isLoading = false
