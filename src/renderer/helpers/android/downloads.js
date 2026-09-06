@@ -1,6 +1,13 @@
 import android from 'android'
+import { awaitAsyncResult } from './jsinterface'
 
 const isAndroid = process.env.IS_ANDROID
+
+export async function selectDownloadDirectory() {
+  if (!isAndroid) return null
+  const uri = await awaitAsyncResult(android.requestDirectoryAccessDialog())
+  return uri === 'USER_CANCELED' ? null : uri
+}
 
 export function getDownloads() {
   return isAndroid ? JSON.parse(android.getDownloads()) : []
