@@ -71,6 +71,7 @@ import ExternalPlayerSettings from '../../components/ExternalPlayerSettings.vue'
 import SubscriptionSettings from '../../components/SubscriptionSettings/SubscriptionSettings.vue'
 import PrivacySettings from '../../components/PrivacySettings.vue'
 import DataSettings from '../../components/DataSettings/DataSettings.vue'
+import DownloadsSettings from '../../components/DownloadsSettings/DownloadsSettings.vue'
 import DistractionSettings from '../../components/DistractionSettings/DistractionSettings.vue'
 import ProxySettings from '../../components/ProxySettings/ProxySettings.vue'
 import SponsorBlockSettings from '../../components/SponsorBlockSettings.vue'
@@ -148,6 +149,14 @@ const settingsComponentsData = computed(() => {
       icon: ['fas', 'database'],
       component: DataSettings
     },
+    ...(process.env.IS_ANDROID
+      ? [{
+          type: 'downloads',
+          title: t('Downloads.Settings'),
+          icon: ['fas', 'download'],
+          component: DownloadsSettings
+        }]
+      : []),
     ...(process.env.IS_ELECTRON
       ? [
           {

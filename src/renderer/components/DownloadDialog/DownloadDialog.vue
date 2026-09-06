@@ -109,6 +109,8 @@ const selectedFormatId = ref('')
 const selectedAudioId = ref('')
 const selectedCaptionIds = ref([])
 const error = ref('')
+const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideoFormat)
+const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
 
 const progressiveFormats = computed(() => props.formats.filter(format => format.kind === 'progressive' && format.hasVideo === (mode.value === 'video')))
 const videoFormats = computed(() => props.formats.filter(format => format.kind === 'video' && format.mimeType === 'video/mp4'))
@@ -118,7 +120,12 @@ const adaptiveFormats = computed(() => audioFormats.value.filter(format => forma
 const selectedFormat = computed(() => availableFormats.value.find(format => format.id === selectedFormatId.value))
 
 watch([availableFormats, () => props.visible], () => {
-  selectedFormatId.value = availableFormats.value[0]?.id ?? ''
+  const preferred = mode.value === 'video' ? defaultVideoFormat.value : defaultAudioFormat.value
+  selectedFormatId.value = availableFormats.value.find(format => {
+    if (preferred === 'auto') return false
+    const preferredMime = preferred === 'm4a' ? 'audio/mp4' : preferred
+    return format.mimeType === preferredMime || format.container === preferred
+  })?.id ?? availableFormats.value[0]?.id ?? ''
   selectedAudioId.value = adaptiveFormats.value[0]?.id ?? ''
   selectedCaptionIds.value = []
   error.value = ''

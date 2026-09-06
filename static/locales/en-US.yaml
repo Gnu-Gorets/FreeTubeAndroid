@@ -1028,6 +1028,7 @@ Downloads:
   Paused: Paused
   Completed: Completed
   Failed: Failed
+  Missing: File missing
   Pause: Pause
   Resume: Resume
   Cancel: Cancel
@@ -1035,6 +1036,13 @@ Downloads:
   Open: Open
   Source: Source video
   Delete: Delete
+  Settings: Download settings
+  Wi-Fi only: Wi-Fi only
+  Concurrent downloads: Concurrent downloads
+  Default video format: Default video format
+  Default audio format: Default audio format
+  Select directory: Select downloads directory
+  Reset directory permission: Reset downloads directory permission
 
 Change Format:
   Change Media Formats: Change Media Formats

@@ -1,6 +1,8 @@
 package io.freetubeapp.freetubeandroid
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
@@ -83,9 +85,29 @@ class DownloadStorage(
         return file.parentFile?.usableSpace?.let { it >= requiredBytes } == true
     }
 
+    fun isNetworkAvailable(wifiOnly: Boolean = false): Boolean {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val network = connectivity.activeNetwork ?: return false
+        val capabilities = connectivity.getNetworkCapabilities(network) ?: return false
+        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return false
+        return !wifiOnly || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    fun outputExists(uri: String): Boolean = try {
+        DocumentFile.fromSingleUri(context, Uri.parse(uri))?.exists() == true
+    } catch (_: Exception) {
+        false
+    }
+
     fun deleteOutput(uri: String): Boolean = contentResolver.delete(Uri.parse(uri), null, null) > 0
 
     fun deleteTemporaryFile(file: File): Boolean = !file.exists() || file.delete()
+
+    fun deleteOrphanTemporaryFiles(referencedPaths: Set<String>) {
+        temporaryDirectory.listFiles()?.forEach { file ->
+            if (file.absolutePath !in referencedPaths) file.delete()
+        }
+    }
 
     fun loadMetadata(): JSONArray {
         if (!metadataFile.isFile) return JSONArray()

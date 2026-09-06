@@ -78,6 +78,19 @@ class AndroidBridge(
     fun getDownloads(): String = downloadManager.snapshot().toString()
 
     @JavascriptInterface
+    fun getDownloadSettings(): String = downloadManager.settings().toString()
+
+    @JavascriptInterface
+    fun updateDownloadSettings(settingsJson: String): Boolean {
+        downloadManager.updateSettings(JSONObject(settingsJson))
+        return true
+    }
+
+    @JavascriptInterface
+    fun refreshDownload(id: String, requestJson: String): Boolean =
+        downloadManager.replaceUrls(id, JSONObject(requestJson))
+
+    @JavascriptInterface
     fun pauseDownload(id: String): Boolean = downloadManager.pause(id)
 
     @JavascriptInterface
@@ -234,6 +247,16 @@ class AndroidBridge(
     @JavascriptInterface
     fun revokePermissionForTree(tree: String) {
         activity.revokeUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+
+    @JavascriptInterface
+    fun revokeDownloadDirectory(tree: String): Boolean {
+        return try {
+            revokePermissionForTree(tree)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @JavascriptInterface
