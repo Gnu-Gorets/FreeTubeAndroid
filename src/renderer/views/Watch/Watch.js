@@ -221,6 +221,7 @@ export default defineComponent({
       streamingDataExpiryDate: null,
       currentPlaybackRate: null,
       downloadedMission: null,
+      refreshMissionId: '',
     }
   },
   computed: {
@@ -385,6 +386,11 @@ export default defineComponent({
       return !this.isLoading
     },
 
+    refreshMission() {
+      if (!this.refreshMissionId) return null
+      return getDownloads().find(mission => mission.id === this.refreshMissionId) || null
+    },
+
     chaptersSrc() {
       if (this.videoChapters.length > 0) {
         const vttText = buildChaptersVttFile(this.videoChapters)
@@ -411,6 +417,7 @@ export default defineComponent({
   created: function () {
     console.warn('[Downloads] Watch created ' + JSON.stringify({ videoId: this.$route.params.id }))
     this.videoId = this.$route.params.id
+    this.refreshMissionId = this.$route.query.refreshDownloadId || ''
     this.activeFormat = this.defaultVideoFormat
     // So that the value for this session remains unchanged even if setting changed
     this.autoplayNextRecommendedVideo = this.autoplayNextRecommendedVideoByDefault
@@ -509,6 +516,7 @@ export default defineComponent({
       this.downloadDialogVisible = false
       this.captions = []
       this.downloadedMission = null
+      this.refreshMissionId = this.$route.query.refreshDownloadId || ''
       this.vrProjection = null
       this.recommendedVideos = []
       this.playabilityStatus = ''
@@ -1146,6 +1154,7 @@ export default defineComponent({
 
         this.isLoading = false
         this.updateTitle()
+        if (this.refreshMission) this.downloadDialogVisible = true
       } catch (err) {
         console.error(err)
         if (this.backendPreference === 'local' && this.backendFallback && !err.toString().includes('private') && !err.toString().includes('unavailable')) {
