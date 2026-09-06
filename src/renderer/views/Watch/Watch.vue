@@ -204,7 +204,7 @@
         :class="{ theatrePlaylist: useTheatreMode }"
       />
       <watch-video-playlist
-        v-if="watchingPlaylist"
+        v-if="watchingPlaylist && playlistType !== 'downloaded'"
         v-show="!isLoading"
         ref="watchVideoPlaylist"
         :watch-view-loading="isLoading"

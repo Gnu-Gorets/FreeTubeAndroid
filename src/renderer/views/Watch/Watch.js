@@ -46,6 +46,7 @@ import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { createMediaSession } from '../../helpers/android/media-session'
+import { getDownloads } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -211,6 +212,7 @@ export default defineComponent({
       /** @type {Date|null} */
       streamingDataExpiryDate: null,
       currentPlaybackRate: null,
+      downloadedMission: null,
     }
   },
   computed: {
@@ -281,6 +283,9 @@ export default defineComponent({
     },
     autoplayNextPlaylistVideoByDefault: function () {
       return this.$store.getters.getAutoplayPlaylists
+    },
+    preferLocalDownloads: function () {
+      return this.$store.getters.getDownloadsPreferLocal
     },
     hideRecommendedVideos: function () {
       return this.$store.getters.getHideRecommendedVideos
@@ -489,6 +494,7 @@ export default defineComponent({
       this.downloadFormats = []
       this.downloadDialogVisible = false
       this.captions = []
+      this.downloadedMission = null
       this.vrProjection = null
       this.recommendedVideos = []
       this.playabilityStatus = ''
@@ -500,7 +506,7 @@ export default defineComponent({
       this.updateTitle()
     },
 
-    onMountedDependOnLocalStateLoading() {
+    async onMountedDependOnLocalStateLoading() {
       // Prevent running twice
       if (this.onMountedRun) { return }
       // Stuff that require user playlists to be ready
@@ -509,6 +515,8 @@ export default defineComponent({
       this.onMountedRun = true
 
       this.checkIfPlaylist()
+
+      if (await this.loadDownloadedMission()) return
 
       // this has to be below checkIfPlaylist() as theatrePossible needs to know if there is a playlist or not
       this.setViewingModeOnFirstLoad()
@@ -526,6 +534,35 @@ export default defineComponent({
 
       window.addEventListener('beforeunload', this.handleWatchProgressAutoSave)
       this.resetAutoplayInterruptionTimeout()
+    },
+
+    async loadDownloadedMission() {
+      if (!process.env.IS_ANDROID) return false
+
+      const mission = getDownloads().find(item =>
+        item.status === 'completed' && item.kind === 'video' && item.video?.id === this.videoId && item.outputUri
+      )
+      if (!mission || (!this.preferLocalDownloads && this.playlistType !== 'downloaded')) return false
+
+      this.downloadedMission = mission
+      this.videoTitle = mission.video.title || this.videoId
+      this.channelName = mission.video.author || ''
+      this.videoLengthSeconds = Number(mission.video.duration) || 0
+      this.thumbnail = mission.video.thumbnail || ''
+      this.legacyFormats = [{
+        url: mission.outputUri,
+        mimeType: mission.mimeType || 'video/mp4',
+        quality: 'Downloaded',
+        width: 0,
+        height: 0,
+        bitrate: 0
+      }]
+      this.manifestSrc = null
+      this.activeFormat = 'legacy'
+      this.isLoading = false
+      this.firstLoad = false
+      this.updateTitle()
+      return true
     },
 
     setViewingModeOnFirstLoad: function () {
@@ -1462,6 +1499,14 @@ export default defineComponent({
       this.playlistId = this.$route.query.playlistId
       this.playlistItemId = this.$route.query.playlistItemId
 
+      if (this.$route.query.playlistType === 'downloaded') {
+        this.playlistId = 'downloads'
+        this.playlistType = 'downloaded'
+        this.playlistItemId = null
+        this.watchingPlaylist = true
+        return
+      }
+
       if (this.playlistId == null || this.playlistId.length === 0) {
         this.playlistType = ''
         this.playlistItemId = null
@@ -1591,6 +1636,11 @@ export default defineComponent({
         return
       }
 
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(1)
+        return
+      }
+
       if (this.watchingPlaylist && this.$refs.watchVideoPlaylist?.shouldStopDueToPlaylistEnd) {
         // Let `watchVideoPlaylist` handle end of playlist, no countdown needed
         this.$refs.watchVideoPlaylist.playNextVideo()
@@ -1636,10 +1686,29 @@ export default defineComponent({
       }
     },
 
+    getDownloadedPlaylist: function () {
+      return getDownloads()
+        .filter(mission => mission.status === 'completed' && mission.kind === 'video' && mission.video?.id && mission.outputUri)
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    },
+
+    playDownloadedVideo: function (direction) {
+      const playlist = this.getDownloadedPlaylist()
+      const index = playlist.findIndex(mission => mission.video.id === this.videoId)
+      const next = playlist[index + direction]
+      if (!next) return
+      this.$router.push({
+        path: `/watch/${next.video.id}`,
+        query: { playlistId: 'downloads', playlistType: 'downloaded' }
+      })
+    },
+
     // Skip to the next video if in a playlist
     // else next recommended video if autoplay enabled
     handleSkipToNext: function () {
-      if (this.watchingPlaylist) {
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(1)
+      } else if (this.watchingPlaylist) {
         this.$refs.watchVideoPlaylist?.playNextVideo()
       } else if (!this.hideRecommendedVideos && this.nextRecommendedVideo) {
         this.$router.push({
@@ -1651,7 +1720,11 @@ export default defineComponent({
 
     // Skip to the previous video in a playlist
     handleSkipToPrev: function () {
-      this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(-1)
+      } else {
+        this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      }
     },
 
     abortAutoplayCountdown: function (hideToast = false) {
