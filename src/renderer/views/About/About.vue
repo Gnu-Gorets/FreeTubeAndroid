@@ -46,6 +46,7 @@ import FtCard from '../../components/ft-card/ft-card.vue'
 import FtLogoFull from '../../components/FtLogoFull/FtLogoFull.vue'
 import { vSaferHtml } from '../../directives/vSaferHtml.js'
 
+import { ABOUT_BITCOIN_ADDRESS } from '../../../constants'
 import packageDetails from '../../../../package.json'
 
 const { t } = useI18n()
