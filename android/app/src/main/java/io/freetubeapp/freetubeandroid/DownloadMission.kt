@@ -42,9 +42,15 @@ internal class DownloadMission(
                 data.getString("fileName"),
                 data.getString("mimeType")
             ) { copied, total ->
+                if (cancelRequested) throw IOException("Download interrupted")
                 data.put("publishedBytes", copied)
                 data.put("publishedTotalBytes", total)
                 onChanged(data)
+            }
+            if (cancelRequested) {
+                storage.deleteOutput(outputUri)
+                updateStatus(STATUS_CANCELED)
+                return
             }
             data.put("outputUri", outputUri)
             data.put("completedAt", System.currentTimeMillis())
@@ -181,13 +187,15 @@ internal class DownloadMission(
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1_000L
         const val ERROR_NEEDS_REFRESH = "needs-refresh"
+        private val SUPPORTED_MIME_TYPES = setOf("video/mp4", "video/webm", "audio/mp4", "audio/webm")
 
         fun validateRequest(request: JSONObject) {
             val url = Uri.parse(request.optString("url"))
             require(url.scheme == "http" || url.scheme == "https") { "Unsupported download URL" }
             require(request.optString("directoryUri").isNotBlank()) { "Missing downloads directory" }
             require(request.optString("fileName").isNotBlank()) { "Missing output filename" }
-            require(request.optString("mimeType").isNotBlank()) { "Missing output MIME type" }
+            val mimeType = request.optString("mimeType")
+            require(mimeType in SUPPORTED_MIME_TYPES) { "Unsupported output MIME type" }
             require(request.optJSONArray("parts")?.length() == 1) { "Adaptive downloads are not available yet" }
         }
     }

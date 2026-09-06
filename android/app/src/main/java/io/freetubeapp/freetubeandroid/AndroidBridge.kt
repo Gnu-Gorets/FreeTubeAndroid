@@ -540,6 +540,19 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun openDownloadFile(uri: String, mimeType: String): Boolean {
+        return try {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                setDataAndType(Uri.parse(uri), mimeType.ifBlank { "application/octet-stream" })
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+            true
+        } catch (_: android.content.ActivityNotFoundException) {
+            false
+        }
+    }
+
+    @JavascriptInterface
     fun shareText(text: String) {
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"

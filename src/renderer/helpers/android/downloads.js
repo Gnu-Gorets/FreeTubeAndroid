@@ -38,6 +38,10 @@ export function deleteDownload(id) {
   return isAndroid && android.deleteDownload(id)
 }
 
+export function openDownload(uri, mimeType) {
+  return isAndroid && android.openDownloadFile(uri, mimeType)
+}
+
 export function shareDownload(uri, mimeType) {
   if (isAndroid) android.shareFile(uri, mimeType)
 }
