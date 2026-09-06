@@ -40,6 +40,11 @@ export function updateDownloadSettings(settings) {
   return isAndroid && android.updateDownloadSettings(JSON.stringify(settings))
 }
 
+export function validateDownloadUrls(request) {
+  if (!isAndroid) return { ok: false, error: 'Downloads are only supported on Android' }
+  return JSON.parse(android.validateDownloadUrls(JSON.stringify(request)))
+}
+
 export function enqueueDownload(request) {
   if (!isAndroid) throw new Error('Downloads are only supported on Android')
   return android.enqueueDownload(JSON.stringify(request))

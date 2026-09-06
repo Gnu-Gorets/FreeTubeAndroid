@@ -4,6 +4,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -148,10 +149,15 @@ internal class DownloadMission(
         http.instanceFollowRedirects = true
         http.connectTimeout = CONNECT_TIMEOUT_MS
         http.readTimeout = READ_TIMEOUT_MS
-        if (offset > 0) http.setRequestProperty("Range", "bytes=$offset-")
+        http.setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+        http.setRequestProperty("Accept", "*/*")
+        http.setRequestProperty("Accept-Encoding", "*")
+        http.setRequestProperty("Referer", "https://www.youtube.com/")
+        http.setRequestProperty("Range", "bytes=$offset-")
 
         try {
             val responseCode = http.responseCode
+            Log.i("FreeTubeDownloads", "stream response=$responseCode message=${http.responseMessage} type=${http.contentType} host=${url.host} offset=$offset")
             if (responseCode == HttpURLConnection.HTTP_FORBIDDEN || responseCode == HttpURLConnection.HTTP_GONE) {
                 throw DownloadException("Stream URL expired", retryable = false, needsRefresh = true)
             }
@@ -285,6 +291,7 @@ internal class DownloadMission(
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_RETRIES = 3
+        private const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
         private const val RETRY_DELAY_MS = 1_000L
         const val ERROR_NEEDS_REFRESH = "needs-refresh"
         const val ERROR_NETWORK_UNAVAILABLE = "network-unavailable"
