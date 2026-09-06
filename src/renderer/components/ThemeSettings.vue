@@ -37,6 +37,13 @@
           :default-value="hideHeaderLogo"
           @change="updateHideHeaderLogo"
         />
+        <FtToggleSwitch
+          v-if="usingAndroid"
+          :label="$t('Theme Settings.Enable Ui Scale')"
+          compact
+          :default-value="useUiScale"
+          @change="updateUseUiScale"
+        />
       </div>
     </div>
     <template v-if="usingElectron || usingAndroid">
@@ -44,7 +51,7 @@
         <FtSlider
           :label="$t('Settings.Theme Settings.UI Scale')"
           :default-value="uiScale"
-          :min-value="50"
+          :min-value="25"
           :max-value="300"
           :step="5"
           value-extension="%"
@@ -270,13 +277,29 @@ function updateHideHeaderLogo(value) {
 }
 
 /** @type {import('vue').ComputedRef<number>} */
-const uiScale = computed(() => store.getters.getUiScale)
+const uiScale = computed(() => {
+  if (process.env.IS_ANDROID) {
+    return store.getters.getUiScaleAndroid
+  } else {
+    return store.getters.getUiScale
+  }
+})
 
 /**
  * @param {number} value
  */
 function updateUiScale(value) {
-  store.dispatch('updateUiScale', value)
+  if (process.env.IS_ANDROID) {
+    store.dispatch('updateUiScaleAndroid', value)
+  } else {
+    store.dispatch('updateUiScale', value)
+  }
+}
+
+const useUiScale = computed(() => store.getters.getUseUiScale)
+
+function updateUseUiScale(value) {
+  store.dispatch('updateUseUiScale', value)
 }
 
 /** @type {boolean} */
