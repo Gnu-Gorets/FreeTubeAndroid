@@ -102,6 +102,7 @@ export default defineComponent({
     'watch-video-live-chat': WatchVideoLiveChat,
     'watch-video-playlist': WatchVideoPlaylist,
     'watch-video-recommendations': WatchVideoRecommendations,
+    DownloadDialog,
     'download-dialog': DownloadDialog,
     'ft-age-restricted': FtAgeRestricted
   },
@@ -911,14 +912,12 @@ export default defineComponent({
           if (result.streaming_data) {
             this.streamingDataExpiryDate = result.streaming_data.expires
 
-            if (result.streaming_data.formats.length > 0) {
-              this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
-              this.downloadFormats = result.streaming_data.formats
-                .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
-                .concat(result.streaming_data.adaptive_formats
-                  .filter(format => format.url)
-                  .map((format, index) => normalizeDownloadFormat(format, format.mime_type.startsWith('video/') ? 'video' : 'audio', index)))
-            }
+            this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
+            this.downloadFormats = result.streaming_data.formats
+              .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
+              .concat(result.streaming_data.adaptive_formats
+                .filter(format => format.url)
+                .map((format, index) => normalizeDownloadFormat(format, format.mime_type.startsWith('video/') ? 'video' : 'audio', index)))
 
             if (result.captions) {
               const captionTracks = result.captions?.caption_tracks?.map((caption) => {
@@ -1212,6 +1211,7 @@ export default defineComponent({
             this.downloadFormats = result.formatStreams
               .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
               .concat(result.adaptiveFormats
+                .filter(format => format.url)
                 .map((format, index) => normalizeDownloadFormat(format, format.type.startsWith('video/') ? 'video' : 'audio', index)))
 
             if (!process.env.SUPPORTS_LOCAL_API || this.proxyVideos) {

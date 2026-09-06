@@ -584,7 +584,7 @@ open_data_settings() {
   adb_shell input tap 615 1540
   sleep 3
   # At UI scale 100% Settings uses full-screen mobile section menu.
-  adb_shell input tap 300 1084
+  adb_shell input tap 300 1010
   sleep 3
 }
 
