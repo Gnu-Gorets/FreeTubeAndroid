@@ -121,7 +121,18 @@ const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideo
 const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
 
 const progressiveFormats = computed(() => props.formats.filter(format => format.kind === 'progressive' && format.hasVideo === (mode.value === 'video')))
-const videoFormats = computed(() => props.formats.filter(format => format.kind === 'video' && format.mimeType === 'video/mp4'))
+const videoFormats = computed(() => {
+  const formats = props.formats.filter(format => format.kind === 'video' && format.mimeType === 'video/mp4')
+  const byQuality = new Map()
+  for (const format of formats) {
+    const key = `${format.height || format.quality || format.id}:${format.container}`
+    const current = byQuality.get(key)
+    if (!current || (!current.codecs.startsWith('avc1') && format.codecs.startsWith('avc1'))) {
+      byQuality.set(key, format)
+    }
+  }
+  return [...byQuality.values()]
+})
 const audioFormats = computed(() => props.formats.filter(format => format.kind === 'audio'))
 const availableFormats = computed(() => mode.value === 'video' ? [...progressiveFormats.value, ...videoFormats.value] : audioFormats.value)
 const adaptiveFormats = computed(() => audioFormats.value.filter(format => format.mimeType === 'audio/mp4'))
