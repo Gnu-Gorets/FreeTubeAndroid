@@ -1043,6 +1043,8 @@ Downloads:
   Default audio format: Default audio format
   Select directory: Select downloads directory
   Reset directory permission: Reset downloads directory permission
+  Prefer local files: Prefer downloaded files for playback
+  Play all: Play all downloaded videos
 
 Change Format:
   Change Media Formats: Change Media Formats
