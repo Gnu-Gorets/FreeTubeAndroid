@@ -13,6 +13,8 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 internal class DownloadMission(
     private val storage: DownloadStorage,
@@ -21,7 +23,7 @@ internal class DownloadMission(
 ) {
     @Volatile private var pauseRequested = false
     @Volatile private var cancelRequested = false
-    @Volatile private var connection: HttpURLConnection? = null
+    private val connections = ConcurrentHashMap.newKeySet<HttpURLConnection>()
     private var progressStartedAt = 0L
     private var progressStartBytes = 0L
 
@@ -42,7 +44,7 @@ internal class DownloadMission(
         try {
             for (index in 0 until parts.length()) {
                 val part = parts.getJSONObject(index)
-                downloadWithRetries(temporaryFiles[index], part)
+                downloadPart(temporaryFiles[index], part)
             }
             checkInterrupted()
 
@@ -104,23 +106,152 @@ internal class DownloadMission(
                 }
             }
         } finally {
-            connection = null
+            connections.clear()
         }
     }
 
     fun pause() {
         if (status == STATUS_DOWNLOADING) {
             pauseRequested = true
-            connection?.disconnect()
+            connections.forEach(HttpURLConnection::disconnect)
         }
     }
 
     fun cancel() {
         cancelRequested = true
-        connection?.disconnect()
+        connections.forEach(HttpURLConnection::disconnect)
         if (status == STATUS_QUEUED || status == STATUS_PAUSED) {
             deleteTemporaryParts()
             updateStatus(STATUS_CANCELED)
+        }
+    }
+
+    private fun downloadPart(temporaryFile: File, part: JSONObject) {
+        val threads = data.optInt("threads", 1).coerceIn(1, MAX_THREADS)
+        if (threads == 1) return downloadWithRetries(temporaryFile, part)
+        val size = probeSize(part)
+        if (size <= 0) return downloadWithRetries(temporaryFile, part)
+        val ranges = (0 until threads).map { index ->
+            val start = size * index / threads
+            val end = size * (index + 1) / threads - 1
+            start..end
+        }
+        val segments = ranges.mapIndexed { index, _ -> File("${temporaryFile.absolutePath}.range-$index") }
+        synchronized(data) {
+            part.put("downloadedBytes", segments.sumOf(File::length))
+            part.put("totalBytes", size)
+            data.put("downloadedBytes", aggregateDownloaded())
+            onChanged(data)
+        }
+        val executor = Executors.newFixedThreadPool(threads)
+        try {
+            val futures = ranges.mapIndexed { index, range ->
+                executor.submit { downloadRangeWithRetries(segments[index], part, range.first.toLong(), range.last.toLong()) }
+            }
+            try {
+                futures.forEach { it.get() }
+            } catch (error: Exception) {
+                futures.forEach { it.cancel(true) }
+                if (error.cause is RangeUnsupported) {
+                    segments.forEach(File::delete)
+                    return downloadWithRetries(temporaryFile, part)
+                }
+                throw (error.cause ?: error)
+            }
+            FileOutputStream(temporaryFile, false).use { output ->
+                segments.forEach { segment -> segment.inputStream().use { it.copyTo(output) } }
+            }
+            synchronized(data) {
+                part.put("downloadedBytes", size)
+                data.put("downloadedBytes", aggregateDownloaded())
+                data.put("totalBytes", data.getJSONArray("parts").length().let {
+                    (0 until it).sumOf { index -> data.getJSONArray("parts").getJSONObject(index).optLong("totalBytes", -1L) }
+                })
+                onChanged(data)
+            }
+        } finally {
+            executor.shutdownNow()
+            segments.forEach(File::delete)
+        }
+    }
+
+    private fun probeSize(part: JSONObject): Long {
+        val http = (URL(part.getString("url")).openConnection() as HttpURLConnection).apply {
+            requestMethod = "HEAD"
+            instanceFollowRedirects = true
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+            setRequestProperty("Referer", "https://www.youtube.com/")
+        }
+        try {
+            if (http.responseCode !in 200..299) return -1
+            return http.contentLengthLong
+        } catch (_: Exception) {
+            return -1
+        } finally {
+            http.disconnect()
+        }
+    }
+
+    private fun downloadRangeWithRetries(file: File, part: JSONObject, start: Long, end: Long) {
+        var attempt = 0
+        while (true) {
+            try {
+                downloadRange(file, part, start, end)
+                return
+            } catch (error: DownloadException) {
+                if (!error.retryable || attempt++ >= MAX_RETRIES || pauseRequested || cancelRequested) throw error
+                Thread.sleep(RETRY_DELAY_MS * attempt)
+            } catch (error: IOException) {
+                if (error is RangeUnsupported || attempt++ >= MAX_RETRIES || pauseRequested || cancelRequested) throw error
+                Thread.sleep(RETRY_DELAY_MS * attempt)
+            }
+        }
+    }
+
+    private fun downloadRange(file: File, part: JSONObject, start: Long, end: Long) {
+        val offset = file.length()
+        val rangeStart = start + offset
+        if (rangeStart > end) return
+        val http = (URL(part.getString("url")).openConnection() as? HttpURLConnection)
+            ?: throw IOException("Unsupported download URL")
+        connections.add(http)
+        http.instanceFollowRedirects = true
+        http.connectTimeout = CONNECT_TIMEOUT_MS
+        http.readTimeout = READ_TIMEOUT_MS
+        http.setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+        http.setRequestProperty("Accept", "*/*")
+        http.setRequestProperty("Referer", "https://www.youtube.com/")
+        http.setRequestProperty("Range", "bytes=$rangeStart-$end")
+        try {
+            val responseCode = http.responseCode
+            if (responseCode == 200) throw RangeUnsupported("Server does not support byte ranges")
+            if (responseCode == HttpURLConnection.HTTP_FORBIDDEN || responseCode == HttpURLConnection.HTTP_GONE) {
+                throw DownloadException("Stream URL expired", retryable = false, needsRefresh = true)
+            }
+            if (responseCode !in 200..299) throw DownloadException("HTTP $responseCode", retryable = responseCode >= 500)
+            val contentRange = http.getHeaderField("Content-Range") ?: throw RangeUnsupported("Missing Content-Range")
+            if (!contentRange.startsWith("bytes $rangeStart-$end/")) throw RangeUnsupported("Invalid Content-Range")
+            FileOutputStream(file, offset > 0).use { output ->
+                http.inputStream.use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        checkInterrupted()
+                        val count = input.read(buffer)
+                        if (count == -1) break
+                        output.write(buffer, 0, count)
+                        synchronized(data) {
+                            part.put("downloadedBytes", part.optLong("downloadedBytes", 0L) + count)
+                            data.put("downloadedBytes", aggregateDownloaded())
+                            onChanged(data)
+                        }
+                    }
+                }
+            }
+        } finally {
+            connections.remove(http)
+            http.disconnect()
         }
     }
 
@@ -145,7 +276,7 @@ internal class DownloadMission(
         val url = URL(part.getString("url"))
         val http = (url.openConnection() as? HttpURLConnection)
             ?: throw IOException("Unsupported download URL")
-        connection = http
+        connections.add(http)
         http.instanceFollowRedirects = true
         http.connectTimeout = CONNECT_TIMEOUT_MS
         http.readTimeout = READ_TIMEOUT_MS
@@ -192,6 +323,7 @@ internal class DownloadMission(
                 }
             }
         } finally {
+            connections.remove(http)
             http.disconnect()
         }
     }
@@ -293,6 +425,7 @@ internal class DownloadMission(
         private const val MAX_RETRIES = 3
         private const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
         private const val RETRY_DELAY_MS = 1_000L
+        const val MAX_THREADS = 32
         const val ERROR_NEEDS_REFRESH = "needs-refresh"
         const val ERROR_NETWORK_UNAVAILABLE = "network-unavailable"
         const val ERROR_CLASS_RESUMABLE = "resumable"
@@ -303,6 +436,7 @@ internal class DownloadMission(
         fun validateRequest(request: JSONObject) {
             val parts = request.optJSONArray("parts")
             require(parts != null && parts.length() in 1..2) { "Invalid download parts" }
+            require(request.optInt("threads", 1) in 1..MAX_THREADS) { "Invalid download threads" }
             require(request.optString("directoryUri").isNotBlank()) { "Missing downloads directory" }
             require(request.optString("fileName").isNotBlank()) { "Missing output filename" }
             val mimeType = request.optString("mimeType")
@@ -322,9 +456,12 @@ internal class DownloadMission(
             }
             if (mimeType == "text/vtt") {
                 require(parts.length() == 1 && parts.getJSONObject(0).optString("kind") == "subtitle") { "Invalid subtitle mission" }
+                require(request.optInt("threads", 1) == 1) { "Subtitle threads are unsupported" }
             }
         }
     }
+
+    private class RangeUnsupported(message: String) : IOException(message)
 
     private class DownloadException(
         message: String,
