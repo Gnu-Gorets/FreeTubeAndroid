@@ -75,6 +75,7 @@ internal class DownloadManager(
         DownloadMission.validateRequest(request)
         val id = UUID.randomUUID().toString()
         val mission = JSONObject(request.toString()).apply {
+            put("threads", optInt("threads", 1).coerceIn(1, DownloadMission.MAX_THREADS))
             put("id", id)
             put("status", DownloadMission.STATUS_QUEUED)
             put("temporaryPath", "")
