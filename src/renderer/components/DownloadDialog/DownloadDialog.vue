@@ -43,18 +43,6 @@
           </option>
         </select>
       </label>
-      <label v-if="mode !== 'captions' && audioTracks.length > 0">
-        {{ t('Downloads.Audio language') }}
-        <select v-model="selectedAudioTrackId">
-          <option
-            v-for="track in audioTracks"
-            :key="track.id"
-            :value="track.id"
-          >
-            {{ track.label }}
-          </option>
-        </select>
-      </label>
       <label v-if="mode === 'audio'">
         {{ t('Downloads.Audio format') }}
         <select v-model="selectedFormatId">
@@ -64,6 +52,18 @@
             :value="format.id"
           >
             {{ format.label }}
+          </option>
+        </select>
+      </label>
+      <label v-if="mode !== 'captions' && audioTracks.length > 0">
+        {{ t('Downloads.Audio language') }}
+        <select v-model="selectedAudioTrackId">
+          <option
+            v-for="track in audioTracks"
+            :key="track.id"
+            :value="track.id"
+          >
+            {{ track.label }}
           </option>
         </select>
       </label>
@@ -117,7 +117,7 @@ import { useI18n } from 'vue-i18n'
 import FtButton from '../FtButton/FtButton.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import { selectDownloadDirectory, validateDownloadUrls } from '../../helpers/android/downloads'
-import { compareLabels, compareVideoFormats, getAudioFormatsForTrack } from '../../helpers/download-selection.mjs'
+import { compareLabels, compareVideoFormats, getAudioFormatsForTrack, selectDefaultAudioTrack, selectDefaultVideoFormat } from '../../helpers/download-selection.mjs'
 import store from '../../store'
 
 const props = defineProps({
@@ -162,7 +162,8 @@ const audioTracks = computed(() => {
     if (!tracks.has(format.audioTrackId)) {
       tracks.set(format.audioTrackId, {
         id: format.audioTrackId,
-        label: format.audioTrackLabel || format.language || t('Downloads.Original audio')
+        label: format.audioTrackLabel || format.language || t('Downloads.Original audio'),
+        language: format.language
       })
     }
   }
@@ -188,7 +189,7 @@ watch([audioTracks, () => props.visible], () => {
   const refreshAudio = props.refreshMission?.parts?.find(part => part.kind === 'audio')
   selectedAudioTrackId.value = audioTracks.value.find(track => refreshAudio && matchesStreamSelection(
     audioFormats.value.find(format => format.audioTrackId === track.id), refreshAudio
-  ))?.id ?? audioTracks.value[0]?.id ?? ''
+  ))?.id ?? selectDefaultAudioTrack(audioTracks.value)?.id ?? ''
 }, { immediate: true })
 
 watch([selectedAudioFormats, () => props.visible], () => {
@@ -206,12 +207,16 @@ watch([selectedAudioFormats, () => props.visible], () => {
 
 watch([availableFormats, () => props.visible], () => {
   const preferred = mode.value === 'video' ? defaultVideoFormat.value : defaultAudioFormat.value
-  selectedFormatId.value = availableFormats.value.find(format => {
-    if (props.refreshMission?.streamSelection && matchesStreamSelection(format, props.refreshMission.streamSelection)) return true
-    if (preferred === 'auto') return false
-    const preferredMime = preferred === 'm4a' ? 'audio/mp4' : preferred
-    return format.mimeType === preferredMime || format.container === preferred
-  })?.id ?? availableFormats.value[0]?.id ?? ''
+  const defaultFormat = mode.value === 'video'
+    ? selectDefaultVideoFormat(availableFormats.value, preferred)
+    : availableFormats.value.find(format => {
+        if (preferred === 'auto') return false
+        const preferredMime = preferred === 'm4a' ? 'audio/mp4' : preferred
+        return format.mimeType === preferredMime || format.container === preferred
+      })
+  selectedFormatId.value = props.refreshMission?.streamSelection
+    ? availableFormats.value.find(format => matchesStreamSelection(format, props.refreshMission.streamSelection))?.id ?? defaultFormat?.id ?? ''
+    : defaultFormat?.id ?? availableFormats.value[0]?.id ?? ''
   fileName.value = sanitize(props.video.title)
   error.value = ''
 }, { immediate: true })
