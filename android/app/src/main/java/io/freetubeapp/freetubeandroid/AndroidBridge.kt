@@ -122,6 +122,37 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun probeDownloadUrls(requestJson: String): String {
+        val result = JSONArray()
+        val parts = JSONObject(requestJson).getJSONArray("parts")
+        for (index in 0 until parts.length()) {
+            val part = parts.getJSONObject(index)
+            val connection = (URL(part.getString("url")).openConnection() as HttpURLConnection).apply {
+                requestMethod = "HEAD"
+                instanceFollowRedirects = true
+                connectTimeout = 15_000
+                readTimeout = 15_000
+                setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+                setRequestProperty("Referer", "https://www.youtube.com/")
+            }
+            try {
+                val status = connection.responseCode
+                result.put(JSONObject().apply {
+                    put("id", part.optString("id"))
+                    put("status", status)
+                    put("contentLength", connection.contentLengthLong)
+                    put("contentRange", connection.getHeaderField("Content-Range") ?: JSONObject.NULL)
+                    put("acceptRanges", connection.getHeaderField("Accept-Ranges") ?: JSONObject.NULL)
+                    put("mimeType", connection.contentType ?: JSONObject.NULL)
+                })
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return result.toString()
+    }
+
+    @JavascriptInterface
     fun validateDownloadUrls(requestJson: String): String {
         return try {
             validateDownloadUrls(JSONObject(requestJson))

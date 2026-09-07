@@ -1041,6 +1041,10 @@ Downloads:
   Settings: Download settings
   Wi-Fi only: Wi-Fi only
   Concurrent downloads: Concurrent downloads
+  Threads: Threads
+  Threads description: Streams which are not yet supported by the downloader are not shown
+  Audio language: Audio language
+  Original audio: Original audio
   Default video format: Default video format
   Default audio format: Default audio format
   Select directory: Select downloads directory

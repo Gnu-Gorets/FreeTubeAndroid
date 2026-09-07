@@ -23,10 +23,16 @@
           :background-color="mode === 'audio' ? 'var(--accent-color)' : 'var(--card-bg-color)'"
           @click="mode = 'audio'"
         />
+        <FtButton
+          v-if="captions.length > 0"
+          :label="t('Search Listing.Label.Closed Captions')"
+          :text-color="mode === 'captions' ? 'var(--text-with-accent-color)' : 'var(--primary-text-color)'"
+          :background-color="mode === 'captions' ? 'var(--accent-color)' : 'var(--card-bg-color)'"
+          @click="mode = 'captions'"
+        />
       </div>
-      <label>
-        <span v-if="mode === 'video'">{{ t('Downloads.Video format') }}</span>
-        <span v-else>{{ t('Downloads.Audio format') }}</span>
+      <label v-if="mode !== 'audio'">
+        <span>{{ mode === 'video' ? t('Downloads.Video format') : t('Search Listing.Label.Closed Captions') }}</span>
         <select v-model="selectedFormatId">
           <option
             v-for="format in availableFormats"
@@ -37,11 +43,23 @@
           </option>
         </select>
       </label>
-      <label v-if="mode === 'video' && adaptiveFormats.length > 0">
-        {{ t('Downloads.Audio format') }}
-        <select v-model="selectedAudioId">
+      <label v-if="mode !== 'captions' && audioTracks.length > 0">
+        {{ t('Downloads.Audio language') }}
+        <select v-model="selectedAudioTrackId">
           <option
-            v-for="format in adaptiveFormats"
+            v-for="track in audioTracks"
+            :key="track.id"
+            :value="track.id"
+          >
+            {{ track.label }}
+          </option>
+        </select>
+      </label>
+      <label v-if="mode === 'audio'">
+        {{ t('Downloads.Audio format') }}
+        <select v-model="selectedFormatId">
+          <option
+            v-for="format in availableFormats"
             :key="format.id"
             :value="format.id"
           >
@@ -49,28 +67,28 @@
           </option>
         </select>
       </label>
-      <label
-        v-if="captions.length > 0"
-        class="subtitleToggle"
-      >
+      <label v-if="mode !== 'captions'">
+        {{ t('Settings.Player Settings.Screenshot.File Name Label') }}
         <input
-          v-model="selectedCaptionIds"
-          type="checkbox"
-          :value="'all'"
+          v-model="fileName"
+          type="text"
         >
-        {{ t('Downloads.Download subtitles') }}
+      </label>
+      <label v-if="mode !== 'captions'">
+        {{ t('Downloads.Threads') }}{{ t('Downloads.LabelSeparator') }} {{ threads }}
+        <input
+          v-model.number="threads"
+          type="range"
+          min="1"
+          max="32"
+          step="1"
+        >
       </label>
       <p
-        v-if="selectedFormat"
-        class="formatDetails"
+        v-if="mode !== 'captions'"
+        class="threadsDescription"
       >
-        {{ selectedFormat.label }}
-        <span
-          v-if="selectedFormat.size"
-          class="formatSize"
-        >
-          {{ selectedFormat.size }}
-        </span>
+        {{ t('Downloads.Threads description') }}
       </p>
       <p
         v-if="error"
@@ -99,6 +117,7 @@ import { useI18n } from 'vue-i18n'
 import FtButton from '../FtButton/FtButton.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import { selectDownloadDirectory, validateDownloadUrls } from '../../helpers/android/downloads'
+import { getAudioFormatsForTrack } from '../../helpers/download-selection.mjs'
 import store from '../../store'
 
 const props = defineProps({
@@ -115,7 +134,9 @@ const { t } = useI18n()
 const mode = ref('video')
 const selectedFormatId = ref('')
 const selectedAudioId = ref('')
-const selectedCaptionIds = ref([])
+const selectedAudioTrackId = ref('')
+const fileName = ref('')
+const threads = ref(1)
 const error = ref('')
 const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideoFormat)
 const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
@@ -134,9 +155,49 @@ const videoFormats = computed(() => {
   return [...byQuality.values()]
 })
 const audioFormats = computed(() => props.formats.filter(format => format.kind === 'audio'))
-const availableFormats = computed(() => mode.value === 'video' ? [...progressiveFormats.value, ...videoFormats.value] : audioFormats.value)
-const adaptiveFormats = computed(() => audioFormats.value.filter(format => format.mimeType === 'audio/mp4'))
+const audioTracks = computed(() => {
+  const tracks = new Map()
+  for (const format of audioFormats.value) {
+    if (!tracks.has(format.audioTrackId)) {
+      tracks.set(format.audioTrackId, {
+        id: format.audioTrackId,
+        label: format.audioTrackLabel || format.language || t('Downloads.Original audio')
+      })
+    }
+  }
+  return [...tracks.values()]
+})
+const selectedAudioFormats = computed(() => getAudioFormatsForTrack(
+  audioFormats.value,
+  selectedAudioTrackId.value,
+  mode.value === 'video' ? 'video/mp4' : '',
+  mode.value === 'audio' ? 'size' : 'bitrate'
+))
+const availableFormats = computed(() => {
+  if (mode.value === 'captions') return props.captions
+  return mode.value === 'video' ? [...progressiveFormats.value, ...videoFormats.value] : selectedAudioFormats.value
+})
 const selectedFormat = computed(() => availableFormats.value.find(format => format.id === selectedFormatId.value))
+
+watch([audioTracks, () => props.visible], () => {
+  const refreshAudio = props.refreshMission?.parts?.find(part => part.kind === 'audio')
+  selectedAudioTrackId.value = audioTracks.value.find(track => refreshAudio && matchesStreamSelection(
+    audioFormats.value.find(format => format.audioTrackId === track.id), refreshAudio
+  ))?.id ?? audioTracks.value[0]?.id ?? ''
+}, { immediate: true })
+
+watch([selectedAudioFormats, () => props.visible], () => {
+  const refreshAudio = props.refreshMission?.parts?.find(part => part.kind === 'audio')
+  selectedAudioId.value = selectedAudioFormats.value.find(format => refreshAudio && matchesStreamSelection(format, refreshAudio))?.id ?? selectedAudioFormats.value[0]?.id ?? ''
+  const selectedAudio = selectedAudioFormats.value.find(format => format.id === selectedAudioId.value)
+  console.warn('[Downloads] Selected audio stream ' + JSON.stringify({
+    trackId: selectedAudioTrackId.value,
+    id: selectedAudio?.id || null,
+    mimeType: selectedAudio?.mimeType || null,
+    bitrate: selectedAudio?.bitrate || null,
+    size: selectedAudio?.size || null
+  }))
+}, { immediate: true })
 
 watch([availableFormats, () => props.visible], () => {
   const preferred = mode.value === 'video' ? defaultVideoFormat.value : defaultAudioFormat.value
@@ -146,9 +207,7 @@ watch([availableFormats, () => props.visible], () => {
     const preferredMime = preferred === 'm4a' ? 'audio/mp4' : preferred
     return format.mimeType === preferredMime || format.container === preferred
   })?.id ?? availableFormats.value[0]?.id ?? ''
-  const refreshAudio = props.refreshMission?.parts?.find(part => part.kind === 'audio')
-  selectedAudioId.value = adaptiveFormats.value.find(format => refreshAudio && matchesStreamSelection(format, refreshAudio))?.id ?? adaptiveFormats.value[0]?.id ?? ''
-  selectedCaptionIds.value = []
+  fileName.value = sanitize(props.video.title)
   error.value = ''
 }, { immediate: true })
 
@@ -159,6 +218,8 @@ function close() {
 function matchesStreamSelection(format, target) {
   if (!target) return false
   if (format.kind !== target.kind || format.mimeType !== target.mimeType) return false
+  if (target.audioTrackId && format.audioTrackId) return target.audioTrackId === format.audioTrackId
+  if (target.language && format.language) return target.language === format.language
   if (target.height && format.height) return target.height === format.height
   if (target.quality && format.quality) return target.quality === format.quality
   return !target.bitrate || !format.bitrate || target.bitrate === format.bitrate
@@ -187,11 +248,14 @@ async function enqueueCandidates(formats, audios, directoryUri) {
           quality: format.quality,
           width: format.width,
           height: format.height,
-          bitrate: format.bitrate
+          bitrate: format.bitrate,
+          language: format.language,
+          audioTrackId: format.audioTrackId
         },
         mimeType: format.mimeType,
         extension,
-        fileName: `${sanitize(props.video.title)}${suffix}.${extension}`,
+        threads: mode.value === 'captions' ? 1 : threads.value,
+        fileName: `${fileName.value || sanitize(props.video.title)}${suffix}.${extension}`,
         directoryUri
       }
       console.warn('[Downloads] Validate candidate ' + JSON.stringify({
@@ -233,6 +297,24 @@ async function submit() {
     const directoryUri = props.refreshMission?.directoryUri || await selectDownloadDirectory()
     if (!directoryUri) return
 
+    if (mode.value === 'captions') {
+      const caption = props.captions.find(item => item.id === selectedFormatId.value)
+      if (!caption) throw new Error('No caption stream found')
+      await store.dispatch('enqueueDownload', {
+        video: props.video,
+        kind: 'subtitle',
+        parts: [{ ...caption, kind: 'subtitle', extension: 'vtt' }],
+        url: caption.url,
+        mimeType: 'text/vtt',
+        extension: 'vtt',
+        fileName: `${sanitize(props.video.title)}.${sanitize(caption.language || 'und')}.vtt`,
+        directoryUri
+      })
+      emit('queued')
+      close()
+      return
+    }
+
     const selectedAudio = audioFormats.value.find(format => format.id === selectedAudioId.value)
     if (mode.value === 'video' && availableFormats.value.some(format => format.kind === 'video') && !selectedAudio) {
       throw new Error(t('Downloads.Audio format is not available'))
@@ -263,26 +345,6 @@ async function submit() {
     }
     if (!videoMissionId) throw enqueueResult.error || new Error('No downloadable stream found')
 
-    if (!props.refreshMission && mode.value === 'video' && selectedCaptionIds.value.length > 0) {
-      for (const caption of props.captions) {
-        try {
-          const language = sanitize(caption.language || 'und')
-          await store.dispatch('enqueueDownload', {
-            video: props.video,
-            kind: 'subtitle',
-            parentId: videoMissionId,
-            parts: [{ ...caption, kind: 'subtitle', extension: 'vtt' }],
-            url: caption.url,
-            mimeType: 'text/vtt',
-            extension: 'vtt',
-            fileName: `${sanitize(props.video.title)}.${language}.vtt`,
-            directoryUri
-          })
-        } catch (subtitleException) {
-          error.value = subtitleException.message
-        }
-      }
-    }
     emit('queued')
     close()
   } catch (exception) {
@@ -309,9 +371,7 @@ function sanitize(value = '') {
 .downloadDialog { display: flex; flex-direction: column; gap: 1rem; min-width: min(30rem, 80vw); }
 .downloadModes, .dialogActions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .downloadDialog label { display: flex; flex-direction: column; gap: .35rem; text-align: start; }
-.downloadDialog .subtitleToggle { flex-direction: row; align-items: center; }
-.downloadDialog select { padding: .5rem; color: var(--text-color); background: var(--card-bg-color); }
-.formatDetails { margin: 0; text-align: start; }
-.formatSize::before { content: ' '; }
+.downloadDialog input, .downloadDialog select { padding: .5rem; color: var(--text-color); background: var(--card-bg-color); }
+.threadsDescription { margin: 0; text-align: start; }
 .error { color: var(--destructive-color); margin: 0; }
 </style>
