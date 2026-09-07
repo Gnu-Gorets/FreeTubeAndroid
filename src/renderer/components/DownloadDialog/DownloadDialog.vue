@@ -99,7 +99,7 @@
       <div class="dialogActions">
         <FtButton
           :label="t('Downloads.Download')"
-          :disabled="!selectedFormat"
+          :disabled="!selectedFormat || submitting"
           @click="submit"
         />
         <FtButton
@@ -117,7 +117,7 @@ import { useI18n } from 'vue-i18n'
 import FtButton from '../FtButton/FtButton.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import { selectDownloadDirectory, validateDownloadUrls } from '../../helpers/android/downloads'
-import { getAudioFormatsForTrack } from '../../helpers/download-selection.mjs'
+import { compareLabels, compareVideoFormats, getAudioFormatsForTrack } from '../../helpers/download-selection.mjs'
 import store from '../../store'
 
 const props = defineProps({
@@ -138,12 +138,13 @@ const selectedAudioTrackId = ref('')
 const fileName = ref('')
 const threads = ref(1)
 const error = ref('')
+const submitting = ref(false)
 const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideoFormat)
 const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
 
 const progressiveFormats = computed(() => props.formats.filter(format => format.kind === 'progressive' && format.hasVideo === (mode.value === 'video')))
 const videoFormats = computed(() => {
-  const formats = props.formats.filter(format => format.kind === 'video' && format.mimeType === 'video/mp4')
+  const formats = props.formats.filter(format => format.kind === 'video' && ['video/mp4', 'video/webm'].includes(format.mimeType))
   const byQuality = new Map()
   for (const format of formats) {
     const key = `${format.height || format.quality || format.id}:${format.container}`
@@ -152,7 +153,7 @@ const videoFormats = computed(() => {
       byQuality.set(key, format)
     }
   }
-  return [...byQuality.values()]
+  return [...byQuality.values()].sort(compareVideoFormats)
 })
 const audioFormats = computed(() => props.formats.filter(format => format.kind === 'audio'))
 const audioTracks = computed(() => {
@@ -165,17 +166,21 @@ const audioTracks = computed(() => {
       })
     }
   }
-  return [...tracks.values()]
+  return [...tracks.values()].sort(compareLabels)
 })
+const videoSelection = computed(() => [...progressiveFormats.value, ...videoFormats.value]
+  .find(format => format.id === selectedFormatId.value))
 const selectedAudioFormats = computed(() => getAudioFormatsForTrack(
   audioFormats.value,
   selectedAudioTrackId.value,
-  mode.value === 'video' ? 'video/mp4' : '',
+  mode.value === 'video' ? videoSelection.value?.mimeType || 'video/mp4' : '',
   mode.value === 'audio' ? 'size' : 'bitrate'
 ))
 const availableFormats = computed(() => {
-  if (mode.value === 'captions') return props.captions
-  return mode.value === 'video' ? [...progressiveFormats.value, ...videoFormats.value] : selectedAudioFormats.value
+  if (mode.value === 'captions') return [...props.captions].sort(compareLabels)
+  return mode.value === 'video'
+    ? [...progressiveFormats.value, ...videoFormats.value].sort(compareVideoFormats)
+    : selectedAudioFormats.value
 })
 const selectedFormat = computed(() => availableFormats.value.find(format => format.id === selectedFormatId.value))
 
@@ -255,7 +260,7 @@ async function enqueueCandidates(formats, audios, directoryUri) {
         mimeType: format.mimeType,
         extension,
         threads: mode.value === 'captions' ? 1 : threads.value,
-        fileName: `${fileName.value || sanitize(props.video.title)}${suffix}.${extension}`,
+        fileName: `${sanitize(fileName.value || props.video.title)}${suffix}.${extension}`,
         directoryUri
       }
       console.warn('[Downloads] Validate candidate ' + JSON.stringify({
@@ -291,7 +296,8 @@ async function enqueueCandidates(formats, audios, directoryUri) {
 }
 
 async function submit() {
-  if (!selectedFormat.value) return
+  if (!selectedFormat.value || submitting.value) return
+  submitting.value = true
   error.value = ''
   try {
     const directoryUri = props.refreshMission?.directoryUri || await selectDownloadDirectory()
@@ -315,7 +321,7 @@ async function submit() {
       return
     }
 
-    const selectedAudio = audioFormats.value.find(format => format.id === selectedAudioId.value)
+    const selectedAudio = selectedAudioFormats.value.find(format => format.id === selectedAudioId.value)
     if (mode.value === 'video' && availableFormats.value.some(format => format.kind === 'video') && !selectedAudio) {
       throw new Error(t('Downloads.Audio format is not available'))
     }
@@ -349,6 +355,8 @@ async function submit() {
     close()
   } catch (exception) {
     error.value = exception.message
+  } finally {
+    submitting.value = false
   }
 }
 
