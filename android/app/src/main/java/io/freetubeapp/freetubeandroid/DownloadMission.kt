@@ -52,8 +52,9 @@ internal class DownloadMission(
                 temporaryFiles[0]
             } else {
                 updateStatus(STATUS_POST_PROCESSING)
-                outputTemporaryFile = File.createTempFile("$id-output-", ".mp4", temporaryFiles[0].parentFile)
-                muxParts(temporaryFiles, outputTemporaryFile)
+                val outputExtension = if (data.optString("mimeType") == "video/webm") ".webm" else ".mp4"
+                outputTemporaryFile = File.createTempFile("$id-output-", outputExtension, temporaryFiles[0].parentFile)
+                muxParts(temporaryFiles, outputTemporaryFile, data.optString("mimeType"))
                 outputTemporaryFile
             }
 
@@ -328,9 +329,14 @@ internal class DownloadMission(
         }
     }
 
-    private fun muxParts(files: List<File>, output: File) {
+    private fun muxParts(files: List<File>, output: File, mimeType: String) {
         val extractors = files.map { file -> MediaExtractor().also { it.setDataSource(file.absolutePath) } }
-        val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val outputFormat = if (mimeType == "video/webm") {
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM
+        } else {
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+        }
+        val muxer = MediaMuxer(output.absolutePath, outputFormat)
         try {
             val videoExtractor = extractors[0]
             val videoTrack = (0 until videoExtractor.trackCount).firstOrNull {
@@ -450,9 +456,11 @@ internal class DownloadMission(
             if (parts.length() == 1) {
                 require(Uri.parse(request.optString("url")).scheme in setOf("http", "https")) { "Unsupported download URL" }
             } else {
-                require(mimeType == "video/mp4") { "Adaptive output must be video/mp4" }
+                require(mimeType in setOf("video/mp4", "video/webm")) { "Adaptive output must be video" }
                 require(parts.getJSONObject(0).optString("kind") == "video") { "Video part must come first" }
                 require(parts.getJSONObject(1).optString("kind") == "audio") { "Audio part is missing" }
+                val expectedAudioMime = if (mimeType == "video/webm") "audio/webm" else "audio/mp4"
+                require(parts.getJSONObject(1).optString("mimeType") == expectedAudioMime) { "Adaptive audio format does not match output" }
             }
             if (mimeType == "text/vtt") {
                 require(parts.length() == 1 && parts.getJSONObject(0).optString("kind") == "subtitle") { "Invalid subtitle mission" }
