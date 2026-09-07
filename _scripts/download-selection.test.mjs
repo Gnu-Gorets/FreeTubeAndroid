@@ -38,6 +38,7 @@ test('video defaults to 1080p MP4, then best MP4, then WebM', () => {
   ]
   assert.equal(selectDefaultVideoFormat(formats).id, 'mp4-1080')
   assert.equal(selectDefaultVideoFormat(formats.filter(format => format.id !== 'mp4-1080')).id, 'mp4-2160')
+  assert.equal(selectDefaultVideoFormat(formats, 'webm').id, 'mp4-1080')
   assert.equal(selectDefaultVideoFormat(formats.filter(format => format.mimeType !== 'video/mp4')).id, 'webm-2160')
 })
 
