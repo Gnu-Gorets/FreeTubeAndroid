@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareAudioFormats, compareAudioSizes, getAudioFormatsForTrack } from '../src/renderer/helpers/download-selection.mjs'
+import { compareAudioFormats, compareAudioSizes, compareLabels, compareVideoFormats, getAudioFormatsForTrack } from '../src/renderer/helpers/download-selection.mjs'
 
 const formats = [
   { id: 'webm-best', kind: 'audio', audioTrackId: 'ru.4', mimeType: 'audio/webm', bitrate: 192000, size: 9_000_000 },
@@ -10,6 +10,26 @@ const formats = [
   { id: 'en-best', kind: 'audio', audioTrackId: 'en-US.10', mimeType: 'audio/mp4', bitrate: 256000, size: 12_000_000 }
 ]
 
+test('labels sort alphabetically', () => {
+  assert.deepEqual([
+    { label: 'German (DE)' },
+    { label: 'english (US)' },
+    { label: 'French (FR)' }
+  ].sort(compareLabels).map(format => format.label), [
+    'english (US)', 'French (FR)', 'German (DE)'
+  ])
+})
+
+test('video sorts MP4 before WebM by resolution', () => {
+  assert.deepEqual([
+    { id: 'webm-1080', mimeType: 'video/webm', height: 1080, size: 20 },
+    { id: 'mp4-720', mimeType: 'video/mp4', height: 720, size: 10 },
+    { id: 'mp4-1080', mimeType: 'video/mp4', height: 1080, size: 15 }
+  ].sort(compareVideoFormats).map(format => format.id), [
+    'mp4-1080', 'mp4-720', 'webm-1080'
+  ])
+})
+
 test('video selects compatible highest bitrate audio', () => {
   assert.deepEqual(
     getAudioFormatsForTrack(formats, 'ru.4', 'video/mp4').map(format => format.id),
@@ -17,10 +37,17 @@ test('video selects compatible highest bitrate audio', () => {
   )
 })
 
+test('video selects matching WebM audio', () => {
+  assert.deepEqual(
+    getAudioFormatsForTrack(formats, 'ru.4', 'video/webm').map(format => format.id),
+    ['webm-small', 'webm-best']
+  )
+})
+
 test('audio mode sorts all containers by size', () => {
   assert.deepEqual(
     getAudioFormatsForTrack(formats, 'ru.4', '', 'size').map(format => format.id),
-    ['webm-best', 'm4a-best', 'm4a-low', 'webm-small']
+    ['m4a-best', 'm4a-low', 'webm-best', 'webm-small']
   )
 })
 
