@@ -99,7 +99,7 @@ class DownloadStorage(
         false
     }
 
-    fun deleteOutput(uri: String): Boolean = contentResolver.delete(Uri.parse(uri), null, null) > 0
+    fun deleteOutput(uri: String): Boolean = DocumentFile.fromSingleUri(context, Uri.parse(uri))?.delete() == true
 
     fun deleteTemporaryFile(file: File): Boolean = !file.exists() || file.delete()
 
