@@ -56,9 +56,7 @@ class MainActivity : Activity() {
                 super.onPageFinished(view, url)
                 pendingDeepLink?.let {
                     dispatchDeepLink(it)
-                    if (it.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false)) {
-                        webView.evaluateJavascript("window.dispatchEvent(new Event('open-downloads'))", null)
-                    }
+                    if (it.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false)) openDownloads()
                     pendingDeepLink = null
                 }
             }
@@ -113,6 +111,13 @@ class MainActivity : Activity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    private fun openDownloads() {
+        webView.evaluateJavascript(
+            "window.__freetubeOpenDownloads = true; window.dispatchEvent(new Event('open-downloads'))",
+            null
+        )
+    }
+
     private fun dispatchDeepLink(intent: Intent?) {
         val url = intent?.data?.toString() ?: return
         val event = JSONObject.quote(url)
@@ -154,9 +159,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) {
-            webView.evaluateJavascript("window.dispatchEvent(new Event('open-downloads'))", null)
-        }
+        if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) openDownloads()
         when (intent?.action) {
             "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
             "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)

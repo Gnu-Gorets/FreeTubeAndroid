@@ -167,7 +167,9 @@ const defaultInvidiousInstance = computed(() => store.getters.getDefaultInvidiou
 const dataReady = ref(false)
 
 function handleOpenDownloads() {
-  if (process.env.IS_ANDROID) router.push('/downloads')
+  if (!process.env.IS_ANDROID) return
+  window.__freetubeOpenDownloads = false
+  router.push('/downloads')
 }
 
 onMounted(async () => {
@@ -176,6 +178,7 @@ onMounted(async () => {
       if (detail?.link) handleYoutubeLink(detail.link)
     })
     window.addEventListener('open-downloads', handleOpenDownloads)
+    if (window.__freetubeOpenDownloads) handleOpenDownloads()
   }
 
   await store.dispatch('grabUserSettings')
