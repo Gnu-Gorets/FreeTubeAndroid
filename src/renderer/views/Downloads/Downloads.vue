@@ -33,24 +33,28 @@
           <h3 :id="`downloads-${section.status}`">
             {{ section.label }}
           </h3>
-          <div
+          <article
             v-for="mission in section.items"
             :key="mission.id"
             class="mission"
+            :aria-labelledby="`download-mission-${mission.id}`"
           >
             <img
               v-if="mission.video?.thumbnail"
               :src="mission.video.thumbnail"
-              :alt="mission.video?.title || mission.title"
+              :alt="mission.video?.title || mission.title || mission.fileName || t('Downloads.Downloads')"
               class="thumbnail"
             >
             <div
               class="missionInfo"
             >
-              <strong dir="auto">{{ mission.video?.title || mission.title }}</strong>
-              <span>{{ t('Downloads.Type') }}{{ t('Downloads.LabelSeparator') }} {{ mission.kind }}</span>
-              <span>{{ t('Downloads.Format') }}{{ t('Downloads.LabelSeparator') }} {{ mission.mimeType }}</span>
-              <span>{{ mission.fileName }}</span>
+              <strong
+                :id="`download-mission-${mission.id}`"
+                dir="auto"
+              >{{ mission.video?.title || mission.title || mission.fileName || t('Downloads.Downloads') }}</strong>
+              <span v-if="mission.kind">{{ t('Downloads.Type') }}{{ t('Downloads.LabelSeparator') }} {{ mission.kind }}</span>
+              <span v-if="mission.mimeType">{{ t('Downloads.Format') }}{{ t('Downloads.LabelSeparator') }} {{ mission.mimeType }}</span>
+              <span v-if="mission.fileName">{{ mission.fileName }}</span>
               <span v-if="isProgress(mission)">
                 {{ formatBytes(mission.downloadedBytes) }} / {{ formatBytes(mission.totalBytes) }}
                 <span v-if="mission.progressPercentage !== undefined">
@@ -116,7 +120,7 @@
                 @click="run('deleteDownload', mission.id)"
               />
             </div>
-          </div>
+          </article>
         </section>
       </template>
     </FtCard>
