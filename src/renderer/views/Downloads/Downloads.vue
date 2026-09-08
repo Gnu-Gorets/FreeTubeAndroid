@@ -53,6 +53,9 @@
               <span>{{ mission.fileName }}</span>
               <span v-if="isProgress(mission)">
                 {{ formatBytes(mission.downloadedBytes) }} / {{ formatBytes(mission.totalBytes) }}
+                <span v-if="mission.progressPercentage !== undefined">
+                  {{ formatPercentage(mission.progressPercentage) }}
+                </span>
                 <span v-if="mission.status === 'downloading' && mission.speedBytesPerSecond">
                   {{ t('Downloads.LabelSeparator') }} {{ formatBytes(mission.speedBytesPerSecond) }}{{ t('Downloads.PerSecond') }}
                 </span>
@@ -199,6 +202,10 @@ function share(uri, mimeType) {
 
 function formatDuration(seconds) {
   return formatDurationAsTimestamp(seconds)
+}
+
+function formatPercentage(value) {
+  return `(${value}%)`
 }
 </script>
 
