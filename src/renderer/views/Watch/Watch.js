@@ -1767,7 +1767,9 @@ export default defineComponent({
     playDownloadedVideo: function (direction) {
       const playlist = this.getDownloadedPlaylist()
       const index = playlist.findIndex(mission => mission.video.id === this.videoId)
-      const next = playlist[index + direction]
+      const next = index < 0
+        ? (direction > 0 ? playlist[0] : playlist.at(-1))
+        : playlist[index + direction]
       if (!next) return
       this.$router.push({
         path: `/watch/${next.video.id}`,
