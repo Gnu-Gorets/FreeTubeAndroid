@@ -23,7 +23,7 @@ RUN apt-get update \
     && rm /tmp/android-commandline-tools.zip \
     && bash -o pipefail -c 'yes | sdkmanager --licenses >/dev/null; status=$?; test "$status" -eq 0 -o "$status" -eq 141' \
     && sdkmanager "platforms;android-36" "build-tools;36.0.0" \
-    && npm install --global pnpm@10 \
+    && npm install --global pnpm@11.3.0 \
     && pnpm config set store-dir /pnpm/store \
     && rm -rf /root/.npm
 
