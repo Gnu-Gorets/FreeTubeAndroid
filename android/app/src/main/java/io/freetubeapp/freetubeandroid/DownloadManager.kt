@@ -196,7 +196,7 @@ internal class DownloadManager(
         synchronized(lock) {
             if (active.containsKey(id)) return false
             val mission = missions.remove(id) ?: return false
-            storage.deleteTemporaryFile(File(mission.optString("temporaryPath")))
+            deleteTemporaryParts(mission)
             mission.optString("outputUri").takeIf { it.isNotBlank() }?.let(storage::deleteOutput)
             persistLocked()
             return true
@@ -210,7 +210,7 @@ internal class DownloadManager(
             if (status == DownloadMission.STATUS_COMPLETED || status == DownloadMission.STATUS_CANCELED) return false
             active[id]?.cancel() ?: run {
                 mission.put("status", DownloadMission.STATUS_CANCELED)
-                storage.deleteTemporaryFile(File(mission.getString("temporaryPath")))
+                deleteTemporaryParts(mission)
                 persistLocked()
             }
             return true
@@ -250,6 +250,18 @@ internal class DownloadManager(
             } ?: return
             if (!startMissionLocked(next.getString("id"))) return
         }
+    }
+
+    private fun deleteTemporaryParts(mission: JSONObject) {
+        mission.optJSONArray("parts")?.let { parts ->
+            for (index in 0 until parts.length()) {
+                parts.optJSONObject(index)?.optString("temporaryPath")
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { storage.deleteTemporaryFile(File(it)) }
+            }
+        }
+        mission.optString("temporaryPath").takeIf(String::isNotBlank)
+            ?.let { storage.deleteTemporaryFile(File(it)) }
     }
 
     private fun migratePartPaths(mission: JSONObject) {
