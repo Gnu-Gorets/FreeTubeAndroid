@@ -52,7 +52,8 @@ class DownloadService : Service() {
             val status = snapshot.optJSONObject(index)?.optString("status")
             if (status == DownloadMission.STATUS_QUEUED ||
                 status == DownloadMission.STATUS_DOWNLOADING ||
-                status == DownloadMission.STATUS_POST_PROCESSING
+                status == DownloadMission.STATUS_POST_PROCESSING ||
+                status == DownloadMission.STATUS_PAUSED
             ) return true
         }
         return false
