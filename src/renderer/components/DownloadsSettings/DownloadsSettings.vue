@@ -94,13 +94,6 @@ const audioFormatValues = ['auto', 'm4a', 'webm']
 const videoFormatNames = ['Auto', 'MP4', 'WebM']
 const audioFormatNames = ['Auto', 'M4A', 'WebM']
 
-function syncNativeSettings() {
-  updateDownloadSettings({
-    wifiOnly: wifiOnly.value,
-    concurrency: concurrency.value,
-  })
-}
-
 function updateWifiOnly(value) {
   store.dispatch('updateDownloadsWifiOnly', value)
   updateDownloadSettings({ wifiOnly: value, concurrency: concurrency.value })
@@ -122,11 +115,10 @@ function resetDirectory() {
   directory.value = null
 }
 
-onMounted(() => {
+onMounted(async () => {
   const native = getDownloadSettings()
-  if (native.wifiOnly !== wifiOnly.value) store.dispatch('updateDownloadsWifiOnly', native.wifiOnly)
-  if (native.concurrency !== concurrency.value) store.dispatch('updateDownloadsConcurrency', native.concurrency)
-  syncNativeSettings()
+  if (native.wifiOnly !== wifiOnly.value) await store.dispatch('updateDownloadsWifiOnly', native.wifiOnly)
+  if (native.concurrency !== concurrency.value) await store.dispatch('updateDownloadsConcurrency', native.concurrency)
 })
 </script>
 
