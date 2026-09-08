@@ -12,7 +12,14 @@ export function compareLabels(left, right) {
   return String(left.label || '').localeCompare(String(right.label || ''), undefined, { sensitivity: 'base' })
 }
 
-export function selectDefaultVideoFormat(formats) {
+export function selectDefaultVideoFormat(formats, preferred = 'auto') {
+  const preferredMime = preferred === 'webm' ? 'video/webm' : 'video/mp4'
+  const preferredFormats = formats.filter(format => format.mimeType === preferredMime)
+  if (preferredFormats.length) {
+    return preferred === 'webm'
+      ? preferredFormats[0]
+      : preferredFormats.find(format => format.height === 1080) || preferredFormats[0]
+  }
   const mp4Formats = formats.filter(format => format.mimeType === 'video/mp4')
   return mp4Formats.find(format => format.height === 1080) || mp4Formats[0] || formats.find(format => format.mimeType === 'video/webm') || formats[0]
 }
