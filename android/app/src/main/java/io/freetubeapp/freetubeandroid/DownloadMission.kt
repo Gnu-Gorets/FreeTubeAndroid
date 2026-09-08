@@ -34,7 +34,11 @@ internal class DownloadMission(
         if (status != STATUS_QUEUED && status != STATUS_PAUSED) return
         pauseRequested = false
         cancelRequested = false
+        progressStartedAt = System.currentTimeMillis()
+        progressStartBytes = aggregateDownloaded()
+        clearRateMetrics()
         updateStatus(STATUS_DOWNLOADING)
+        updateProgressMetrics()
 
         val parts = data.getJSONArray("parts")
         val temporaryFiles = (0 until parts.length()).map { index ->
@@ -141,7 +145,7 @@ internal class DownloadMission(
         synchronized(data) {
             part.put("downloadedBytes", segments.sumOf(File::length))
             part.put("totalBytes", size)
-            data.put("downloadedBytes", aggregateDownloaded())
+            updateProgressMetrics()
             onChanged(data)
         }
         val executor = Executors.newFixedThreadPool(threads)
@@ -164,10 +168,7 @@ internal class DownloadMission(
             }
             synchronized(data) {
                 part.put("downloadedBytes", size)
-                data.put("downloadedBytes", aggregateDownloaded())
-                data.put("totalBytes", data.getJSONArray("parts").length().let {
-                    (0 until it).sumOf { index -> data.getJSONArray("parts").getJSONObject(index).optLong("totalBytes", -1L) }
-                })
+                updateProgressMetrics()
                 onChanged(data)
             }
         } finally {
@@ -244,7 +245,7 @@ internal class DownloadMission(
                         output.write(buffer, 0, count)
                         synchronized(data) {
                             part.put("downloadedBytes", part.optLong("downloadedBytes", 0L) + count)
-                            data.put("downloadedBytes", aggregateDownloaded())
+                            updateProgressMetrics()
                             onChanged(data)
                         }
                     }
@@ -302,6 +303,9 @@ internal class DownloadMission(
             if (!append && offset > 0) temporaryFile.delete()
             val total = if (http.contentLengthLong >= 0) start + http.contentLengthLong else -1L
             part.put("totalBytes", total)
+            part.put("downloadedBytes", start)
+            updateProgressMetrics()
+            onChanged(data)
             if (total >= 0 && !storage.hasTemporarySpace(temporaryFile, total - start)) {
                 throw DownloadException("Not enough storage space", retryable = false)
             }
@@ -396,24 +400,42 @@ internal class DownloadMission(
     }
 
     private fun updateProgressMetrics() {
+        val parts = data.getJSONArray("parts")
         val downloaded = aggregateDownloaded()
-        val total = (0 until data.getJSONArray("parts").length()).map {
-            data.getJSONArray("parts").getJSONObject(it).optLong("totalBytes", -1L)
-        }.takeIf { values -> values.all { it >= 0 } }?.sum() ?: -1L
+        val totals = (0 until parts.length()).map { parts.getJSONObject(it).optLong("totalBytes", -1L) }
+        val total = totals.takeIf { values -> values.all { it >= 0L } }?.sum() ?: -1L
         data.put("downloadedBytes", downloaded)
         data.put("totalBytes", total)
-        val elapsedSeconds = (System.currentTimeMillis() - progressStartedAt) / 1000.0
-        if (elapsedSeconds > 0) {
-            val speed = (downloaded - progressStartBytes) / elapsedSeconds
-            if (speed > 0) {
-                data.put("speedBytesPerSecond", speed.toLong())
-                if (total >= downloaded) data.put("etaSeconds", ((total - downloaded) / speed).toLong())
-            }
+        if (total > 0L) {
+            data.put("progressPercentage", ((downloaded.toDouble() / total) * 100.0).toInt().coerceIn(0, 100))
+        } else {
+            data.remove("progressPercentage")
         }
+
+        val elapsedSeconds = (System.currentTimeMillis() - progressStartedAt) / 1000.0
+        val byteDelta = downloaded - progressStartBytes
+        if (elapsedSeconds > 0.0 && byteDelta > 0L) {
+            val speed = byteDelta / elapsedSeconds
+            data.put("speedBytesPerSecond", speed.toLong())
+            if (total >= downloaded) {
+                data.put("etaSeconds", ((total - downloaded) / speed).toLong())
+            } else {
+                data.remove("etaSeconds")
+            }
+        } else {
+            data.remove("speedBytesPerSecond")
+            data.remove("etaSeconds")
+        }
+    }
+
+    private fun clearRateMetrics() {
+        data.remove("speedBytesPerSecond")
+        data.remove("etaSeconds")
     }
 
     private fun updateStatus(value: String) {
         data.put("status", value)
+        if (value != STATUS_DOWNLOADING) clearRateMetrics()
         onChanged(data)
     }
 
