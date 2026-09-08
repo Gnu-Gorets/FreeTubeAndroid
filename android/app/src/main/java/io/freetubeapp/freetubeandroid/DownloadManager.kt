@@ -52,7 +52,7 @@ internal class DownloadManager(
                         if (mission.optString("status") == DownloadMission.STATUS_DOWNLOADING ||
                             mission.optString("status") == DownloadMission.STATUS_POST_PROCESSING
                         ) {
-                            mission.put("status", DownloadMission.STATUS_PAUSED)
+                            mission.put("status", DownloadMission.STATUS_QUEUED)
                         }
                         if (mission.optString("status") == DownloadMission.STATUS_COMPLETED &&
                             !storage.outputExists(mission.optString("outputUri"))
