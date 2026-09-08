@@ -208,7 +208,7 @@ watch([selectedAudioFormats, () => props.visible], () => {
 watch([availableFormats, () => props.visible], () => {
   const preferred = mode.value === 'video' ? defaultVideoFormat.value : defaultAudioFormat.value
   const defaultFormat = mode.value === 'video'
-    ? selectDefaultVideoFormat(availableFormats.value)
+    ? selectDefaultVideoFormat(availableFormats.value, preferred)
     : availableFormats.value.find(format => {
         if (preferred === 'auto') return false
         const preferredMime = preferred === 'm4a' ? 'audio/mp4' : preferred
