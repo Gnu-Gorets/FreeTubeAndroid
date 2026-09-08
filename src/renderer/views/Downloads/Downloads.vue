@@ -53,11 +53,11 @@
               <span>{{ mission.fileName }}</span>
               <span v-if="isProgress(mission)">
                 {{ formatBytes(mission.downloadedBytes) }} / {{ formatBytes(mission.totalBytes) }}
-                <span v-if="mission.speedBytesPerSecond">
-                  {{ formatBytes(mission.speedBytesPerSecond) }}{{ t('Downloads.PerSecond') }}
+                <span v-if="mission.status === 'downloading' && mission.speedBytesPerSecond">
+                  {{ t('Downloads.LabelSeparator') }} {{ formatBytes(mission.speedBytesPerSecond) }}{{ t('Downloads.PerSecond') }}
                 </span>
-                <span v-if="mission.etaSeconds !== undefined">
-                  {{ t('Downloads.ETA') }}{{ t('Downloads.LabelSeparator') }} {{ formatDuration(mission.etaSeconds) }}
+                <span v-if="mission.status === 'downloading' && mission.etaSeconds !== undefined">
+                  {{ t('Downloads.LabelSeparator') }} {{ t('Downloads.ETA') }}{{ t('Downloads.LabelSeparator') }} {{ formatDuration(mission.etaSeconds) }}
                 </span>
               </span>
               <span
