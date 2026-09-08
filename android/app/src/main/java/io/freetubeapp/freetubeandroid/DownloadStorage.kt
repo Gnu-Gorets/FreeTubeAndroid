@@ -101,7 +101,11 @@ class DownloadStorage(
 
     fun deleteOutput(uri: String): Boolean = DocumentFile.fromSingleUri(context, Uri.parse(uri))?.delete() == true
 
-    fun deleteTemporaryFile(file: File): Boolean = !file.exists() || file.delete()
+    fun deleteTemporaryFile(file: File): Boolean {
+        val deleted = !file.exists() || file.delete()
+        val ranges = file.parentFile?.listFiles { _, name -> name.startsWith("${file.name}.range-") }.orEmpty()
+        return ranges.fold(deleted) { result, range -> (!range.exists() || range.delete()) && result }
+    }
 
     fun deleteOrphanTemporaryFiles(referencedPaths: Set<String>) {
         temporaryDirectory.listFiles()?.forEach { file ->
