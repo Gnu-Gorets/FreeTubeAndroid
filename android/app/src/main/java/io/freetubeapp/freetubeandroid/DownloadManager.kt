@@ -16,7 +16,7 @@ internal class DownloadManager(
     private val onChanged: (JSONArray) -> Unit = {}
 ) {
     private val storage = DownloadStorage(context)
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val executor: ExecutorService = Executors.newFixedThreadPool(MAX_CONCURRENCY)
     private val missions = LinkedHashMap<String, JSONObject>()
     private val active = HashMap<String, DownloadMission>()
     private val listeners = CopyOnWriteArrayList<(JSONArray) -> Unit>()
