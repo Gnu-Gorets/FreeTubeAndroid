@@ -61,7 +61,7 @@
                   {{ formatPercentage(mission.progressPercentage) }}
                 </span>
                 <span v-if="mission.status === 'downloading' && mission.speedBytesPerSecond">
-                  {{ t('Downloads.LabelSeparator') }} {{ formatBytes(mission.speedBytesPerSecond) }}{{ t('Downloads.PerSecond') }}
+                  {{ t('Downloads.LabelSeparator') }} {{ formatDownloadSpeed(mission.speedBytesPerSecond) }}{{ t('Downloads.PerSecond') }}
                 </span>
                 <span v-if="mission.status === 'downloading' && mission.etaSeconds !== undefined">
                   {{ t('Downloads.LabelSeparator') }} {{ t('Downloads.ETA') }}{{ t('Downloads.LabelSeparator') }} {{ formatDuration(mission.etaSeconds) }}
@@ -136,6 +136,7 @@ import FtButton from '../../components/FtButton/FtButton.vue'
 import FtCard from '../../components/ft-card/ft-card.vue'
 import store from '../../store'
 import { formatDurationAsTimestamp, openExternalLink } from '../../helpers/utils'
+import { formatDownloadSpeed } from '../../helpers/download-size.mjs'
 import { openDownload, shareDownload } from '../../helpers/android/downloads'
 
 const { t } = useI18n()
