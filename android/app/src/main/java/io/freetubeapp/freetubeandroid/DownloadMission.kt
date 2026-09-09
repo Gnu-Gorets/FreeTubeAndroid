@@ -15,6 +15,7 @@ import java.net.URL
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 internal class DownloadMission(
     private val storage: DownloadStorage,
@@ -140,9 +141,9 @@ internal class DownloadMission(
         if (threads == 1) return downloadWithRetries(temporaryFile, part)
         val size = probeSize(part).takeIf { it > 0 } ?: part.optLong("totalBytes", -1L)
         if (size <= 0) return downloadWithRetries(temporaryFile, part)
-        val ranges = (0 until threads).map { index ->
-            val start = size * index / threads
-            val end = size * (index + 1) / threads - 1
+        val ranges = (0 until ((size + BLOCK_SIZE - 1) / BLOCK_SIZE).toInt()).map { index ->
+            val start = index.toLong() * BLOCK_SIZE
+            val end = minOf(size, start + BLOCK_SIZE) - 1
             start..end
         }
         val segments = ranges.mapIndexed { index, _ -> File("${temporaryFile.absolutePath}.range-$index") }
@@ -154,14 +155,24 @@ internal class DownloadMission(
         }
         val executor = Executors.newFixedThreadPool(threads)
         try {
-            val futures = ranges.mapIndexed { index, range ->
-                executor.submit { downloadRangeWithRetries(segments[index], part, range.first.toLong(), range.last.toLong()) }
+            val nextBlock = AtomicInteger(0)
+            val futures = (0 until minOf(threads, ranges.size)).map { worker ->
+                executor.submit {
+                    while (true) {
+                        val index = nextBlock.getAndIncrement()
+                        if (index >= ranges.size) return@submit
+                        val range = ranges[index]
+                        Log.i("FreeTubeDownloads", "block worker=$worker index=$index start=${range.first} end=${range.last}")
+                        downloadRangeWithRetries(segments[index], part, range.first.toLong(), range.last.toLong())
+                    }
+                }
             }
             try {
                 futures.forEach { it.get() }
             } catch (error: Exception) {
                 futures.forEach { it.cancel(true) }
                 if (error.cause is RangeUnsupported) {
+                    connections.forEach(HttpURLConnection::disconnect)
                     segments.forEach(File::delete)
                     return downloadWithRetries(temporaryFile, part)
                 }
@@ -466,6 +477,7 @@ internal class DownloadMission(
         const val STATUS_CANCELED = "canceled"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
+        private const val BLOCK_SIZE = 512 * 1024L
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_RETRIES = 3
         private const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
