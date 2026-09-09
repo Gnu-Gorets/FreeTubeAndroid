@@ -8,7 +8,7 @@ Android build uses Docker for Node.js, pnpm, JDK, and Android SDK. Host `adb` is
 docker compose build android-build
 docker compose run --rm android-build bash -lc \
   'pnpm install --frozen-lockfile && \
-   pnpm run pack:android:dev && \
+   pnpm run pack:android:core && \
    cd android && ./gradlew assembleDebug'
 ```
 
