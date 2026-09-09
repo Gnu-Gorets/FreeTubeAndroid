@@ -15,8 +15,8 @@
     <FtSelect
       :placeholder="t('Downloads.Concurrent downloads')"
       :value="String(concurrency)"
-      :select-names="['1', '2', '3']"
-      :select-values="['1', '2', '3']"
+      :select-names="['1', '2', '3', '4', '5']"
+      :select-values="['1', '2', '3', '4', '5']"
       :icon="['fas', 'download']"
       @change="updateConcurrency"
     />
