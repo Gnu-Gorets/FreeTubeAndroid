@@ -351,6 +351,9 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun getDownloadDirectory(): String = DownloadStorage.DEFAULT_DIRECTORY
+
+    @JavascriptInterface
     fun revokeDownloadDirectory(tree: String): Boolean {
         return try {
             revokePermissionForTree(tree)
