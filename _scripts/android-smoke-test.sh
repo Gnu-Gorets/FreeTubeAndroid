@@ -30,7 +30,7 @@ Options:
   --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        export, data-directory-cancel, data-directory-move-reset,
+                        export, downloads-settings, data-directory-cancel, data-directory-move-reset,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
                         fullscreen-fit-screen
   --keep-data           do not clear app data (default)
@@ -574,6 +574,27 @@ audio_focus() {
   no_runtime_errors
 }
 
+open_downloads_settings() {
+  start_app || return 1
+  adb_shell input tap 615 1540
+  sleep 1
+  adb_shell input keyevent KEYCODE_BACK
+  sleep 1
+  adb_shell input tap 615 1540
+  sleep 3
+  # Downloads follows Data in Android Settings menu at 100% UI scale.
+  adb_shell input tap 300 1120
+  sleep 3
+}
+
+downloads_settings() {
+  open_downloads_settings || return 1
+  dump_ui downloads-settings
+  screenshot downloads-settings
+  # WebView content is not exposed to uiautomator; screenshot is the assertion artifact.
+  test -s "$ARTIFACT_DIR/downloads-settings.png"
+}
+
 open_data_settings() {
   start_app || return 1
   # Reopen Settings after cold start or Activity recreation. First close any stale modal.
@@ -699,6 +720,7 @@ run_unlocked_suite() {
   run_test audio-focus audio_focus
   run_test persistence persistence
   run_test export export_data
+  run_test downloads-settings downloads_settings
   run_test data-directory-cancel data_directory_cancel
   run_test data-directory-move-reset data_directory_move_reset
   run_test cleanup cleanup
@@ -758,6 +780,7 @@ case "$TEST" in
   audio-focus) run_test audio-focus audio_focus ;;
   persistence) run_test persistence persistence ;;
   export) run_test export export_data ;;
+  downloads-settings) run_test downloads-settings downloads_settings ;;
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
   cleanup) run_test cleanup cleanup ;;
