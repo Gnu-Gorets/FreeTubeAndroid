@@ -40,6 +40,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
+        webView.setBackgroundColor(Color.rgb(16, 16, 16))
         ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
             val safeInsets = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
@@ -97,9 +98,6 @@ class MainActivity : Activity() {
         window.attributes.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         webView.settings.javaScriptEnabled = true
-        webView.settings.userAgentString = webView.settings.userAgentString
-            .replace(Regex("Mozilla/5.0 \\([^)]*\\)"), "Mozilla/5.0 (X11; Linux x86_64)")
-            .replace("Mobile Safari", "Safari")
         webView.settings.domStorageEnabled = true
         @Suppress("DEPRECATION")
         webView.settings.allowUniversalAccessFromFileURLs = true

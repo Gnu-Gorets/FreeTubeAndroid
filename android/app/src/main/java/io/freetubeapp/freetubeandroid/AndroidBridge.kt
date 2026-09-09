@@ -634,15 +634,15 @@ class AndroidBridge(
     @JavascriptInterface
     fun setScale(scale: Int) {
         activity.runOnUiThread {
-            if (scale == 100) {
-                if (appliedScale != null) {
-                    mainWebView.setInitialScale(0)
-                    appliedScale = null
-                    mainWebView.reload()
-                }
-            } else if (appliedScale != scale) {
-                mainWebView.setInitialScale(scale)
-                appliedScale = scale
+            val initialScale = if (scale == 0) {
+                0
+            } else {
+                (activity.resources.displayMetrics.density * scale).toInt()
+            }
+            val appliedValue = if (initialScale == 0) null else initialScale
+            if (appliedScale != appliedValue) {
+                mainWebView.setInitialScale(initialScale)
+                appliedScale = appliedValue
                 mainWebView.reload()
             }
         }
