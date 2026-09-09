@@ -134,7 +134,7 @@ internal class DownloadMission(
     private fun downloadPart(temporaryFile: File, part: JSONObject) {
         val threads = data.optInt("threads", 1).coerceIn(1, MAX_THREADS)
         if (threads == 1) return downloadWithRetries(temporaryFile, part)
-        val size = probeSize(part)
+        val size = probeSize(part).takeIf { it > 0 } ?: part.optLong("totalBytes", -1L)
         if (size <= 0) return downloadWithRetries(temporaryFile, part)
         val ranges = (0 until threads).map { index ->
             val start = size * index / threads
@@ -301,7 +301,7 @@ internal class DownloadMission(
             val append = offset > 0 && responseCode == HttpURLConnection.HTTP_PARTIAL
             val start = if (append) offset else 0L
             if (!append && offset > 0) temporaryFile.delete()
-            val total = if (http.contentLengthLong >= 0) start + http.contentLengthLong else -1L
+            val total = if (http.contentLengthLong >= 0) start + http.contentLengthLong else part.optLong("totalBytes", -1L)
             part.put("totalBytes", total)
             part.put("downloadedBytes", start)
             updateProgressMetrics()
