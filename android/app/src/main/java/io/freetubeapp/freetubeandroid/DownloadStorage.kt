@@ -1,9 +1,12 @@
 package io.freetubeapp.freetubeandroid
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import java.io.File
@@ -53,6 +56,9 @@ class DownloadStorage(
         mimeType: String,
         onProgress: (copiedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> }
     ): String {
+        if (treeUri == DEFAULT_DIRECTORY) {
+            return publishToMediaStore(temporaryFile, requestedFileName, mimeType, onProgress)
+        }
         val directory = writableDirectory(treeUri)
         val finalName = nextAvailableName(directory, sanitizeFileName(requestedFileName))
         val partialName = ".$finalName.part"
@@ -94,12 +100,23 @@ class DownloadStorage(
     }
 
     fun outputExists(uri: String): Boolean = try {
-        DocumentFile.fromSingleUri(context, Uri.parse(uri))?.exists() == true
+        val parsed = Uri.parse(uri)
+        if (parsed.scheme == "content") {
+            contentResolver.query(parsed, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { it.count > 0 } == true
+        } else {
+            DocumentFile.fromSingleUri(context, parsed)?.exists() == true
+        }
     } catch (_: Exception) {
         false
     }
 
-    fun deleteOutput(uri: String): Boolean = DocumentFile.fromSingleUri(context, Uri.parse(uri))?.delete() == true
+    fun deleteOutput(uri: String): Boolean = try {
+        val parsed = Uri.parse(uri)
+        if (parsed.scheme == "content") contentResolver.delete(parsed, null, null) > 0
+        else DocumentFile.fromSingleUri(context, parsed)?.delete() == true
+    } catch (_: Exception) {
+        false
+    }
 
     fun deleteTemporaryFile(file: File): Boolean {
         val deleted = !file.exists() || file.delete()
@@ -130,6 +147,55 @@ class DownloadStorage(
             temporaryMetadata.delete()
             throw IllegalStateException("Unable to commit downloads metadata")
         }
+    }
+
+    private fun publishToMediaStore(
+        temporaryFile: File,
+        requestedFileName: String,
+        mimeType: String,
+        onProgress: (copiedBytes: Long, totalBytes: Long) -> Unit
+    ): String {
+        val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val fileName = nextAvailableMediaStoreName(collection, sanitizeFileName(requestedFileName))
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Freetube/")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = contentResolver.insert(collection, values)
+            ?: throw IllegalStateException("Unable to create Downloads/Freetube output")
+        try {
+            contentResolver.openOutputStream(uri, "w")?.use { output ->
+                temporaryFile.inputStream().use { input ->
+                    copy(input, output, temporaryFile.length(), onProgress)
+                }
+            } ?: throw IllegalStateException("Unable to open Downloads/Freetube output stream")
+            contentResolver.update(uri, ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }, null, null)
+            temporaryFile.delete()
+            return uri.toString()
+        } catch (error: Exception) {
+            contentResolver.delete(uri, null, null)
+            throw error
+        }
+    }
+
+    private fun nextAvailableMediaStoreName(collection: Uri, requestedName: String): String {
+        if (!mediaStoreNameExists(collection, requestedName)) return requestedName
+        val dot = requestedName.lastIndexOf('.')
+        val base = if (dot > 0) requestedName.substring(0, dot) else requestedName
+        val extension = if (dot > 0) requestedName.substring(dot) else ""
+        var index = 2
+        while (mediaStoreNameExists(collection, "$base ($index)$extension")) index++
+        return "$base ($index)$extension"
+    }
+
+    private fun mediaStoreNameExists(collection: Uri, name: String): Boolean {
+        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?"
+        val args = arrayOf(name, "${Environment.DIRECTORY_DOWNLOADS}/Freetube/")
+        return contentResolver.query(collection, arrayOf(MediaStore.MediaColumns._ID), selection, args, null)?.use { it.moveToFirst() } == true
     }
 
     private fun writableDirectory(treeUri: String): DocumentFile {
@@ -168,6 +234,8 @@ class DownloadStorage(
     }
 
     companion object {
+        const val DEFAULT_DIRECTORY = "mediastore://downloads/freetube"
+
         private fun safePathComponent(value: String): String = value
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
             .trim('_')

@@ -10,6 +10,7 @@ export async function selectDownloadDirectory(force = false) {
   if (!force) {
     const saved = localStorage.getItem(DOWNLOAD_DIRECTORY_KEY)
     if (saved && android.isTreeAccessible(saved)) return saved
+    if (typeof android.getDownloadDirectory === 'function') return android.getDownloadDirectory()
   }
   const uri = await awaitAsyncResult(android.requestDirectoryAccessDialog())
   if (uri === 'USER_CANCELED') return null
@@ -18,7 +19,8 @@ export async function selectDownloadDirectory(force = false) {
 }
 
 export function getDownloadDirectory() {
-  return isAndroid ? localStorage.getItem(DOWNLOAD_DIRECTORY_KEY) : null
+  if (!isAndroid) return null
+  return localStorage.getItem(DOWNLOAD_DIRECTORY_KEY) || (typeof android.getDownloadDirectory === 'function' ? android.getDownloadDirectory() : null)
 }
 
 export function resetDownloadDirectory() {
