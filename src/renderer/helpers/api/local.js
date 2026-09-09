@@ -571,7 +571,7 @@ function buildSessionFromYtConfig(ytConfig, fetchFunc) {
  *   adEndTimeUnixMs: number
  * }>}
  */
-export async function getLocalVideoInfo(id) {
+export async function getLocalVideoInfo(id, allowAlternateDownloadFallback = false) {
   let responseTime
   let totalAdTimeMilliseconds = 0
 
@@ -764,8 +764,7 @@ export async function getLocalVideoInfo(id) {
     info.storyboards = trailerInfo.storyboards
   }
 
-  const hasDirectDownloadFormats = info.streaming_data?.formats?.some(format => Boolean(format.url)) ||
-    info.streaming_data?.adaptive_formats?.some(format => Boolean(format.url))
+  const hasDirectDownloadFormats = info.streaming_data?.adaptive_formats?.some(format => Boolean(format.url))
 
   console.warn('[Downloads] Local source response ' + JSON.stringify({
     formats: info.streaming_data?.formats?.length || 0,
@@ -774,7 +773,7 @@ export async function getLocalVideoInfo(id) {
     hasSabr: Boolean(info.streaming_data?.server_abr_streaming_url)
   }))
 
-  if (info.streaming_data && !hasDirectDownloadFormats) {
+  if (allowAlternateDownloadFallback && info.streaming_data && !hasDirectDownloadFormats) {
     for (const [clientName, clientType] of [['VISIONOS', ClientType.VISIONOS], ['ANDROID', ClientType.ANDROID], ['IOS', ClientType.IOS]]) {
       try {
         const alternate = await createInnertube({ clientType })
