@@ -118,6 +118,7 @@ import FtButton from '../FtButton/FtButton.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import { selectDownloadDirectory, validateDownloadUrls } from '../../helpers/android/downloads'
 import { compareLabels, compareVideoFormats, getAudioFormatsForTrack, selectDefaultAudioTrack, selectDefaultVideoFormat } from '../../helpers/download-selection.mjs'
+import { normalizeDownloadSize } from '../../helpers/download-size.mjs'
 import store from '../../store'
 
 const props = defineProps({
@@ -241,8 +242,8 @@ async function enqueueCandidates(formats, audios, directoryUri) {
     if (mode.value === 'video' && format.kind === 'video' && audios.length === 0) continue
     const audioCandidates = mode.value === 'video' && format.kind === 'video' ? audios : [null]
     for (const audio of audioCandidates) {
-      const parts = [{ ...format }]
-      if (audio) parts.push({ ...audio })
+      const parts = [{ ...format, totalBytes: normalizeDownloadSize(format.size) }]
+      if (audio) parts.push({ ...audio, totalBytes: normalizeDownloadSize(audio.size) })
       const extension = extensionFor(format.mimeType)
       const suffix = mode.value === 'audio' ? ' - audio' : ''
       const request = {
