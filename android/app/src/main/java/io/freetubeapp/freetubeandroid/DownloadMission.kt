@@ -241,7 +241,7 @@ internal class DownloadMission(
             if (!contentRange.startsWith("bytes $rangeStart-$end/")) throw RangeUnsupported("Invalid Content-Range")
             FileOutputStream(file, offset > 0).use { output ->
                 http.inputStream.use { input ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
                     while (true) {
                         checkInterrupted()
                         val count = input.read(buffer)
@@ -319,7 +319,7 @@ internal class DownloadMission(
             progressStartBytes = aggregateDownloaded()
             FileOutputStream(temporaryFile, append).use { output ->
                 http.inputStream.use { input ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
                     var downloaded = start
                     while (true) {
                         checkInterrupted()
@@ -465,6 +465,7 @@ internal class DownloadMission(
         const val STATUS_MISSING = "missing"
         const val STATUS_CANCELED = "canceled"
         private const val CONNECT_TIMEOUT_MS = 15_000
+        private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_RETRIES = 3
         private const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
