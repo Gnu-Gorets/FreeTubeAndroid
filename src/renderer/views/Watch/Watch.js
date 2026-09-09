@@ -656,9 +656,7 @@ export default defineComponent({
         downloadFormats: this.downloadFormats.length,
         videoId: this.videoId
       }))
-      this.refreshDownloadFormats()
-        .catch(error => console.warn('[Downloads] Refresh formats failed', error))
-        .finally(() => { this.downloadDialogVisible = true })
+      this.downloadDialogVisible = true
     },
 
     refreshDownloadFormats: async function () {
@@ -681,7 +679,7 @@ export default defineComponent({
       }
 
       try {
-        const videoInfo = await getLocalVideoInfo(this.videoId)
+        const videoInfo = await getLocalVideoInfo(this.videoId, true)
         const { info: result, poToken, clientInfo, adEndTimeUnixMs } = videoInfo
 
         const playabilityStatus = result.playability_status
