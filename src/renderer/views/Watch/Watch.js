@@ -77,6 +77,7 @@ function normalizeVideoQuality(value) {
 }
 
 function formatDownloadSize(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return ''
   const bytes = Number(value)
   if (!Number.isFinite(bytes) || bytes < 0) return ''
   if (bytes < 1024) return `${bytes} B`
@@ -94,7 +95,7 @@ function formatDownloadSize(value) {
 function normalizeDownloadFormat(format, kind, index) {
   const mimeType = format.mime_type || format.mimeType || format.type || ''
   const [container, codecs] = mimeType.split(';')
-  const size = format.content_length || format.clen || format.size || ''
+  const size = [format.content_length, format.clen].find(value => Number(value) > 0) || ''
   const hasVideo = container.startsWith('video/')
   const hasAudio = container.startsWith('audio/')
   const language = format.language || format.audio_track?.id?.split('.')[0] || ''
@@ -684,12 +685,14 @@ export default defineComponent({
         downloadFormats: this.downloadFormats.length,
         videoId: this.videoId
       }))
-      this.downloadDialogVisible = true
+      this.refreshDownloadFormats()
+        .catch(error => console.warn('[Downloads] Refresh formats failed', error))
+        .finally(() => { this.downloadDialogVisible = true })
     },
 
     refreshDownloadFormats: async function () {
       console.warn('[Downloads] Refresh download formats ' + JSON.stringify({ videoId: this.videoId }))
-      const { info } = await getLocalVideoInfo(this.videoId)
+      const { info } = await getLocalVideoInfo(this.videoId, true)
       const streamingData = info.streaming_data
       if (!streamingData) return []
       this.downloadFormats = streamingData.formats
