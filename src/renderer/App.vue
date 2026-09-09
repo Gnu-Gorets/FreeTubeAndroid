@@ -216,6 +216,8 @@ onMounted(async () => {
     }
   })
 
+  dataReady.value = true
+
   store.dispatch('grabAllProfiles', t('Profile.All Channels')).then(() => {
     store.dispatch('grabHistory')
     store.dispatch('grabAllPlaylists')
@@ -229,8 +231,6 @@ onMounted(async () => {
       enableOpenUrl()
       store.dispatch('getExternalPlayerCmdArgumentsData')
     }
-
-    dataReady.value = true
 
     setTimeout(() => {
       checkForNewUpdates()
