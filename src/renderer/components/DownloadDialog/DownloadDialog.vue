@@ -74,22 +74,6 @@
           type="text"
         >
       </label>
-      <label v-if="mode !== 'captions'">
-        {{ t('Downloads.Threads') }}{{ t('Downloads.LabelSeparator') }} {{ threads }}
-        <input
-          v-model.number="threads"
-          type="range"
-          min="1"
-          max="32"
-          step="1"
-        >
-      </label>
-      <p
-        v-if="mode !== 'captions'"
-        class="threadsDescription"
-      >
-        {{ t('Downloads.Threads description') }}
-      </p>
       <p
         v-if="error"
         class="error"
@@ -137,7 +121,6 @@ const selectedFormatId = ref('')
 const selectedAudioId = ref('')
 const selectedAudioTrackId = ref('')
 const fileName = ref('')
-const threads = ref(1)
 const error = ref('')
 const submitting = ref(false)
 const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideoFormat)
@@ -265,7 +248,7 @@ async function enqueueCandidates(formats, audios, directoryUri) {
         },
         mimeType: format.mimeType,
         extension,
-        threads: mode.value === 'captions' ? 1 : threads.value,
+        threads: 8,
         fileName: `${sanitize(fileName.value || props.video.title)}${suffix}.${extension}`,
         directoryUri
       }
@@ -386,6 +369,5 @@ function sanitize(value = '') {
 .downloadModes, .dialogActions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .downloadDialog label { display: flex; flex-direction: column; gap: .35rem; text-align: start; }
 .downloadDialog input, .downloadDialog select { padding: .5rem; color: var(--text-color); background: var(--card-bg-color); }
-.threadsDescription { margin: 0; text-align: start; }
 .error { color: var(--destructive-color); margin: 0; }
 </style>

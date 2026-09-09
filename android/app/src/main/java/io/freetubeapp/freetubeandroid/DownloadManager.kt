@@ -304,7 +304,9 @@ internal class DownloadManager(
 
     private fun snapshotLocked(): JSONArray {
         val snapshot = JSONArray()
-        missions.values.forEach { snapshot.put(JSONObject(it.toString())) }
+        missions.values.forEach { mission ->
+            synchronized(mission) { snapshot.put(JSONObject(mission.toString())) }
+        }
         return snapshot
     }
 }

@@ -26,6 +26,7 @@ internal class DownloadMission(
     private val connections = ConcurrentHashMap.newKeySet<HttpURLConnection>()
     private var progressStartedAt = 0L
     private var progressStartBytes = 0L
+    private var lastProgressLogAt = 0L
 
     val id: String get() = data.getString("id")
     val status: String get() = data.getString("status")
@@ -36,6 +37,7 @@ internal class DownloadMission(
         cancelRequested = false
         progressStartedAt = System.currentTimeMillis()
         progressStartBytes = aggregateDownloaded()
+        lastProgressLogAt = 0L
         clearRateMetrics()
         updateStatus(STATUS_DOWNLOADING)
         updateProgressMetrics()
@@ -69,9 +71,11 @@ internal class DownloadMission(
                 data.getString("mimeType")
             ) { copied, total ->
                 checkInterrupted()
-                data.put("publishedBytes", copied)
-                data.put("publishedTotalBytes", total)
-                onChanged(data)
+                synchronized(data) {
+                    data.put("publishedBytes", copied)
+                    data.put("publishedTotalBytes", total)
+                    onChanged(data)
+                }
             }
             checkInterrupted()
             temporaryFiles.forEach(storage::deleteTemporaryFile)
@@ -302,10 +306,12 @@ internal class DownloadMission(
             val start = if (append) offset else 0L
             if (!append && offset > 0) temporaryFile.delete()
             val total = if (http.contentLengthLong >= 0) start + http.contentLengthLong else part.optLong("totalBytes", -1L)
-            part.put("totalBytes", total)
-            part.put("downloadedBytes", start)
-            updateProgressMetrics()
-            onChanged(data)
+            synchronized(data) {
+                part.put("totalBytes", total)
+                part.put("downloadedBytes", start)
+                updateProgressMetrics()
+                onChanged(data)
+            }
             if (total >= 0 && !storage.hasTemporarySpace(temporaryFile, total - start)) {
                 throw DownloadException("Not enough storage space", retryable = false)
             }
@@ -321,9 +327,11 @@ internal class DownloadMission(
                         if (count == -1) break
                         output.write(buffer, 0, count)
                         downloaded += count
-                        part.put("downloadedBytes", downloaded)
-                        updateProgressMetrics()
-                        onChanged(data)
+                        synchronized(data) {
+                            part.put("downloadedBytes", downloaded)
+                            updateProgressMetrics()
+                            onChanged(data)
+                        }
                     }
                 }
             }
@@ -399,7 +407,7 @@ internal class DownloadMission(
         return (0 until parts.length()).sumOf { parts.getJSONObject(it).optLong("downloadedBytes", 0L) }
     }
 
-    private fun updateProgressMetrics() {
+    private fun updateProgressMetrics() = synchronized(data) {
         val parts = data.getJSONArray("parts")
         val downloaded = aggregateDownloaded()
         val totals = (0 until parts.length()).map { parts.getJSONObject(it).optLong("totalBytes", -1L) }
@@ -422,20 +430,28 @@ internal class DownloadMission(
             } else {
                 data.remove("etaSeconds")
             }
+            val now = System.currentTimeMillis()
+            if (now - lastProgressLogAt >= SPEED_LOG_INTERVAL_MS) {
+                Log.i("FreeTubeDownloads", "progress id=$id downloaded=$downloaded total=$total speedBytesPerSecond=${speed.toLong()}")
+                lastProgressLogAt = now
+            }
         } else {
             data.remove("speedBytesPerSecond")
             data.remove("etaSeconds")
         }
+        Unit
     }
 
-    private fun clearRateMetrics() {
+    private fun clearRateMetrics() = synchronized(data) {
         data.remove("speedBytesPerSecond")
         data.remove("etaSeconds")
     }
 
     private fun updateStatus(value: String) {
-        data.put("status", value)
-        if (value != STATUS_DOWNLOADING) clearRateMetrics()
+        synchronized(data) {
+            data.put("status", value)
+            if (value != STATUS_DOWNLOADING) clearRateMetrics()
+        }
         onChanged(data)
     }
 
@@ -453,6 +469,7 @@ internal class DownloadMission(
         private const val MAX_RETRIES = 3
         private const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
         private const val RETRY_DELAY_MS = 1_000L
+        private const val SPEED_LOG_INTERVAL_MS = 5_000L
         const val MAX_THREADS = 32
         const val ERROR_NEEDS_REFRESH = "needs-refresh"
         const val ERROR_NETWORK_UNAVAILABLE = "network-unavailable"
