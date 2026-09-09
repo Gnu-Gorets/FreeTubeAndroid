@@ -685,9 +685,7 @@ export default defineComponent({
         downloadFormats: this.downloadFormats.length,
         videoId: this.videoId
       }))
-      this.refreshDownloadFormats()
-        .catch(error => console.warn('[Downloads] Refresh formats failed', error))
-        .finally(() => { this.downloadDialogVisible = true })
+      this.downloadDialogVisible = true
     },
 
     refreshDownloadFormats: async function () {
