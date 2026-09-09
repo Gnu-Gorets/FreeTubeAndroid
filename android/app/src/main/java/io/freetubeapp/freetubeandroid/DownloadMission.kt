@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
@@ -146,14 +147,15 @@ internal class DownloadMission(
             val end = minOf(size, start + BLOCK_SIZE) - 1
             start..end
         }
-        val segments = ranges.mapIndexed { index, _ -> File("${temporaryFile.absolutePath}.range-$index") }
+        val offsets = part.optJSONArray("blockOffsets")?.takeIf { it.length() == ranges.size }
+            ?: JSONArray().also { array -> ranges.forEach { array.put(0L) }; part.put("blockOffsets", array) }
         synchronized(data) {
-            part.put("downloadedBytes", segments.sumOf(File::length))
             part.put("totalBytes", size)
+            part.put("downloadedBytes", (0 until offsets.length()).sumOf { offsets.optLong(it, 0L) })
             updateProgressMetrics()
             onChanged(data)
         }
-        val executor = Executors.newFixedThreadPool(threads)
+        val executor = Executors.newFixedThreadPool(minOf(threads, ranges.size))
         try {
             val nextBlock = AtomicInteger(0)
             val futures = (0 until minOf(threads, ranges.size)).map { worker ->
@@ -163,7 +165,7 @@ internal class DownloadMission(
                         if (index >= ranges.size) return@submit
                         val range = ranges[index]
                         Log.i("FreeTubeDownloads", "block worker=$worker index=$index start=${range.first} end=${range.last}")
-                        downloadRangeWithRetries(segments[index], part, range.first.toLong(), range.last.toLong())
+                        downloadBlockWithRetries(temporaryFile, part, offsets, index, range.first, range.last)
                     }
                 }
             }
@@ -173,13 +175,11 @@ internal class DownloadMission(
                 futures.forEach { it.cancel(true) }
                 if (error.cause is RangeUnsupported) {
                     connections.forEach(HttpURLConnection::disconnect)
-                    segments.forEach(File::delete)
+                    temporaryFile.delete()
+                    part.remove("blockOffsets")
                     return downloadWithRetries(temporaryFile, part)
                 }
                 throw (error.cause ?: error)
-            }
-            FileOutputStream(temporaryFile, false).use { output ->
-                segments.forEach { segment -> segment.inputStream().use { it.copyTo(output) } }
             }
             synchronized(data) {
                 part.put("downloadedBytes", size)
@@ -188,7 +188,72 @@ internal class DownloadMission(
             }
         } finally {
             executor.shutdownNow()
-            segments.forEach(File::delete)
+        }
+    }
+
+    private fun downloadBlockWithRetries(file: File, part: JSONObject, offsets: JSONArray, index: Int, start: Long, end: Long) {
+        var attempt = 0
+        while (true) {
+            try {
+                downloadBlock(file, part, offsets, index, start, end)
+                return
+            } catch (error: DownloadException) {
+                if (!error.retryable || attempt++ >= MAX_RETRIES || pauseRequested || cancelRequested) throw error
+                Thread.sleep(RETRY_DELAY_MS * attempt)
+            } catch (error: IOException) {
+                if (error is RangeUnsupported || attempt++ >= MAX_RETRIES || pauseRequested || cancelRequested) throw error
+                Thread.sleep(RETRY_DELAY_MS * attempt)
+            }
+        }
+    }
+
+    private fun downloadBlock(file: File, part: JSONObject, offsets: JSONArray, index: Int, start: Long, end: Long) {
+        val offset = synchronized(data) { offsets.optLong(index, 0L) }
+        val rangeStart = start + offset
+        if (rangeStart > end) return
+        val url = URL(part.getString("url"))
+        val http = (url.openConnection() as? HttpURLConnection)
+            ?: throw IOException("Unsupported download URL")
+        connections.add(http)
+        http.instanceFollowRedirects = true
+        http.connectTimeout = CONNECT_TIMEOUT_MS
+        http.readTimeout = READ_TIMEOUT_MS
+        http.setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+        http.setRequestProperty("Accept", "*/*")
+        http.setRequestProperty("Referer", "https://www.youtube.com/")
+        http.setRequestProperty("Range", "bytes=$rangeStart-$end")
+        try {
+            val responseCode = http.responseCode
+            if (responseCode == 200) throw RangeUnsupported("Server does not support byte ranges")
+            if (responseCode == HttpURLConnection.HTTP_FORBIDDEN || responseCode == HttpURLConnection.HTTP_GONE) {
+                throw DownloadException("Stream URL expired", retryable = false, needsRefresh = true)
+            }
+            if (responseCode !in 200..299) throw DownloadException("HTTP $responseCode", retryable = responseCode >= 500)
+            val contentRange = http.getHeaderField("Content-Range") ?: throw RangeUnsupported("Missing Content-Range")
+            if (!contentRange.startsWith("bytes $rangeStart-$end/")) throw RangeUnsupported("Invalid Content-Range")
+            RandomAccessFile(file, "rw").use { output ->
+                output.seek(start + offset)
+                var downloaded = offset
+                http.inputStream.use { input ->
+                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
+                    while (true) {
+                        checkInterrupted()
+                        val count = input.read(buffer)
+                        if (count == -1) break
+                        output.write(buffer, 0, count)
+                        downloaded += count
+                    }
+                }
+                synchronized(data) {
+                    offsets.put(index, downloaded)
+                    part.put("downloadedBytes", (0 until offsets.length()).sumOf { offsets.optLong(it, 0L) })
+                    updateProgressMetrics()
+                    onChanged(data)
+                }
+            }
+        } finally {
+            connections.remove(http)
+            http.disconnect()
         }
     }
 
