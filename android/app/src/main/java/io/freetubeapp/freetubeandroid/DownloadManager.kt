@@ -23,8 +23,8 @@ internal class DownloadManager(
     private val lock = Any()
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val preferences = context.getSharedPreferences("downloads", Context.MODE_PRIVATE)
-    @Volatile private var wifiOnly = preferences.getBoolean(KEY_WIFI_ONLY, false)
-    @Volatile private var concurrency = preferences.getInt(KEY_CONCURRENCY, 1).coerceIn(1, MAX_CONCURRENCY)
+    @Volatile private var wifiOnly = preferences.getBoolean(KEY_WIFI_ONLY, true)
+    @Volatile private var concurrency = preferences.getInt(KEY_CONCURRENCY, DEFAULT_CONCURRENCY).coerceIn(1, MAX_CONCURRENCY)
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             synchronized(lock) {
@@ -299,7 +299,8 @@ internal class DownloadManager(
         private const val ERROR_MISSING_OUTPUT = "missing-output"
         private const val KEY_WIFI_ONLY = "wifiOnly"
         private const val KEY_CONCURRENCY = "concurrency"
-        private const val MAX_CONCURRENCY = 3
+        private const val DEFAULT_CONCURRENCY = 3
+        private const val MAX_CONCURRENCY = 5
     }
 
     private fun snapshotLocked(): JSONArray {
