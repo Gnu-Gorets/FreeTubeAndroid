@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import java.io.File
+import java.io.FileDescriptor
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Locale
@@ -82,6 +83,35 @@ class DownloadStorage(
                 ?: throw IllegalStateException("Final output file disappeared")
         } catch (error: Exception) {
             if (!published) partial.delete()
+            throw error
+        }
+    }
+
+    fun publishMuxedFile(
+        requestedFileName: String,
+        mimeType: String,
+        write: (FileDescriptor) -> Unit
+    ): String {
+        val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val fileName = nextAvailableMediaStoreName(collection, sanitizeFileName(requestedFileName))
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Freetube/")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = contentResolver.insert(collection, values)
+            ?: throw IllegalStateException("Unable to create Downloads/Freetube output")
+        try {
+            contentResolver.openFileDescriptor(uri, "w")?.use { descriptor ->
+                write(descriptor.fileDescriptor)
+            } ?: throw IllegalStateException("Unable to open Downloads/Freetube output")
+            contentResolver.update(uri, ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }, null, null)
+            return uri.toString()
+        } catch (error: Exception) {
+            contentResolver.delete(uri, null, null)
             throw error
         }
     }
