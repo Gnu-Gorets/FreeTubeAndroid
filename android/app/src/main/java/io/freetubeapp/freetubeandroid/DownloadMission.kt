@@ -8,6 +8,7 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileDescriptor
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -57,36 +58,49 @@ internal class DownloadMission(
             checkInterrupted()
             Log.i("FreeTubeDownloads", "download complete id=$id parts=${parts.length()} bytes=${aggregateDownloaded()}")
 
-            val fileToPublish = if (parts.length() == 1) {
-                temporaryFiles[0]
-            } else {
+            val outputUri = if (parts.length() == 2 && data.getString("directoryUri") == DownloadStorage.DEFAULT_DIRECTORY) {
                 updateStatus(STATUS_POST_PROCESSING)
                 val muxStartedAt = System.currentTimeMillis()
-                Log.i("FreeTubeDownloads", "mux start id=$id inputBytes=${temporaryFiles.sumOf(File::length)} mime=${data.optString("mimeType")}")
-                val outputExtension = if (data.optString("mimeType") == "video/webm") ".webm" else ".mp4"
-                outputTemporaryFile = File.createTempFile("$id-output-", outputExtension, temporaryFiles[0].parentFile)
-                muxParts(temporaryFiles, outputTemporaryFile, data.optString("mimeType"))
-                Log.i("FreeTubeDownloads", "mux end id=$id durationMs=${System.currentTimeMillis() - muxStartedAt} outputBytes=${outputTemporaryFile.length()}")
-                outputTemporaryFile
-            }
-
-            val publishStartedAt = System.currentTimeMillis()
-            Log.i("FreeTubeDownloads", "publish start id=$id bytes=${fileToPublish.length()} directory=${data.optString("directoryUri")}")
-            val outputUri = storage.publishTemporaryFile(
-                fileToPublish,
-                data.getString("directoryUri"),
-                data.getString("fileName"),
-                data.getString("mimeType")
-            ) { copied, total ->
-                checkInterrupted()
-                synchronized(data) {
-                    data.put("publishedBytes", copied)
-                    data.put("publishedTotalBytes", total)
-                    onChanged(data)
+                Log.i("FreeTubeDownloads", "mux start id=$id inputBytes=${temporaryFiles.sumOf(File::length)} mime=${data.optString("mimeType")} destination=mediastore")
+                val uri = storage.publishMuxedFile(data.getString("fileName"), data.getString("mimeType")) { descriptor ->
+                    muxParts(temporaryFiles, descriptor, data.optString("mimeType"))
+                    Log.i("FreeTubeDownloads", "mux end id=$id durationMs=${System.currentTimeMillis() - muxStartedAt} destination=mediastore")
                 }
+                Log.i("FreeTubeDownloads", "publish end id=$id outputUri=$uri destination=mediastore")
+                uri
+            } else {
+                val fileToPublish = if (parts.length() == 1) {
+                    temporaryFiles[0]
+                } else {
+                    updateStatus(STATUS_POST_PROCESSING)
+                    val muxStartedAt = System.currentTimeMillis()
+                    Log.i("FreeTubeDownloads", "mux start id=$id inputBytes=${temporaryFiles.sumOf(File::length)} mime=${data.optString("mimeType")}")
+                    val outputExtension = if (data.optString("mimeType") == "video/webm") ".webm" else ".mp4"
+                    outputTemporaryFile = File.createTempFile("$id-output-", outputExtension, temporaryFiles[0].parentFile)
+                    muxParts(temporaryFiles, outputTemporaryFile, data.optString("mimeType"))
+                    Log.i("FreeTubeDownloads", "mux end id=$id durationMs=${System.currentTimeMillis() - muxStartedAt} outputBytes=${outputTemporaryFile.length()}")
+                    outputTemporaryFile
+                }
+
+                val publishStartedAt = System.currentTimeMillis()
+                Log.i("FreeTubeDownloads", "publish start id=$id bytes=${fileToPublish.length()} directory=${data.optString("directoryUri")}")
+                val uri = storage.publishTemporaryFile(
+                    fileToPublish,
+                    data.getString("directoryUri"),
+                    data.getString("fileName"),
+                    data.getString("mimeType")
+                ) { copied, total ->
+                    checkInterrupted()
+                    synchronized(data) {
+                        data.put("publishedBytes", copied)
+                        data.put("publishedTotalBytes", total)
+                        onChanged(data)
+                    }
+                }
+                Log.i("FreeTubeDownloads", "publish end id=$id durationMs=${System.currentTimeMillis() - publishStartedAt} outputUri=$uri")
+                uri
             }
             checkInterrupted()
-            Log.i("FreeTubeDownloads", "publish end id=$id durationMs=${System.currentTimeMillis() - publishStartedAt} outputUri=$outputUri")
             temporaryFiles.forEach(storage::deleteTemporaryFile)
             outputTemporaryFile?.let(storage::deleteTemporaryFile)
             data.put("outputUri", outputUri)
@@ -425,13 +439,17 @@ internal class DownloadMission(
     }
 
     private fun muxParts(files: List<File>, output: File, mimeType: String) {
+        val outputFormat = muxerOutputFormat(mimeType)
+        MediaMuxer(output.absolutePath, outputFormat).useMuxer { muxParts(files, it) }
+    }
+
+    private fun muxParts(files: List<File>, output: FileDescriptor, mimeType: String) {
+        val outputFormat = muxerOutputFormat(mimeType)
+        MediaMuxer(output, outputFormat).useMuxer { muxParts(files, it) }
+    }
+
+    private fun muxParts(files: List<File>, muxer: MediaMuxer) {
         val extractors = files.map { file -> MediaExtractor().also { it.setDataSource(file.absolutePath) } }
-        val outputFormat = if (mimeType == "video/webm") {
-            MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM
-        } else {
-            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
-        }
-        val muxer = MediaMuxer(output.absolutePath, outputFormat)
         try {
             val videoExtractor = extractors[0]
             val videoTrack = (0 until videoExtractor.trackCount).firstOrNull {
@@ -452,7 +470,20 @@ internal class DownloadMission(
             muxer.stop()
         } finally {
             extractors.forEach(MediaExtractor::release)
-            muxer.release()
+        }
+    }
+
+    private fun muxerOutputFormat(mimeType: String): Int = if (mimeType == "video/webm") {
+        MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM
+    } else {
+        MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+    }
+
+    private inline fun MediaMuxer.useMuxer(block: (MediaMuxer) -> Unit) {
+        try {
+            block(this)
+        } finally {
+            release()
         }
     }
 
