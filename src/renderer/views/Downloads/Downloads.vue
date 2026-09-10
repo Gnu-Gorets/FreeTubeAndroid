@@ -2,7 +2,7 @@
   <div
     class="downloadsView"
   >
-    <FtCard>
+    <FtCard class="card">
       <h2>
         <FontAwesomeIcon
           :icon="['fas', 'download']"
@@ -214,7 +214,12 @@ function formatPercentage(value) {
 </script>
 
 <style scoped>
-.downloadsView { width: 100%; }
+.card {
+  inline-size: 85%;
+  margin-block: 0 60px;
+  margin-inline: auto;
+}
+
 .headingIcon { margin-inline-end: .5rem; }
 .message { text-align: center; }
 .downloadSection { margin-block: 1.5rem; }
@@ -224,5 +229,6 @@ function formatPercentage(value) {
 .missionInfo strong { overflow-wrap: anywhere; }
 .missionActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; }
 .error { color: var(--destructive-color); }
+@media (max-width: 680px) { .card { inline-size: 90%; } }
 @media (max-width: 600px) { .mission { flex-direction: column; } .missionActions { justify-content: flex-start; } }
 </style>
