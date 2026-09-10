@@ -1109,7 +1109,7 @@ Description:
   Expand Description: '...المزيد'
 Autoplay Interruption Timer: تم إلغاء التشغيل التلقائي بسبب {autoplayInterruptionIntervalHours} ساعات من عدم النشاط
 shortcutJoinOperator: +
-shortcutLabelSeparator: '{''|''}'
+shortcutLabelSeparator: '｜'
 KeyboardShortcutTemplate: '{label} ({shortcut})'
 Compact side navigation: قائمة جانبية مُختصرة
 Expand side navigation: عرض تفاصيل القائمة
