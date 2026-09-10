@@ -155,7 +155,6 @@ const sections = computed(() => [
 ])
 
 onMounted(() => {
-  store.dispatch('startDownloadUpdates')
   store.dispatch('grabDownloads')
 })
 
