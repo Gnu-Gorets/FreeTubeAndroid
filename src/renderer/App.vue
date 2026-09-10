@@ -180,6 +180,8 @@ onMounted(async () => {
       if (detail?.link) handleYoutubeLink(detail.link)
     })
     window.addEventListener('open-downloads', handleOpenDownloads)
+    store.dispatch('startDownloadUpdates')
+    store.dispatch('grabDownloads')
     if (window.__freetubeOpenDownloads) handleOpenDownloads()
   }
 
