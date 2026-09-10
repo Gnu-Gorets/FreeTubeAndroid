@@ -221,7 +221,7 @@ class DownloadStorage(
         totalBytes: Long,
         onProgress: (copiedBytes: Long, totalBytes: Long) -> Unit
     ) {
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(64 * 1024)
         var copiedBytes = 0L
         while (true) {
             val count = input.read(buffer)
