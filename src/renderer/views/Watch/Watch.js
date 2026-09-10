@@ -160,7 +160,17 @@ export default defineComponent({
     document.removeEventListener('click', this.resetAutoplayInterruptionTimeout)
 
     if (this.$refs.player) {
-      await this.destroyPlayer()
+      try {
+        await Promise.race([
+          this.destroyPlayer(),
+          new Promise(resolve => setTimeout(resolve, 2000))
+        ])
+      } catch (error) {
+        console.warn('[Watch] Player cleanup failed', error)
+      } finally {
+        next()
+      }
+      return
     }
 
     next()
