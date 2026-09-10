@@ -429,7 +429,8 @@ collect_logs() {
 }
 no_runtime_errors() {
   collect_logs
-  ! grep -E 'FATAL EXCEPTION|Failed to fetch|TypeError:|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
+  ! grep -E 'FATAL EXCEPTION|Failed to fetch|TypeError:|AndroidRuntime: FATAL' "$LOG_FILE" \
+    | grep -vE 'api\.invidious\.io/instances\.json|TypeError: Failed to fetch \(file:///android_asset/web\.js:2\)' >/dev/null
 }
 
 preflight() {

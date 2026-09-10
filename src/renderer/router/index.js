@@ -1,20 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import Subscriptions from '../views/Subscriptions/Subscriptions.vue'
-import SubscribedChannels from '../views/SubscribedChannels/SubscribedChannels.vue'
-import ProfileSettings from '../views/ProfileSettings/ProfileSettings.vue'
-import Trending from '../views/Trending/Trending.vue'
-import Popular from '../views/Popular/Popular.vue'
-import UserPlaylists from '../views/UserPlaylists/UserPlaylists.vue'
-import History from '../views/History/History.vue'
-import Downloads from '../views/Downloads/Downloads.vue'
-import Settings from '../views/Settings/Settings.vue'
-import About from '../views/About/About.vue'
-import SearchPage from '../views/SearchPage/SearchPage.vue'
-import Playlist from '../views/Playlist/Playlist.vue'
-import Channel from '../views/Channel/Channel.vue'
-import Watch from '../views/Watch/Watch.vue'
-import Hashtag from '../views/Hashtag/Hashtag.vue'
-import Post from '../views/Post.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -41,7 +26,7 @@ const router = createRouter({
       meta: {
         title: 'Channels'
       },
-      component: SubscribedChannels
+      component: () => import('../views/SubscribedChannels/SubscribedChannels.vue')
     },
     ...(process.env.SUPPORTS_LOCAL_API
       ? [{
@@ -50,7 +35,7 @@ const router = createRouter({
           meta: {
             title: 'Trending'
           },
-          component: Trending
+          component: () => import('../views/Trending/Trending.vue')
         }]
       : []),
     {
@@ -59,7 +44,7 @@ const router = createRouter({
       meta: {
         title: 'Most Popular'
       },
-      component: Popular
+      component: () => import('../views/Popular/Popular.vue')
     },
     {
       path: '/userplaylists',
@@ -67,7 +52,7 @@ const router = createRouter({
       meta: {
         title: 'Your Playlists'
       },
-      component: UserPlaylists
+      component: () => import('../views/UserPlaylists/UserPlaylists.vue')
     },
     {
       path: '/history',
@@ -75,7 +60,7 @@ const router = createRouter({
       meta: {
         title: 'History'
       },
-      component: History
+      component: () => import('../views/History/History.vue')
     },
     ...(process.env.IS_ANDROID
       ? [{
@@ -84,7 +69,7 @@ const router = createRouter({
           meta: {
             title: 'Downloads'
           },
-          component: Downloads
+          component: () => import('../views/Downloads/Downloads.vue')
         }]
       : []),
     {
@@ -93,7 +78,7 @@ const router = createRouter({
       meta: {
         title: 'Settings'
       },
-      component: Settings
+      component: () => import('../views/Settings/Settings.vue')
     },
     {
       path: '/about',
@@ -101,7 +86,7 @@ const router = createRouter({
       meta: {
         title: 'About'
       },
-      component: About
+      component: () => import('../views/About/About.vue')
     },
     {
       path: '/settings/profile',
@@ -109,49 +94,49 @@ const router = createRouter({
       meta: {
         title: 'Profile Settings'
       },
-      component: ProfileSettings
+      component: () => import('../views/ProfileSettings/ProfileSettings.vue')
     },
     {
       path: '/search/:query',
       meta: {
         title: 'Search Results'
       },
-      component: SearchPage
+      component: () => import('../views/SearchPage/SearchPage.vue')
     },
     {
       path: '/playlist/:id',
       meta: {
         title: 'Playlist'
       },
-      component: Playlist
+      component: () => import('../views/Playlist/Playlist.vue')
     },
     {
       path: '/channel/:id/:currentTab?',
       meta: {
         title: 'Channel'
       },
-      component: Channel
+      component: () => import('../views/Channel/Channel.vue')
     },
     {
       path: '/watch/:id',
       meta: {
         title: 'Watch'
       },
-      component: Watch
+      component: () => import('../views/Watch/Watch.vue')
     },
     {
       path: '/hashtag/:hashtag',
       meta: {
         title: 'Hashtag'
       },
-      component: Hashtag
+      component: () => import('../views/Hashtag/Hashtag.vue')
     },
     {
       path: '/post/:id',
       meta: {
         title: 'Post',
       },
-      component: Post
+      component: () => import('../views/Post.vue')
     }
   ],
   scrollBehavior(to, from, savedPosition) {
