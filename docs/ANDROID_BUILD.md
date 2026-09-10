@@ -39,6 +39,7 @@ The image currently provides:
 - pnpm 11.3.0;
 - JDK 17;
 - Android platform 36;
-- Android build tools 36.0.0.
+- Android build tools 36.0.0;
+- Android platform-tools preinstalled in image (avoids per-build SDK installation).
 
 These versions match current Android project configuration. Change them together with `android/app/build.gradle.kts`, not independently.
