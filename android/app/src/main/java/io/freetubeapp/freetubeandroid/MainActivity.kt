@@ -98,6 +98,9 @@ class MainActivity : Activity() {
         window.attributes.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         webView.settings.javaScriptEnabled = true
+        webView.settings.userAgentString = webView.settings.userAgentString
+            .replace(Regex("Mozilla/5.0 \\([^)]*\\)"), "Mozilla/5.0 (X11; Linux x86_64)")
+            .replace("Mobile Safari", "Safari")
         webView.settings.domStorageEnabled = true
         @Suppress("DEPRECATION")
         webView.settings.allowUniversalAccessFromFileURLs = true
@@ -159,8 +162,8 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) openDownloads()
         when (intent?.action) {
-            "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
-            "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
+            "MEDIA_PLAY" -> webView.evaluateJavascript("window.dispatchEvent(new Event('media-play'))", null)
+            "MEDIA_PAUSE" -> webView.evaluateJavascript("window.dispatchEvent(new Event('media-pause'))", null)
             Intent.ACTION_VIEW -> dispatchDeepLink(intent)
         }
     }

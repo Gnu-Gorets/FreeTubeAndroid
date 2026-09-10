@@ -20,6 +20,7 @@ import store from '../store/index'
 
 import {
   copyToClipboard,
+  fetchWithTimeout,
   getRelativeTimeFromDate,
   showToast,
   getChannelPlaylistId
@@ -305,7 +306,7 @@ async function getChannelVideosLocalRSS(channel, failedAttempts = 0) {
   const feedUrl = `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistId}`
 
   try {
-    const response = await fetch(feedUrl)
+    const response = await fetchWithTimeout(15_000, feedUrl)
 
     if (response.status === 403) {
       return {
@@ -317,7 +318,7 @@ async function getChannelVideosLocalRSS(channel, failedAttempts = 0) {
       // playlists don't exist if the channel was terminated but also if it doesn't have the tab,
       // so we need to check the channel feed too before deciding it errored, as that only 404s if the channel was terminated
 
-      const response2 = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channel.id}`, {
+      const response2 = await fetchWithTimeout(15_000, `https://www.youtube.com/feeds/videos.xml?channel_id=${channel.id}`, {
         method: 'HEAD'
       })
 
@@ -414,9 +415,7 @@ async function getChannelVideosInvidiousRSS(channel, failedAttempts = 0) {
       // playlists don't exist if the channel was terminated but also if it doesn't have the tab,
       // so we need to check the channel feed too before deciding it errored, as that only 404s if the channel was terminated
 
-      const response2 = await fetch(`${currentInvidiousInstanceUrl.value}/feed/channel/${channel.id}`, {
-        method: 'GET'
-      })
+      const response2 = await invidiousFetch(`${currentInvidiousInstanceUrl.value}/feed/channel/${channel.id}`)
 
       if (response2.status === 404) {
         errorChannels.value.push(channel)
