@@ -461,7 +461,7 @@ internal class DownloadMission(
                 presentationTimeUs = extractor.sampleTime
                 flags = extractor.sampleFlags
             })
-            extractor.advance()
+            if (!extractor.advance()) break
         }
     }
 
