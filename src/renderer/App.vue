@@ -173,6 +173,8 @@ function handleOpenDownloads() {
 }
 
 onMounted(async () => {
+  performance.mark('freetube:app-mounted')
+
   if (process.env.IS_ANDROID) {
     window.addEventListener('youtube-link', ({ detail }) => {
       if (detail?.link) handleYoutubeLink(detail.link)
@@ -206,6 +208,7 @@ onMounted(async () => {
     })
   }
 
+  performance.mark('freetube:critical-local-data-ready')
   updateTheme()
 
   if (defaultInvidiousInstance.value === '') {
@@ -233,6 +236,7 @@ onMounted(async () => {
     }
 
     dataReady.value = true
+    performance.mark('freetube:shell-ready')
 
     setTimeout(() => {
       checkForNewUpdates()
