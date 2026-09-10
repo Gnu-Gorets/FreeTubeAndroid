@@ -39,7 +39,7 @@
     "lint-json": "eslint --config eslint.config.mjs \"static/**/*.json\"",
     "lint-style": "stylelint \"src/**/*.{css,scss}\"",
     "lint-style-fix": "stylelint --fix \"src/**/*.{css,scss}\"",
-    "lint-yml": "eslint --config eslint.config.mjs \"**/*.yml\" \"**/*.yaml\"",
+    "lint-yml": "eslint --config eslint.config.mjs --ignore-pattern 'tmp/**' \"**/*.yml\" \"**/*.yaml\"",
     "pack": "pnpm run \"/^pack:(main|renderer|preload|botGuardScript)$/\" && node _scripts/injectAllowedPaths.mjs",
     "pack:main": "webpack --mode=production --config-node-env=production --config _scripts/webpack.main.config.js",
     "pack:renderer": "webpack --mode=production --config-node-env=production --config _scripts/webpack.renderer.config.js",

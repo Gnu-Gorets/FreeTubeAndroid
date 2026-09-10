@@ -181,7 +181,10 @@ onMounted(async () => {
     if (window.__freetubeOpenDownloads) handleOpenDownloads()
   }
 
-  await store.dispatch('grabUserSettings')
+  await Promise.all([
+    store.dispatch('grabUserSettings'),
+    store.dispatch('fetchInvidiousInstancesFromFile')
+  ])
 
   if (process.env.IS_ANDROID && store.getters.getUseProxy) {
     const proxyId = crypto.randomUUID()
@@ -205,7 +208,6 @@ onMounted(async () => {
 
   updateTheme()
 
-  await store.dispatch('fetchInvidiousInstancesFromFile')
   if (defaultInvidiousInstance.value === '') {
     await store.dispatch('setRandomCurrentInvidiousInstance')
   }
