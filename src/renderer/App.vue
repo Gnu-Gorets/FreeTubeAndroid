@@ -216,12 +216,6 @@ onMounted(async () => {
     await store.dispatch('setRandomCurrentInvidiousInstance')
   }
 
-  store.dispatch('fetchInvidiousInstances').then(() => {
-    if (defaultInvidiousInstance.value === '') {
-      store.dispatch('setRandomCurrentInvidiousInstance')
-    }
-  })
-
   store.dispatch('grabAllProfiles', t('Profile.All Channels')).then(() => {
     store.dispatch('grabHistory')
     store.dispatch('grabAllPlaylists')
@@ -240,8 +234,13 @@ onMounted(async () => {
     performance.mark('freetube:shell-ready')
 
     setTimeout(() => {
+      store.dispatch('fetchInvidiousInstances').then(() => {
+        if (defaultInvidiousInstance.value === '') {
+          store.dispatch('setRandomCurrentInvidiousInstance')
+        }
+      })
       checkForNewUpdates()
-    }, 500)
+    }, 2000)
   })
 
   if (route.path === '/') {
