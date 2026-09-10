@@ -55,17 +55,23 @@ internal class DownloadMission(
                 downloadPart(temporaryFiles[index], part)
             }
             checkInterrupted()
+            Log.i("FreeTubeDownloads", "download complete id=$id parts=${parts.length()} bytes=${aggregateDownloaded()}")
 
             val fileToPublish = if (parts.length() == 1) {
                 temporaryFiles[0]
             } else {
                 updateStatus(STATUS_POST_PROCESSING)
+                val muxStartedAt = System.currentTimeMillis()
+                Log.i("FreeTubeDownloads", "mux start id=$id inputBytes=${temporaryFiles.sumOf(File::length)} mime=${data.optString("mimeType")}")
                 val outputExtension = if (data.optString("mimeType") == "video/webm") ".webm" else ".mp4"
                 outputTemporaryFile = File.createTempFile("$id-output-", outputExtension, temporaryFiles[0].parentFile)
                 muxParts(temporaryFiles, outputTemporaryFile, data.optString("mimeType"))
+                Log.i("FreeTubeDownloads", "mux end id=$id durationMs=${System.currentTimeMillis() - muxStartedAt} outputBytes=${outputTemporaryFile.length()}")
                 outputTemporaryFile
             }
 
+            val publishStartedAt = System.currentTimeMillis()
+            Log.i("FreeTubeDownloads", "publish start id=$id bytes=${fileToPublish.length()} directory=${data.optString("directoryUri")}")
             val outputUri = storage.publishTemporaryFile(
                 fileToPublish,
                 data.getString("directoryUri"),
@@ -80,6 +86,7 @@ internal class DownloadMission(
                 }
             }
             checkInterrupted()
+            Log.i("FreeTubeDownloads", "publish end id=$id durationMs=${System.currentTimeMillis() - publishStartedAt} outputUri=$outputUri")
             temporaryFiles.forEach(storage::deleteTemporaryFile)
             outputTemporaryFile?.let(storage::deleteTemporaryFile)
             data.put("outputUri", outputUri)
