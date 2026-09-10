@@ -266,6 +266,7 @@ library.add(
 
 registerSwiper()
 
+performance.mark('freetube:renderer-ready')
 const app = createApp(App)
 
 app.config.performance = process.env.NODE_ENV === 'development'
