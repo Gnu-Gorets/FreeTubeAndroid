@@ -62,9 +62,21 @@ internal class DownloadMission(
                 updateStatus(STATUS_POST_PROCESSING)
                 val muxStartedAt = System.currentTimeMillis()
                 Log.i("FreeTubeDownloads", "mux start id=$id inputBytes=${temporaryFiles.sumOf(File::length)} mime=${data.optString("mimeType")} destination=mediastore")
-                val uri = storage.publishMuxedFile(data.getString("fileName"), data.getString("mimeType")) { descriptor ->
-                    muxParts(temporaryFiles, descriptor, data.optString("mimeType"))
-                    Log.i("FreeTubeDownloads", "mux end id=$id durationMs=${System.currentTimeMillis() - muxStartedAt} destination=mediastore")
+                val uri = try {
+                    storage.publishMuxedFile(data.getString("fileName"), data.getString("mimeType")) { descriptor ->
+                        if (data.optString("mimeType") == "video/mp4") {
+                            FastMp4Muxer.mux(temporaryFiles, descriptor, ::checkInterrupted)
+                        } else {
+                            muxParts(temporaryFiles, descriptor, data.optString("mimeType"))
+                        }
+                        Log.i("FreeTubeDownloads", "mux end id=$id durationMs=${System.currentTimeMillis() - muxStartedAt} destination=mediastore")
+                    }
+                } catch (error: Exception) {
+                    checkInterrupted()
+                    Log.w("FreeTubeDownloads", "fast mux failed id=$id, using MediaMuxer", error)
+                    storage.publishMuxedFile(data.getString("fileName"), data.getString("mimeType")) { descriptor ->
+                        muxParts(temporaryFiles, descriptor, data.optString("mimeType"))
+                    }
                 }
                 Log.i("FreeTubeDownloads", "publish end id=$id outputUri=$uri destination=mediastore")
                 uri
@@ -77,7 +89,18 @@ internal class DownloadMission(
                     Log.i("FreeTubeDownloads", "mux start id=$id inputBytes=${temporaryFiles.sumOf(File::length)} mime=${data.optString("mimeType")}")
                     val outputExtension = if (data.optString("mimeType") == "video/webm") ".webm" else ".mp4"
                     outputTemporaryFile = File.createTempFile("$id-output-", outputExtension, temporaryFiles[0].parentFile)
-                    muxParts(temporaryFiles, outputTemporaryFile, data.optString("mimeType"))
+                    try {
+                        if (data.optString("mimeType") == "video/mp4") {
+                            FastMp4Muxer.mux(temporaryFiles, outputTemporaryFile, ::checkInterrupted)
+                        } else {
+                            muxParts(temporaryFiles, outputTemporaryFile, data.optString("mimeType"))
+                        }
+                    } catch (error: Exception) {
+                        checkInterrupted()
+                        Log.w("FreeTubeDownloads", "fast mux failed id=$id, using MediaMuxer", error)
+                        outputTemporaryFile.delete()
+                        muxParts(temporaryFiles, outputTemporaryFile, data.optString("mimeType"))
+                    }
                     Log.i("FreeTubeDownloads", "mux end id=$id durationMs=${System.currentTimeMillis() - muxStartedAt} outputBytes=${outputTemporaryFile.length()}")
                     outputTemporaryFile
                 }

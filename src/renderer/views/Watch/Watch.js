@@ -816,7 +816,7 @@ export default defineComponent({
               const start = chapter.time_range_start_millis / 1000
 
               chapters.push({
-                title: chapter.title.text,
+                title: chapter.title?.text ?? '',
                 timestamp: formatDurationAsTimestamp(start),
                 startSeconds: start,
                 endSeconds: 0,
@@ -831,10 +831,11 @@ export default defineComponent({
             if (macroMarkersList) {
               for (const item of macroMarkersList.contents) {
                 if (item instanceof YTNodes.MacroMarkersListItem) {
+                  const timestamp = item.time_description?.text ?? '0:00'
                   chapters.push({
-                    title: item.title.text,
-                    timestamp: item.time_description.text,
-                    startSeconds: Utils.timeToSeconds(item.time_description.text),
+                    title: item.title?.text ?? '',
+                    timestamp,
+                    startSeconds: Utils.timeToSeconds(timestamp),
                     endSeconds: 0,
                     thumbnail: item.thumbnail[0]
                   })
