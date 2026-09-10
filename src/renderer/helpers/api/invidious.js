@@ -1,5 +1,5 @@
 import store from '../../store/index'
-import { calculatePublishedDate, getRelativeTimeFromDate } from '../utils'
+import { calculatePublishedDate, fetchWithTimeout, getRelativeTimeFromDate } from '../utils'
 import { isNullOrEmpty } from '../strings'
 import autolinker from 'autolinker'
 import { FormatUtils, Misc, Player } from 'youtubei.js'
@@ -41,13 +41,13 @@ export function invidiousFetch(url) {
   const authorization = store.getters.getCurrentInvidiousInstanceAuthorization
 
   if (authorization) {
-    return fetch(url, {
+    return fetchWithTimeout(15_000, url, {
       headers: {
         Authorization: authorization
       }
     })
   } else {
-    return fetch(url)
+    return fetchWithTimeout(15_000, url)
   }
 }
 

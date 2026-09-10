@@ -10,6 +10,7 @@ import {
   calculatePublishedDate,
   deepCopy,
   escapeHTML,
+  fetchWithTimeout,
   extractNumberFromString,
   getChannelPlaylistId,
   getRelativeTimeFromDate,
@@ -114,7 +115,7 @@ async function createSession({ withPlayer = false, location = undefined, safetyM
     client_type: clientType,
 
     // use browser fetch
-    fetch: (fetchFunc ?? ((input, init) => fetch(input, init))),
+    fetch: (fetchFunc ?? ((input, init) => fetchWithTimeout(15_000, input, init))),
     cache,
     generate_session_locally: !!generateSessionLocally
   })
@@ -663,10 +664,10 @@ async function getLocalVideoInfoUncached(id) {
 
   const fetchFunc = async (input, init) => {
     if (!(input.url?.startsWith('https://www.youtube.com/youtubei/v1/player'))) {
-      return fetch(input, init)
+      return fetchWithTimeout(15_000, input, init)
     }
 
-    const response = await fetch(input, init)
+    const response = await fetchWithTimeout(15_000, input, init)
     const responseText = await response.text()
 
     responseTime = Date.now()
