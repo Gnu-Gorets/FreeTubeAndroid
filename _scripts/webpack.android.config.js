@@ -30,7 +30,6 @@ const config = {
   output: {
     path: path.join(__dirname, '../android/app/src/main/assets'),
     filename: '[name].js',
-    clean: true,
   },
   externals: {
     android: 'Android'
