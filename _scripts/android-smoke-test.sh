@@ -30,7 +30,7 @@ Options:
   --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        export, downloads-settings, data-directory-cancel, data-directory-move-reset,
+                        export, downloads-smoke, downloads-settings, data-directory-cancel, data-directory-move-reset,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
                         fullscreen-fit-screen
   --keep-data           do not clear app data (default)
@@ -68,7 +68,12 @@ progress() {
   printf '%s [%s +%ss] %s\n' "$(date +%H:%M:%S)" "$CURRENT_TEST" "$elapsed" "$*" | tee -a "$ARTIFACT_DIR/progress.log"
 }
 
+adb_device_ready() {
+  [[ "$(adb -s "$SERIAL" get-state 2>/dev/null)" == "device" ]] || return 1
+  [[ "$(adb -s "$SERIAL" shell am get-current-user 2>/dev/null)" == "0" ]]
+}
 adb_cmd() {
+  adb_device_ready || return 77
   if [[ -n "$SERIAL" ]]; then adb -s "$SERIAL" "$@"; else adb "$@"; fi
 }
 
@@ -433,6 +438,52 @@ no_runtime_errors() {
     | grep -vE 'api\.invidious\.io/instances\.json|\[Android fetch\] \[object Request\] -> TypeError: Failed to fetch|TypeError: Failed to fetch \(file:///android_asset/web\.js:2\)' >/dev/null
 }
 
+download_metadata() {
+  adb_shell run-as "$PACKAGE" cat files/downloads/missions.json 2>/dev/null
+}
+download_id_for_height() {
+  local height="$1"
+  download_metadata | python3 -c 'import json, sys; height=sys.argv[1]; data=json.load(sys.stdin); print(next((m["id"] for m in data if m.get("streamSelection", {}).get("height") == int(height)), ""))' "$height"
+}
+download_status() {
+  local id="$1"
+  download_metadata | python3 -c 'import json, sys; id=sys.argv[1]; data=json.load(sys.stdin); print(next((m.get("status", "") for m in data if m.get("id") == id), ""))' "$id"
+}
+download_bytes() {
+  local id="$1"
+  download_metadata | python3 -c 'import json, sys; id=sys.argv[1]; data=json.load(sys.stdin); print(next((m.get("downloadedBytes", -1) for m in data if m.get("id") == id), -1))' "$id"
+}
+wait_download_status() {
+  local id="$1" expected="$2" start now
+  start=$(date +%s)
+  while :; do
+    [[ "$(download_status "$id")" == "$expected" ]] && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+wait_download_progress() {
+  local id="$1" start now
+  start=$(date +%s)
+  while :; do
+    [[ "$(download_bytes "$id")" -gt 0 ]] && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+wait_download_bytes_above() {
+  local id="$1" minimum="$2" start now
+  start=$(date +%s)
+  while :; do
+    [[ "$(download_bytes "$id")" -gt "$minimum" ]] && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+
 preflight() {
   [[ "$(adb_shell am get-current-user 2>/dev/null)" == "0" ]] || {
     echo "FAIL: Android main profile user 0 is required; work profile is not supported"
@@ -697,6 +748,82 @@ cleanup() {
   ! adb_shell dumpsys notification --noredact | grep -q 'io.freetubeapp.freetubeandroid.*id=1001'
 }
 
+downloads_smoke() {
+  clean_logs
+  start_app || return 1
+  local url='https://youtu.be/6gFpmmLbs2U' m1080 m720 output_uri
+  adb_shell am start -a android.intent.action.VIEW -d "$url" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+  sleep 8
+  screenshot downloads-dialog-1080
+  adb_shell input tap 133 911
+  sleep 2
+  screenshot downloads-dialog-1080-open
+  adb_shell input tap 145 1067
+  sleep 3
+  adb_shell input tap 360 1550
+  sleep 2
+  m1080=$(download_id_for_height 1080)
+  [[ -n "$m1080" ]] || return 1
+  wait_download_status "$m1080" downloading || return 1
+  wait_download_progress "$m1080" || return 1
+  screenshot downloads-1080-active
+  adb_shell input tap 132 743
+  wait_download_status "$m1080" paused || return 1
+  local paused_bytes stable_bytes resumed_bytes
+  paused_bytes=$(download_bytes "$m1080")
+  download_metadata >"$ARTIFACT_DIR/downloads-1080-paused.json"
+  screenshot downloads-1080-paused
+  sleep 3
+  [[ "$(download_status "$m1080")" == paused ]] || return 1
+  stable_bytes=$(download_bytes "$m1080")
+  [[ "$stable_bytes" == "$paused_bytes" && "$stable_bytes" -gt 0 ]] || return 1
+  adb_shell input tap 475 742
+  sleep 3
+  adb_shell input tap 133 911
+  sleep 2
+  adb_shell input tap 350 792
+  sleep 1
+  adb_shell input tap 300 424
+  sleep 1
+  adb_shell input tap 145 1067
+  sleep 3
+  adb_shell input tap 360 1550
+  sleep 2
+  m720=$(download_id_for_height 720)
+  [[ -n "$m720" && "$m720" != "$m1080" ]] || return 1
+  wait_download_status "$m720" downloading || return 1
+  wait_download_progress "$m720" || return 1
+  screenshot downloads-both-active
+  adb_shell input tap 298 743
+  wait_download_status "$m720" canceled || return 1
+  download_metadata >"$ARTIFACT_DIR/downloads-720-canceled.json"
+  screenshot downloads-720-canceled
+  grep -q '"outputUri"' "$ARTIFACT_DIR/downloads-720-canceled.json" && return 1
+  adb_shell input tap 317 1265
+  sleep 2
+  ! download_metadata | grep -q "$m720" || return 1
+  adb_shell input tap 132 743
+  wait_download_status "$m1080" downloading || return 1
+  wait_download_bytes_above "$m1080" "$stable_bytes" || return 1
+  resumed_bytes=$(download_bytes "$m1080")
+  wait_download_status "$m1080" completed || return 1
+  download_metadata >"$ARTIFACT_DIR/downloads-1080-completed.json"
+  screenshot downloads-1080-completed
+  output_uri=$(python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("outputUri", ""))' <"$ARTIFACT_DIR/downloads-1080-completed.json")
+  [[ -n "$output_uri" ]] || return 1
+  adb_shell content query --uri "$output_uri" >"$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  grep -q 'mime_type=video/mp4' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  grep -q 'height=1080' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  grep -q '_size=[1-9]' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  adb_shell input tap 132 872
+  sleep 3
+  download_metadata >"$ARTIFACT_DIR/downloads-final.json"
+  screenshot downloads-final
+  [[ "$(cat "$ARTIFACT_DIR/downloads-final.json")" == '[]' ]] || return 1
+  collect_logs
+  ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
+}
+
 recovery() {
   adb_shell am force-stop "$PACKAGE"
   sleep 3
@@ -721,6 +848,7 @@ run_unlocked_suite() {
   run_test audio-focus audio_focus
   run_test persistence persistence
   run_test export export_data
+  run_test downloads-smoke downloads_smoke
   run_test downloads-settings downloads_settings
   run_test data-directory-cancel data_directory_cancel
   run_test data-directory-move-reset data_directory_move_reset
@@ -781,6 +909,7 @@ case "$TEST" in
   audio-focus) run_test audio-focus audio_focus ;;
   persistence) run_test persistence persistence ;;
   export) run_test export export_data ;;
+  downloads-smoke) run_test downloads-smoke downloads_smoke ;;
   downloads-settings) run_test downloads-settings downloads_settings ;;
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
