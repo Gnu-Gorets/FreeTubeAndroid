@@ -101,9 +101,9 @@
                 @click="run('retryDownload', mission.id)"
               />
               <FtButton
-                v-if="mission.status === 'completed' && mission.outputUri"
+                v-if="mission.status === 'completed' && mission.outputUri && mission.video?.id"
                 :label="t('Downloads.Open')"
-                @click="open(mission.outputUri, mission.mimeType)"
+                @click="open(mission.video.id)"
               />
               <FtButton
                 v-if="mission.status === 'completed' && mission.outputUri"
@@ -135,9 +135,9 @@ import { useRouter } from 'vue-router'
 import FtButton from '../../components/FtButton/FtButton.vue'
 import FtCard from '../../components/ft-card/ft-card.vue'
 import store from '../../store'
-import { formatDurationAsTimestamp, openExternalLink } from '../../helpers/utils'
+import { formatDurationAsTimestamp } from '../../helpers/utils'
 import { formatDownloadSpeed } from '../../helpers/download-size.mjs'
-import { openDownload, shareDownload } from '../../helpers/android/downloads'
+import { shareDownload } from '../../helpers/android/downloads'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -221,8 +221,11 @@ function playAll() {
   })
 }
 
-function open(uri, mimeType) {
-  if (!openDownload(uri, mimeType)) openExternalLink(uri)
+function open(videoId) {
+  router.push({
+    path: `/watch/${videoId}`,
+    query: { playlistId: 'downloads', playlistType: 'downloaded' }
+  })
 }
 
 function share(uri, mimeType) {

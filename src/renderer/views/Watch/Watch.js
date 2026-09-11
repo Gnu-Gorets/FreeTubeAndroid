@@ -2185,7 +2185,7 @@ export default defineComponent({
         translationName = this.t('Locale Name')
         translationCode = userLanguages.values().next().value
       } else {
-        translationName = translationLanguage.language_name.text
+        translationName = translationLanguage.language_name?.text ?? this.t('Locale Name')
         translationCode = translationLanguage.language_code
       }
 
@@ -2210,7 +2210,7 @@ export default defineComponent({
 
       const label = this.t('Video.Player.TranslatedCaptionTemplate', {
         language: translationName,
-        originalLanguage: trackToTranslate.name.text
+        originalLanguage: trackToTranslate.name?.text ?? trackToTranslate.language_code
       })
 
       return {
