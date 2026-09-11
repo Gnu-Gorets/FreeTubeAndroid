@@ -3,6 +3,7 @@ package io.freetubeapp.freetubeandroid
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -55,14 +56,9 @@ internal class DownloadManager(
                         ) {
                             mission.put("status", DownloadMission.STATUS_QUEUED)
                         }
-                        if (mission.optString("status") == DownloadMission.STATUS_COMPLETED &&
-                            !storage.outputExists(mission.optString("outputUri"))
-                        ) {
-                            mission.put("status", DownloadMission.STATUS_MISSING)
-                            mission.put("errorCode", ERROR_MISSING_OUTPUT)
-                            mission.put("error", "Completed file is no longer available")
+                        if (mission.optString("status") != DownloadMission.STATUS_MISSING) {
+                            missions[mission.getString("id")] = mission
                         }
-                        missions[mission.getString("id")] = mission
                     }
                 }
                 storage.deleteOrphanTemporaryFiles(referencedTemporaryPathsLocked())
@@ -103,7 +99,9 @@ internal class DownloadManager(
     }
 
     fun snapshot(): JSONArray = synchronized(lock) {
-        if (reconcileMissingOutputsLocked()) persistLocked()
+        val reconciled = reconcileMissingOutputsLocked()
+        if (reconciled) persistLocked()
+        Log.i("FreeTubeDownloads", "snapshot reconciled=$reconciled missions=${missions.values.joinToString { "${it.optString("id")}:${it.optString("status")}" }}")
         snapshotLocked()
     }
 
@@ -305,14 +303,16 @@ internal class DownloadManager(
     }.toSet()
 
     private fun reconcileMissingOutputsLocked(): Boolean {
+        val iterator = missions.iterator()
         var changed = false
-        missions.values.forEach { mission ->
-            if (mission.optString("status") == DownloadMission.STATUS_COMPLETED &&
+        while (iterator.hasNext()) {
+            val mission = iterator.next().value
+            val missing = mission.optString("status") == DownloadMission.STATUS_MISSING ||
+                mission.optString("status") == DownloadMission.STATUS_COMPLETED &&
                 !storage.outputExists(mission.optString("outputUri"))
-            ) {
-                mission.put("status", DownloadMission.STATUS_MISSING)
-                mission.put("errorCode", ERROR_MISSING_OUTPUT)
-                mission.put("error", "Completed file is no longer available")
+            if (missing) {
+                Log.w("FreeTubeDownloads", "remove missing output id=${mission.optString("id")} uri=${mission.optString("outputUri")}")
+                iterator.remove()
                 changed = true
             }
         }
@@ -327,7 +327,6 @@ internal class DownloadManager(
     }
 
     companion object {
-        private const val ERROR_MISSING_OUTPUT = "missing-output"
         private const val KEY_WIFI_ONLY = "wifiOnly"
         private const val KEY_CONCURRENCY = "concurrency"
         private const val DEFAULT_CONCURRENCY = 3

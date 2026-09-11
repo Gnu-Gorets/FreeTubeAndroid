@@ -6,21 +6,22 @@ const manager = await readFile(new URL('../android/app/src/main/java/io/freetube
 const storage = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadStorage.kt', import.meta.url), 'utf8')
 const bridge = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
 
-test('external output deletion is reconciled on every downloads snapshot', () => {
-  assert.match(manager, /fun snapshot\(\): JSONArray = synchronized\(lock\) \{\s*if \(reconcileMissingOutputsLocked\(\)\) persistLocked\(\)/s)
-  assert.match(manager, /mission\.put\("status", DownloadMission\.STATUS_MISSING\)/)
-  assert.match(manager, /mission\.put\("errorCode", ERROR_MISSING_OUTPUT\)/)
+test('external output deletion removes mission on every downloads snapshot', () => {
+  assert.match(manager, /fun snapshot\(\): JSONArray = synchronized\(lock\) \{\s*val reconciled = reconcileMissingOutputsLocked\(\)\s*if \(reconciled\) persistLocked\(\)/s)
+  assert.match(manager, /iterator\.remove\(\)/)
   assert.match(manager, /!storage\.outputExists\(mission\.optString\("outputUri"\)\)/)
 })
 
 test('MediaStore output existence requires readable content', () => {
-  assert.match(storage, /it\.moveToFirst\(\) && contentResolver\.openFileDescriptor\(parsed, "r"\)\?\.use \{ true \} == true/)
+  assert.match(storage, /val rowFound = cursor\.moveToFirst\(\)\s*val readable = rowFound && contentResolver\.openFileDescriptor\(parsed, "r"\)\?\.use \{ true \} == true/s)
 })
 
 test('Downloads tab refreshes after returning from file manager', async () => {
   const downloadsView = await readFile(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
   assert.match(downloadsView, /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/)
-  assert.match(downloadsView, /window\.addEventListener\('pageshow', refreshDownloads\)/)
+  assert.match(downloadsView, /window\.addEventListener\('pageshow', handlePageShow\)/)
+  assert.match(downloadsView, /window\.addEventListener\('app-resume', handleAppResume\)/)
+  assert.match(downloadsView, /refreshDownloads\('app-resume'\)/)
 })
 
 test('download updates are coalesced before reaching WebView', () => {
