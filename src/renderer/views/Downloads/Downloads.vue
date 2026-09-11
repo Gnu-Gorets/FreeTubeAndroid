@@ -150,27 +150,37 @@ const sections = computed(() => [
   { status: 'paused', label: t('Downloads.Paused'), items: missions.value.filter(mission => mission.status === 'paused') },
   { status: 'completed', label: t('Downloads.Completed'), items: missions.value.filter(mission => mission.status === 'completed') },
   { status: 'failed', label: t('Downloads.Failed'), items: missions.value.filter(mission => mission.status === 'failed') },
-  { status: 'canceled', label: t('Downloads.Canceled'), items: missions.value.filter(mission => mission.status === 'canceled') },
-  { status: 'missing', label: t('Downloads.Missing'), items: missions.value.filter(mission => mission.status === 'missing') }
+  { status: 'canceled', label: t('Downloads.Canceled'), items: missions.value.filter(mission => mission.status === 'canceled') }
 ])
 
-function refreshDownloads() {
+function refreshDownloads(source) {
+  console.warn('[Downloads] refresh', JSON.stringify({ source, visibility: document.visibilityState, missions: missions.value.map(({ id, status, outputUri }) => ({ id, status, outputUri })) }))
   store.dispatch('grabDownloads')
 }
 
 function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') refreshDownloads()
+  if (document.visibilityState === 'visible') refreshDownloads('visibilitychange')
+}
+
+function handlePageShow() {
+  refreshDownloads('pageshow')
+}
+
+function handleAppResume() {
+  refreshDownloads('app-resume')
 }
 
 onMounted(() => {
-  refreshDownloads()
+  refreshDownloads('mounted')
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  window.addEventListener('pageshow', refreshDownloads)
+  window.addEventListener('pageshow', handlePageShow)
+  window.addEventListener('app-resume', handleAppResume)
 })
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  window.removeEventListener('pageshow', refreshDownloads)
+  window.removeEventListener('pageshow', handlePageShow)
+  window.removeEventListener('app-resume', handleAppResume)
 })
 
 function isProgress(mission) {
