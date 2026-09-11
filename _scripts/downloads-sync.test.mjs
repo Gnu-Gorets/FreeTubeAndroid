@@ -19,6 +19,11 @@ test('download updates are coalesced before reaching WebView', () => {
   assert.match(bridge, /mainHandler\.postDelayed\(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS\)/)
 })
 
+test('download progress persistence is throttled', () => {
+  assert.match(manager, /PROGRESS_PERSIST_INTERVAL_MS = 1000L/)
+  assert.match(manager, /if \(!isActive \|\| now - lastProgressPersistAt >= PROGRESS_PERSIST_INTERVAL_MS\) \{\s*lastProgressPersistAt = now\s*\n\s*persistLocked\(\)/s)
+})
+
 test('FreeTube deletion removes both MediaStore and SAF outputs', () => {
   assert.match(storage, /if \(parsed\.scheme == "content"\) contentResolver\.delete\(parsed, null, null\) > 0/)
   assert.match(storage, /DocumentFile\.fromSingleUri\(context, parsed\)\?\.delete\(\) == true/)
