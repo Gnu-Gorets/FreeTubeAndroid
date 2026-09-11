@@ -21,6 +21,7 @@ internal class DownloadManager(
     private val active = HashMap<String, DownloadMission>()
     private val listeners = CopyOnWriteArrayList<(JSONArray) -> Unit>()
     private val lock = Any()
+    private var lastProgressPersistAt = 0L
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val preferences = context.getSharedPreferences("downloads", Context.MODE_PRIVATE)
     @Volatile private var wifiOnly = preferences.getBoolean(KEY_WIFI_ONLY, true)
@@ -238,12 +239,17 @@ internal class DownloadManager(
                     return@synchronized
                 }
                 missions[id] = changed
-                val isActive = changed.optString("status") in setOf(
+                val status = changed.optString("status")
+                val isActive = status in setOf(
                     DownloadMission.STATUS_DOWNLOADING,
                     DownloadMission.STATUS_POST_PROCESSING
                 )
                 if (!isActive) active.remove(id)
-                persistLocked()
+                val now = System.currentTimeMillis()
+                if (!isActive || now - lastProgressPersistAt >= PROGRESS_PERSIST_INTERVAL_MS) {
+                    lastProgressPersistAt = now
+                    persistLocked()
+                }
                 if (!isActive) startNextLocked()
             }
         }
@@ -326,6 +332,7 @@ internal class DownloadManager(
         private const val KEY_CONCURRENCY = "concurrency"
         private const val DEFAULT_CONCURRENCY = 3
         private const val MAX_CONCURRENCY = 5
+        private const val PROGRESS_PERSIST_INTERVAL_MS = 1000L
     }
 
     private fun snapshotLocked(): JSONArray {
