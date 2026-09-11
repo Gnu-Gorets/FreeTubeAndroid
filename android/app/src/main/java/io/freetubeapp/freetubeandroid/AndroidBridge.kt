@@ -173,7 +173,10 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun getDownloads(): String = downloadManager.snapshot().toString()
+    fun getDownloads(): String {
+        Log.i("FreeTubeDownloads", "bridge getDownloads")
+        return downloadManager.snapshot().toString()
+    }
 
     @JavascriptInterface
     fun getDownloadSettings(): String = downloadManager.settings().toString()
@@ -223,6 +226,7 @@ class AndroidBridge(
             synchronized(downloadUpdateLock) { downloadUpdateScheduled = false }
             return
         }
+        Log.i("FreeTubeDownloads", "dispatch download-update")
         mainWebView.evaluateJavascript(
             "window.dispatchEvent(new CustomEvent('download-update', {detail: ${snapshot}}))",
             null

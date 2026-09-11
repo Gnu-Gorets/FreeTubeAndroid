@@ -141,12 +141,14 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         Log.i("FreeTubeLifecycle", "onPause")
+        Log.i("FreeTubeLifecycle", "dispatch app-pause")
         webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
     }
 
     override fun onResume() {
         super.onResume()
         Log.i("FreeTubeLifecycle", "onResume")
+        Log.i("FreeTubeLifecycle", "dispatch app-resume")
         webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
     }
 
