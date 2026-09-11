@@ -101,7 +101,10 @@ internal class DownloadManager(
         return id
     }
 
-    fun snapshot(): JSONArray = synchronized(lock) { snapshotLocked() }
+    fun snapshot(): JSONArray = synchronized(lock) {
+        if (reconcileMissingOutputsLocked()) persistLocked()
+        snapshotLocked()
+    }
 
     fun settings(): JSONObject = JSONObject().apply {
         put("wifiOnly", wifiOnly)
@@ -294,6 +297,21 @@ internal class DownloadManager(
         val parts = mission.optJSONArray("parts") ?: JSONArray()
         (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.optString("temporaryPath")?.takeIf(String::isNotBlank) }
     }.toSet()
+
+    private fun reconcileMissingOutputsLocked(): Boolean {
+        var changed = false
+        missions.values.forEach { mission ->
+            if (mission.optString("status") == DownloadMission.STATUS_COMPLETED &&
+                !storage.outputExists(mission.optString("outputUri"))
+            ) {
+                mission.put("status", DownloadMission.STATUS_MISSING)
+                mission.put("errorCode", ERROR_MISSING_OUTPUT)
+                mission.put("error", "Completed file is no longer available")
+                changed = true
+            }
+        }
+        return changed
+    }
 
     private fun persistLocked() {
         val snapshot = snapshotLocked()
