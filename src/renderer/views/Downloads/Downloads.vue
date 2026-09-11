@@ -128,7 +128,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -154,8 +154,23 @@ const sections = computed(() => [
   { status: 'missing', label: t('Downloads.Missing'), items: missions.value.filter(mission => mission.status === 'missing') }
 ])
 
-onMounted(() => {
+function refreshDownloads() {
   store.dispatch('grabDownloads')
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') refreshDownloads()
+}
+
+onMounted(() => {
+  refreshDownloads()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('pageshow', refreshDownloads)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('pageshow', refreshDownloads)
 })
 
 function isProgress(mission) {
