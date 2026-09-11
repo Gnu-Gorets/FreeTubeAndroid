@@ -132,7 +132,9 @@ class DownloadStorage(
     fun outputExists(uri: String): Boolean = try {
         val parsed = Uri.parse(uri)
         if (parsed.scheme == "content") {
-            contentResolver.query(parsed, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { it.count > 0 } == true
+            contentResolver.query(parsed, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use {
+                it.moveToFirst() && contentResolver.openFileDescriptor(parsed, "r")?.use { true } == true
+            } == true
         } else {
             DocumentFile.fromSingleUri(context, parsed)?.exists() == true
         }
