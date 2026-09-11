@@ -45,7 +45,7 @@ class AndroidBridge(
 ) {
     private companion object {
         const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
-        const val DOWNLOAD_UPDATE_INTERVAL_MS = 250L
+        const val DOWNLOAD_UPDATE_INTERVAL_MS = 1000L
     }
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()

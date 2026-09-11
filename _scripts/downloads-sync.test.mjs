@@ -14,7 +14,7 @@ test('external output deletion is reconciled on every downloads snapshot', () =>
 })
 
 test('download updates are coalesced before reaching WebView', () => {
-  assert.match(bridge, /DOWNLOAD_UPDATE_INTERVAL_MS = 250L/)
+  assert.match(bridge, /DOWNLOAD_UPDATE_INTERVAL_MS = 1000L/)
   assert.match(bridge, /pendingDownloadSnapshot/)
   assert.match(bridge, /mainHandler\.postDelayed\(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS\)/)
 })
