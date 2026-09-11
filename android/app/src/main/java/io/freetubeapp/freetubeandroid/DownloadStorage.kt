@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import java.io.File
@@ -132,13 +133,19 @@ class DownloadStorage(
     fun outputExists(uri: String): Boolean = try {
         val parsed = Uri.parse(uri)
         if (parsed.scheme == "content") {
-            contentResolver.query(parsed, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use {
-                it.moveToFirst() && contentResolver.openFileDescriptor(parsed, "r")?.use { true } == true
+            contentResolver.query(parsed, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { cursor ->
+                val rowFound = cursor.moveToFirst()
+                val readable = rowFound && contentResolver.openFileDescriptor(parsed, "r")?.use { true } == true
+                Log.i("FreeTubeDownloads", "output check uri=$uri rowFound=$rowFound readable=$readable")
+                readable
             } == true
         } else {
-            DocumentFile.fromSingleUri(context, parsed)?.exists() == true
+            val exists = DocumentFile.fromSingleUri(context, parsed)?.exists() == true
+            Log.i("FreeTubeDownloads", "output check uri=$uri exists=$exists")
+            exists
         }
-    } catch (_: Exception) {
+    } catch (error: Exception) {
+        Log.w("FreeTubeDownloads", "output check failed uri=$uri error=${error.message}")
         false
     }
 
