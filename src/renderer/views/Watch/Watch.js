@@ -343,9 +343,6 @@ export default defineComponent({
     autoplayNextPlaylistVideoByDefault: function () {
       return this.$store.getters.getAutoplayPlaylists
     },
-    preferLocalDownloads: function () {
-      return this.$store.getters.getDownloadsPreferLocal
-    },
     hideRecommendedVideos: function () {
       return this.$store.getters.getHideRecommendedVideos
     },
@@ -622,7 +619,7 @@ export default defineComponent({
       const mission = getDownloads().find(item =>
         item.status === 'completed' && item.kind === 'video' && item.video?.id === this.videoId && item.outputUri
       )
-      if (!mission || (!this.preferLocalDownloads && this.playlistType !== 'downloaded')) return false
+      if (!mission || this.playlistType !== 'downloaded') return false
 
       this.downloadedMission = mission
       this.videoTitle = mission.video.title || this.videoId
