@@ -13,6 +13,16 @@ test('external output deletion is reconciled on every downloads snapshot', () =>
   assert.match(manager, /!storage\.outputExists\(mission\.optString\("outputUri"\)\)/)
 })
 
+test('MediaStore output existence requires readable content', () => {
+  assert.match(storage, /it\.moveToFirst\(\) && contentResolver\.openFileDescriptor\(parsed, "r"\)\?\.use \{ true \} == true/)
+})
+
+test('Downloads tab refreshes after returning from file manager', async () => {
+  const downloadsView = await readFile(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
+  assert.match(downloadsView, /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/)
+  assert.match(downloadsView, /window\.addEventListener\('pageshow', refreshDownloads\)/)
+})
+
 test('download updates are coalesced before reaching WebView', () => {
   assert.match(bridge, /DOWNLOAD_UPDATE_INTERVAL_MS = 1000L/)
   assert.match(bridge, /pendingDownloadSnapshot/)
