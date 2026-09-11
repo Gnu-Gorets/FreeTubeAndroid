@@ -17,6 +17,8 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -43,6 +45,7 @@ class AndroidBridge(
 ) {
     private companion object {
         const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+        const val DOWNLOAD_UPDATE_INTERVAL_MS = 250L
     }
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()
@@ -60,14 +63,19 @@ class AndroidBridge(
     private var mediaThumbnail: android.graphics.Bitmap? = null
     private var pendingFile: Triple<String, String, String>? = null
     private val downloadManager = DownloadRuntime.manager(activity)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val downloadUpdateLock = Any()
+    private var pendingDownloadSnapshot: org.json.JSONArray? = null
+    private var downloadUpdateScheduled = false
+    private val downloadUpdateRunnable = Runnable(::dispatchDownloadUpdate)
     private val downloadListener: (org.json.JSONArray) -> Unit = { snapshot ->
         if (hasRunningDownload(snapshot)) DownloadService.start(activity)
-        activity.runOnUiThread {
-            mainWebView.evaluateJavascript(
-                "window.dispatchEvent(new CustomEvent('download-update', {detail: ${snapshot}}))",
-                null
-            )
+        synchronized(downloadUpdateLock) {
+            pendingDownloadSnapshot = snapshot
+            if (downloadUpdateScheduled) return@synchronized
+            downloadUpdateScheduled = true
         }
+        mainHandler.postDelayed(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS)
     }
 
     init {
@@ -206,8 +214,35 @@ class AndroidBridge(
     @JavascriptInterface
     fun deleteDownload(id: String): Boolean = downloadManager.delete(id)
 
+    private fun dispatchDownloadUpdate() {
+        val snapshot = synchronized(downloadUpdateLock) {
+            val next = pendingDownloadSnapshot
+            pendingDownloadSnapshot = null
+            next
+        } ?: run {
+            synchronized(downloadUpdateLock) { downloadUpdateScheduled = false }
+            return
+        }
+        mainWebView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('download-update', {detail: ${snapshot}}))",
+            null
+        )
+        synchronized(downloadUpdateLock) {
+            if (pendingDownloadSnapshot == null) {
+                downloadUpdateScheduled = false
+            } else {
+                mainHandler.postDelayed(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS)
+            }
+        }
+    }
+
     fun dispose() {
         downloadManager.removeListener(downloadListener)
+        mainHandler.removeCallbacks(downloadUpdateRunnable)
+        synchronized(downloadUpdateLock) {
+            pendingDownloadSnapshot = null
+            downloadUpdateScheduled = false
+        }
     }
 
     @JavascriptInterface
