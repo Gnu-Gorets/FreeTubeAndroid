@@ -194,8 +194,9 @@ internal class DownloadManager(
 
     fun delete(id: String): Boolean {
         synchronized(lock) {
-            if (active.containsKey(id)) return false
-            val mission = missions.remove(id) ?: return false
+            val mission = missions[id] ?: return false
+            active[id]?.cancel()
+            missions.remove(id)
             deleteTemporaryParts(mission)
             mission.optString("outputUri").takeIf { it.isNotBlank() }?.let(storage::deleteOutput)
             persistLocked()
@@ -227,6 +228,12 @@ internal class DownloadManager(
         if (active.containsKey(id)) return false
         val downloadMission = DownloadMission(storage, mission) { changed ->
             synchronized(lock) {
+                if (missions[id] !== changed) {
+                    active.remove(id)
+                    persistLocked()
+                    startNextLocked()
+                    return@synchronized
+                }
                 missions[id] = changed
                 val isActive = changed.optString("status") in setOf(
                     DownloadMission.STATUS_DOWNLOADING,
