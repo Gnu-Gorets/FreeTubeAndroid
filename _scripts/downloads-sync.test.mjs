@@ -5,6 +5,7 @@ import test from 'node:test'
 const manager = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadManager.kt', import.meta.url), 'utf8')
 const storage = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadStorage.kt', import.meta.url), 'utf8')
 const bridge = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
+const service = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
 
 test('external output deletion removes mission on every downloads snapshot', () => {
   assert.match(manager, /fun snapshot\(\): JSONArray = synchronized\(lock\) \{\s*val reconciled = reconcileMissingOutputsLocked\(\)\s*if \(reconciled\) persistLocked\(\)/s)
@@ -28,6 +29,19 @@ test('download updates are coalesced before reaching WebView', () => {
   assert.match(bridge, /DOWNLOAD_UPDATE_INTERVAL_MS = 1000L/)
   assert.match(bridge, /pendingDownloadSnapshot/)
   assert.match(bridge, /mainHandler\.postDelayed\(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS\)/)
+})
+
+test('download notification uses video title and low-importance channel', () => {
+  assert.match(service, /active\.optJSONObject\("video"\)\?\.optString\("title"\)\?\.takeIf \{ it\.isNotBlank\(\) \}/)
+  assert.match(service, /NotificationChannel\(CHANNEL_ID, "Downloads", NotificationManager\.IMPORTANCE_LOW\)/)
+  assert.match(service, /manager\.addListener\(downloadListener\)\s*updateNotification\(manager\.snapshot\(\)\)/)
+  assert.match(service, /addAction\(action\("Pause", ACTION_PAUSE, id\)\)/)
+  assert.match(service, /addAction\(action\("Cancel", ACTION_CANCEL, id\)\)/)
+  assert.match(service, /addAction\(action\("Delete", ACTION_DELETE, id\)\)/)
+})
+
+test('download service starts after mission enqueue', () => {
+  assert.match(bridge, /val id = downloadManager\.enqueue\(request\)\s*DownloadService\.start\(activity\)\s*return id\.toString\(\)/)
 })
 
 test('download progress persistence is throttled', () => {
