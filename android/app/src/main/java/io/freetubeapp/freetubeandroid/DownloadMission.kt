@@ -117,8 +117,8 @@ internal class DownloadMission(
                     synchronized(data) {
                         data.put("publishedBytes", copied)
                         data.put("publishedTotalBytes", total)
-                        onChanged(data)
                     }
+                    onChanged(data)
                 }
                 Log.i("FreeTubeDownloads", "publish end id=$id durationMs=${System.currentTimeMillis() - publishStartedAt} outputUri=$uri")
                 uri
@@ -197,8 +197,8 @@ internal class DownloadMission(
             part.put("totalBytes", size)
             part.put("downloadedBytes", (0 until offsets.length()).sumOf { offsets.optLong(it, 0L) })
             updateProgressMetrics()
-            onChanged(data)
         }
+        onChanged(data)
         val executor = Executors.newFixedThreadPool(minOf(threads, ranges.size))
         try {
             val nextBlock = AtomicInteger(0)
@@ -228,8 +228,8 @@ internal class DownloadMission(
             synchronized(data) {
                 part.put("downloadedBytes", size)
                 updateProgressMetrics()
-                onChanged(data)
             }
+            onChanged(data)
         } finally {
             executor.shutdownNow()
         }
@@ -292,8 +292,8 @@ internal class DownloadMission(
                     offsets.put(index, downloaded)
                     part.put("downloadedBytes", (0 until offsets.length()).sumOf { offsets.optLong(it, 0L) })
                     updateProgressMetrics()
-                    onChanged(data)
                 }
+                onChanged(data)
             }
         } finally {
             connections.remove(http)
@@ -370,8 +370,8 @@ internal class DownloadMission(
                         synchronized(data) {
                             part.put("downloadedBytes", part.optLong("downloadedBytes", 0L) + count)
                             updateProgressMetrics()
-                            onChanged(data)
                         }
+                        onChanged(data)
                     }
                 }
             }
@@ -430,8 +430,8 @@ internal class DownloadMission(
                 part.put("totalBytes", total)
                 part.put("downloadedBytes", start)
                 updateProgressMetrics()
-                onChanged(data)
             }
+            onChanged(data)
             if (total >= 0 && !storage.hasTemporarySpace(temporaryFile, total - start)) {
                 throw DownloadException("Not enough storage space", retryable = false)
             }
@@ -450,8 +450,8 @@ internal class DownloadMission(
                         synchronized(data) {
                             part.put("downloadedBytes", downloaded)
                             updateProgressMetrics()
-                            onChanged(data)
                         }
+                        onChanged(data)
                     }
                 }
             }
@@ -563,7 +563,7 @@ internal class DownloadMission(
             val speed = byteDelta / elapsedSeconds
             data.put("speedBytesPerSecond", speed.toLong())
             if (total >= downloaded) {
-                data.put("etaSeconds", ((total - downloaded) / speed).toLong())
+                data.put("etaSeconds", kotlin.math.ceil((total - downloaded) / speed).toLong())
             } else {
                 data.remove("etaSeconds")
             }
