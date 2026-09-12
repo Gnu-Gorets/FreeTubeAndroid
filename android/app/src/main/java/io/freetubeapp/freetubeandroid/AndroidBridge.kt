@@ -96,11 +96,7 @@ class AndroidBridge(
     private fun hasRunningDownload(snapshot: org.json.JSONArray): Boolean {
         for (index in 0 until snapshot.length()) {
             val status = snapshot.optJSONObject(index)?.optString("status")
-            if (status == DownloadMission.STATUS_QUEUED ||
-                status == DownloadMission.STATUS_DOWNLOADING ||
-                status == DownloadMission.STATUS_POST_PROCESSING ||
-                status == DownloadMission.STATUS_PAUSED
-            ) return true
+            if (DownloadMission.isRunningStatus(status ?: "")) return true
         }
         return false
     }
