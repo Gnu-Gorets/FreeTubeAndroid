@@ -216,6 +216,7 @@ export default defineComponent({
     const activeLegacyFormat = shallowRef(null)
 
     const fullWindowEnabled = ref(false)
+    const fullscreenLandscape = ref(false)
     const startInFullwindow = props.startInFullwindow
     let startInFullscreen = props.startInFullscreen
     let startInPip = props.startInPip
@@ -304,6 +305,11 @@ export default defineComponent({
       ui.configure({
         enableFullscreenOnRotation: newValue
       })
+    })
+
+    /** @type {import('vue').ComputedRef<boolean>} */
+    const fitVideoToFullscreen = computed(() => {
+      return store.getters.getFitVideoToFullscreen
     })
 
     /** @type {import('vue').ComputedRef<number>} */
@@ -2789,8 +2795,30 @@ export default defineComponent({
       isOffline.value = true
     }
 
+    function updateFullscreenOrientation() {
+      const fullscreenElement = document.fullscreenElement
+      const playerBounds = container.value?.getBoundingClientRect()
+      const orientationAngle = screen.orientation?.angle
+      let isLandscape = orientationAngle === 90 || orientationAngle === 270
+
+      if (process.env.IS_ANDROID) {
+        isLandscape = window.Android?.isLandscape?.() === true
+      } else if (orientationAngle === undefined) {
+        isLandscape = playerBounds !== undefined && playerBounds.width > playerBounds.height
+      }
+
+      fullscreenLandscape.value = fullscreenElement === container.value && isLandscape
+    }
+
     function fullscreenChangeHandler() {
-      nextTick(showOverlayControls)
+      nextTick(() => {
+        updateFullscreenOrientation()
+        showOverlayControls()
+      })
+    }
+
+    function fullscreenResizeHandler() {
+      updateFullscreenOrientation()
     }
 
     window.addEventListener('online', onlineHandler)
@@ -2911,6 +2939,8 @@ export default defineComponent({
       document.removeEventListener('keydown', keyboardShortcutHandler)
       document.addEventListener('keydown', keyboardShortcutHandler)
       document.addEventListener('fullscreenchange', fullscreenChangeHandler)
+      window.addEventListener('resize', fullscreenResizeHandler)
+      window.addEventListener('orientationchange', fullscreenResizeHandler)
 
       player.addEventListener('loading', () => {
         hasLoaded.value = false
@@ -3320,6 +3350,8 @@ export default defineComponent({
 
       document.removeEventListener('keydown', keyboardShortcutHandler)
       document.removeEventListener('fullscreenchange', fullscreenChangeHandler)
+      window.removeEventListener('resize', fullscreenResizeHandler)
+      window.removeEventListener('orientationchange', fullscreenResizeHandler)
 
       if (containerResizeObserver) {
         containerResizeObserver.disconnect()
@@ -3473,6 +3505,8 @@ export default defineComponent({
 
       fullWindowEnabled,
       forceAspectRatio,
+      fullscreenLandscape,
+      fitVideoToFullscreen,
 
       showStats,
       stats,
