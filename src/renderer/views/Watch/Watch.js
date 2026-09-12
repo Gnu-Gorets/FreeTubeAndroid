@@ -137,6 +137,14 @@ function normalizeDownloadFormat(format, kind, index) {
   }
 }
 
+function normalizeDownloadFormats(progressiveFormats, adaptiveFormats, getAdaptiveKind) {
+  return progressiveFormats
+    .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
+    .concat(adaptiveFormats
+      .filter(format => format.url)
+      .map((format, index) => normalizeDownloadFormat(format, getAdaptiveKind(format), index)))
+}
+
 export default defineComponent({
   name: 'Watch',
   components: {
@@ -671,11 +679,11 @@ export default defineComponent({
       const { info } = await getLocalVideoInfo(this.videoId, true)
       const streamingData = info.streaming_data
       if (!streamingData) return []
-      this.downloadFormats = streamingData.formats
-        .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
-        .concat(streamingData.adaptive_formats
-          .filter(format => format.url)
-          .map((format, index) => normalizeDownloadFormat(format, format.mime_type.startsWith('video/') ? 'video' : 'audio', index)))
+      this.downloadFormats = normalizeDownloadFormats(
+        streamingData.formats,
+        streamingData.adaptive_formats,
+        format => format.mime_type.startsWith('video/') ? 'video' : 'audio'
+      )
       return this.downloadFormats
     },
 
@@ -1014,11 +1022,11 @@ export default defineComponent({
             this.streamingDataExpiryDate = result.streaming_data.expires
 
             this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
-            this.downloadFormats = result.streaming_data.formats
-              .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
-              .concat(result.streaming_data.adaptive_formats
-                .filter(format => format.url)
-                .map((format, index) => normalizeDownloadFormat(format, format.mime_type.startsWith('video/') ? 'video' : 'audio', index)))
+            this.downloadFormats = normalizeDownloadFormats(
+              result.streaming_data.formats,
+              result.streaming_data.adaptive_formats,
+              format => format.mime_type.startsWith('video/') ? 'video' : 'audio'
+            )
             console.warn('[Downloads] Local normalized formats ' + JSON.stringify({
               progressive: result.streaming_data.formats.length,
               adaptive: result.streaming_data.adaptive_formats.length,
@@ -1327,11 +1335,11 @@ export default defineComponent({
             this.streamingDataExpiryDate = this.extractExpiryDateFromStreamingUrl(result.adaptiveFormats[0].url)
 
             this.legacyFormats = result.formatStreams.map(mapInvidiousLegacyFormat)
-            this.downloadFormats = result.formatStreams
-              .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
-              .concat(result.adaptiveFormats
-                .filter(format => format.url)
-                .map((format, index) => normalizeDownloadFormat(format, format.type.startsWith('video/') ? 'video' : 'audio', index)))
+            this.downloadFormats = normalizeDownloadFormats(
+              result.formatStreams,
+              result.adaptiveFormats,
+              format => format.type.startsWith('video/') ? 'video' : 'audio'
+            )
             console.warn('[Downloads] Invidious normalized formats ' + JSON.stringify({
               progressive: result.formatStreams.length,
               adaptive: result.adaptiveFormats.length,
