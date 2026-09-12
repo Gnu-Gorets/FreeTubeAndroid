@@ -6,6 +6,7 @@ import android.graphics.drawable.Icon
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
@@ -56,8 +57,7 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun isLandscape(): Boolean {
-        val bounds = activity.windowManager.currentWindowMetrics.bounds
-        return bounds.width() > bounds.height()
+        return activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     }
 
     @JavascriptInterface
