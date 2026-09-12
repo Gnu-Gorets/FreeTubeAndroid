@@ -60,11 +60,7 @@ class DownloadService : Service() {
     private fun hasRunningMission(snapshot: JSONArray): Boolean {
         for (index in 0 until snapshot.length()) {
             val status = snapshot.optJSONObject(index)?.optString("status")
-            if (status == DownloadMission.STATUS_QUEUED ||
-                status == DownloadMission.STATUS_DOWNLOADING ||
-                status == DownloadMission.STATUS_POST_PROCESSING ||
-                status == DownloadMission.STATUS_PAUSED
-            ) return true
+            if (DownloadMission.isRunningStatus(status ?: "")) return true
         }
         return false
     }
@@ -140,12 +136,7 @@ class DownloadService : Service() {
     private fun findActiveMission(snapshot: JSONArray): org.json.JSONObject? {
         for (index in 0 until snapshot.length()) {
             val mission = snapshot.optJSONObject(index) ?: continue
-            if (mission.optString("status") in setOf(
-                    DownloadMission.STATUS_QUEUED,
-                    DownloadMission.STATUS_DOWNLOADING,
-                    DownloadMission.STATUS_POST_PROCESSING,
-                    DownloadMission.STATUS_PAUSED
-                )) return mission
+            if (DownloadMission.isRunningStatus(mission.optString("status"))) return mission
         }
         return null
     }
