@@ -30,7 +30,7 @@ Options:
   --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        export, downloads-smoke, downloads-settings, data-directory-cancel, data-directory-move-reset,
+                        export, downloads-smoke, downloads-notification, downloads-settings, data-directory-cancel, data-directory-move-reset,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
                         fullscreen-fit-screen
   --keep-data           do not clear app data (default)
@@ -748,6 +748,31 @@ cleanup() {
   ! adb_shell dumpsys notification --noredact | grep -q 'io.freetubeapp.freetubeandroid.*id=1001'
 }
 
+downloads_notification() {
+  clean_logs
+  local id
+  id=$(download_metadata | python3 -c 'import json, sys; data=json.load(sys.stdin); print(next((m["id"] for m in data if m.get("status") in {"queued", "downloading", "paused", "post-processing"}), ""))')
+  [[ -n "$id" ]] || { echo "No active download; start real download first"; return 1; }
+  wait_download_progress "$id" || true
+  adb_shell cmd statusbar expand-notifications >/dev/null 2>&1 || return 1
+  sleep 1
+  screenshot downloads-notification-collapsed
+  adb_shell input tap 659 598
+  sleep 1
+  dump_ui downloads-notification-expanded
+  grep -q 'text="Pause"\|text="Resume"' "$ARTIFACT_DIR/downloads-notification-expanded.xml" || return 1
+  grep -q 'text="Cancel"' "$ARTIFACT_DIR/downloads-notification-expanded.xml" || return 1
+  grep -q 'text="Delete"' "$ARTIFACT_DIR/downloads-notification-expanded.xml" || return 1
+  adb_shell dumpsys notification --noredact | grep -q 'pkg=io.freetubeapp.freetubeandroid.*id=2001' || return 1
+  adb_shell input tap 119 746
+  wait_download_status "$id" paused || return 1
+  dump_ui downloads-notification-paused
+  grep -q 'text="Resume"' "$ARTIFACT_DIR/downloads-notification-paused.xml" || return 1
+  adb_shell input tap 119 746
+  wait_download_status "$id" downloading || return 1
+  adb_shell cmd statusbar collapse >/dev/null 2>&1 || true
+}
+
 downloads_smoke() {
   clean_logs
   start_app || return 1
@@ -910,6 +935,7 @@ case "$TEST" in
   persistence) run_test persistence persistence ;;
   export) run_test export export_data ;;
   downloads-smoke) run_test downloads-smoke downloads_smoke ;;
+  downloads-notification) run_test downloads-notification downloads_notification ;;
   downloads-settings) run_test downloads-settings downloads_settings ;;
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
