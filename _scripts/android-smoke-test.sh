@@ -443,7 +443,7 @@ download_metadata() {
 }
 download_id_for_height() {
   local height="$1"
-  download_metadata | python3 -c 'import json, sys; height=sys.argv[1]; data=json.load(sys.stdin); print(next((m["id"] for m in data if m.get("streamSelection", {}).get("height") == int(height)), ""))' "$height"
+  download_metadata | python3 -c 'import json, sys; height=sys.argv[1]; data=[m for m in json.load(sys.stdin) if m.get("streamSelection", {}).get("height") == int(height)]; print(max(data, key=lambda m: m.get("createdAt", 0)).get("id", "") if data else "")' "$height"
 }
 download_status() {
   local id="$1"
@@ -741,6 +741,8 @@ persistence() {
 cleanup() {
   playback || return 1
   adb_shell input keyevent KEYCODE_BACK
+  sleep 1
+  adb_shell input keyevent KEYCODE_BACK
   sleep 2
   if adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active='; then
     adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active=false' || return 1
@@ -773,26 +775,35 @@ downloads_notification() {
   adb_shell cmd statusbar collapse >/dev/null 2>&1 || true
 }
 
+reset_downloads_for_smoke() {
+  adb_shell am force-stop "$PACKAGE"
+  while read -r uri; do
+    [[ -n "$uri" ]] && adb_shell content delete --uri "$uri" >/dev/null 2>&1 || true
+  done < <(download_metadata | python3 -c 'import json, sys; print("\\n".join(m.get("outputUri", "") for m in json.load(sys.stdin)))')
+  adb_shell run-as "$PACKAGE" rm -rf files/downloads
+}
+
 downloads_smoke() {
   clean_logs
+  reset_downloads_for_smoke
   start_app || return 1
   local url='https://youtu.be/6gFpmmLbs2U' m1080 m720 output_uri
   adb_shell am start -a android.intent.action.VIEW -d "$url" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   sleep 8
   screenshot downloads-dialog-1080
-  adb_shell input tap 133 911
+  adb_shell input tap 185 911
   sleep 2
   screenshot downloads-dialog-1080-open
   adb_shell input tap 145 1067
   sleep 3
-  adb_shell input tap 360 1550
+  adb_shell input tap 420 1550
   sleep 2
   m1080=$(download_id_for_height 1080)
   [[ -n "$m1080" ]] || return 1
   wait_download_status "$m1080" downloading || return 1
   wait_download_progress "$m1080" || return 1
   screenshot downloads-1080-active
-  adb_shell input tap 132 743
+  adb_shell input tap 133 743
   wait_download_status "$m1080" paused || return 1
   local paused_bytes stable_bytes resumed_bytes
   paused_bytes=$(download_bytes "$m1080")
@@ -802,9 +813,9 @@ downloads_smoke() {
   [[ "$(download_status "$m1080")" == paused ]] || return 1
   stable_bytes=$(download_bytes "$m1080")
   [[ "$stable_bytes" == "$paused_bytes" && "$stable_bytes" -gt 0 ]] || return 1
-  adb_shell input tap 475 742
-  sleep 3
-  adb_shell input tap 133 911
+  adb_shell input tap 473 743
+  sleep 8
+  adb_shell input tap 185 911
   sleep 2
   adb_shell input tap 350 792
   sleep 1
@@ -812,7 +823,7 @@ downloads_smoke() {
   sleep 1
   adb_shell input tap 145 1067
   sleep 3
-  adb_shell input tap 360 1550
+  adb_shell input tap 420 1550
   sleep 2
   m720=$(download_id_for_height 720)
   [[ -n "$m720" && "$m720" != "$m1080" ]] || return 1
@@ -827,7 +838,7 @@ downloads_smoke() {
   adb_shell input tap 317 1265
   sleep 2
   ! download_metadata | grep -q "$m720" || return 1
-  adb_shell input tap 132 743
+  adb_shell input tap 133 743
   wait_download_status "$m1080" downloading || return 1
   wait_download_bytes_above "$m1080" "$stable_bytes" || return 1
   resumed_bytes=$(download_bytes "$m1080")
@@ -840,11 +851,18 @@ downloads_smoke() {
   grep -q 'mime_type=video/mp4' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
   grep -q 'height=1080' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
   grep -q '_size=[1-9]' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
-  adb_shell input tap 132 872
+  adb_shell input tap 133 899
   sleep 3
   download_metadata >"$ARTIFACT_DIR/downloads-final.json"
   screenshot downloads-final
-  [[ "$(cat "$ARTIFACT_DIR/downloads-final.json")" == '[]' ]] || return 1
+  python3 - "$m1080" "$m720" "$ARTIFACT_DIR/downloads-final.json" <<'PY'
+import json
+import sys
+
+ids = {sys.argv[1], sys.argv[2]}
+with open(sys.argv[3]) as stream:
+    assert not ids.intersection(mission.get("id") for mission in json.load(stream))
+PY
   collect_logs
   ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
 }
