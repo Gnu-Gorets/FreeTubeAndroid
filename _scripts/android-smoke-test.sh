@@ -28,7 +28,8 @@ Options:
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
-                        locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop
+                        locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
+                        fullscreen-fit-screen
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -252,6 +253,69 @@ start_app() {
   sleep 5
 }
 
+open_player_settings() {
+  start_app || return 1
+  adb_shell input tap 615 1540
+  sleep 2
+  adb_shell input tap 300 865
+  sleep 2
+}
+
+set_fit_video_to_fullscreen() {
+  local desired="$1"
+  open_player_settings || return 1
+  screenshot "fit-screen-settings-$desired"
+
+  local pixel
+  pixel=$(convert "$ARTIFACT_DIR/fit-screen-settings-$desired.png" -format '%[pixel:p{194,1205}]' info:)
+  local enabled=0
+  [[ "$pixel" == *'33,150,243'* ]] && enabled=1
+  progress "Fit Screen target=$desired detected=$([[ $enabled == 1 ]] && echo on || echo off)"
+
+  if [[ "$desired" == "on" && "$enabled" == 0 ]] ||
+     [[ "$desired" == "off" && "$enabled" == 1 ]]; then
+    adb_shell input tap 172 1205
+    sleep 1
+  fi
+
+  adb_shell input keyevent KEYCODE_BACK
+  sleep 2
+}
+
+no_native_crash() {
+  collect_logs
+  ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
+}
+
+enter_fullscreen() {
+  adb_shell input tap 400 340
+  sleep 1
+  adb_shell input tap 660 600
+  sleep 1
+  adb_shell input tap 660 560
+  sleep 4
+}
+
+fullscreen_fit_screen() {
+  clean_logs
+
+  set_fit_video_to_fullscreen off || return 1
+  open_video aqz-KE-bpKQ || return 1
+  enter_fullscreen
+  screenshot fullscreen-fit-screen-off
+  adb_shell input keyevent KEYCODE_BACK
+  sleep 2
+
+  set_fit_video_to_fullscreen on || return 1
+  open_video aqz-KE-bpKQ || return 1
+  enter_fullscreen
+  screenshot fullscreen-fit-screen-on
+  adb_shell input keyevent KEYCODE_BACK
+  sleep 2
+
+  no_native_crash
+}
+
 open_search_results() {
   start_app || return 1
   adb_shell input tap 350 104
@@ -308,7 +372,8 @@ search() {
 }
 
 open_video() {
-  adb_shell am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=jNQXAC9IVRw' -n "$ACTIVITY" >/dev/null 2>&1
+  local video_id="${1:-jNQXAC9IVRw}"
+  adb_shell am start -a android.intent.action.VIEW -d "https://www.youtube.com/watch?v=$video_id" -n "$ACTIVITY" >/dev/null 2>&1
   wait_for_media 'metadata: size=' || return 1
   progress "starting video playback"
   adb_shell input tap 400 340
@@ -585,6 +650,7 @@ case "$TEST" in
   search) run_test search search ;;
   playback) run_test playback playback ;;
   controls) run_test controls controls ;;
+  fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;
   lock-screen) run_test lock-screen lock_screen ;;
   locked-state) run_test locked-state locked_screen ;;
   locked-notification) run_test locked-notification locked_notification ;;

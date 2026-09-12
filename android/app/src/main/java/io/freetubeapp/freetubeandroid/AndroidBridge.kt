@@ -55,6 +55,12 @@ class AndroidBridge(
     private var pendingFile: Triple<String, String, String>? = null
 
     @JavascriptInterface
+    fun isLandscape(): Boolean {
+        val bounds = activity.windowManager.currentWindowMetrics.bounds
+        return bounds.width() > bounds.height()
+    }
+
+    @JavascriptInterface
     fun openFile(eventName: String, mimeTypes: String): Boolean {
         activity.runOnUiThread {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
