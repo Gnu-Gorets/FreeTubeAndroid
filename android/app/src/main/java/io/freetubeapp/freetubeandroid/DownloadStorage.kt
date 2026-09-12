@@ -92,29 +92,10 @@ class DownloadStorage(
         requestedFileName: String,
         mimeType: String,
         write: (FileDescriptor) -> Unit
-    ): String {
-        val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val fileName = nextAvailableMediaStoreName(collection, sanitizeFileName(requestedFileName))
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Freetube/")
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val uri = contentResolver.insert(collection, values)
-            ?: throw IllegalStateException("Unable to create Downloads/Freetube output")
-        try {
-            contentResolver.openFileDescriptor(uri, "w")?.use { descriptor ->
-                write(descriptor.fileDescriptor)
-            } ?: throw IllegalStateException("Unable to open Downloads/Freetube output")
-            contentResolver.update(uri, ContentValues().apply {
-                put(MediaStore.MediaColumns.IS_PENDING, 0)
-            }, null, null)
-            return uri.toString()
-        } catch (error: Exception) {
-            contentResolver.delete(uri, null, null)
-            throw error
-        }
+    ): String = publishMediaStoreFile(requestedFileName, mimeType) { uri ->
+        contentResolver.openFileDescriptor(uri, "w")?.use { descriptor ->
+            write(descriptor.fileDescriptor)
+        } ?: throw IllegalStateException("Unable to open Downloads/Freetube output")
     }
 
     fun hasTemporarySpace(file: File, requiredBytes: Long): Boolean {
@@ -193,27 +174,33 @@ class DownloadStorage(
         requestedFileName: String,
         mimeType: String,
         onProgress: (copiedBytes: Long, totalBytes: Long) -> Unit
+    ): String = publishMediaStoreFile(requestedFileName, mimeType) { uri ->
+        contentResolver.openOutputStream(uri, "w")?.use { output ->
+            temporaryFile.inputStream().use { input ->
+                copy(input, output, temporaryFile.length(), onProgress)
+            }
+        } ?: throw IllegalStateException("Unable to open Downloads/Freetube output stream")
+        temporaryFile.delete()
+    }
+
+    private fun publishMediaStoreFile(
+        requestedFileName: String,
+        mimeType: String,
+        write: (Uri) -> Unit
     ): String {
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val fileName = nextAvailableMediaStoreName(collection, sanitizeFileName(requestedFileName))
-        val values = ContentValues().apply {
+        val uri = contentResolver.insert(collection, ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Freetube/")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val uri = contentResolver.insert(collection, values)
-            ?: throw IllegalStateException("Unable to create Downloads/Freetube output")
+        }) ?: throw IllegalStateException("Unable to create Downloads/Freetube output")
         try {
-            contentResolver.openOutputStream(uri, "w")?.use { output ->
-                temporaryFile.inputStream().use { input ->
-                    copy(input, output, temporaryFile.length(), onProgress)
-                }
-            } ?: throw IllegalStateException("Unable to open Downloads/Freetube output stream")
+            write(uri)
             contentResolver.update(uri, ContentValues().apply {
                 put(MediaStore.MediaColumns.IS_PENDING, 0)
             }, null, null)
-            temporaryFile.delete()
             return uri.toString()
         } catch (error: Exception) {
             contentResolver.delete(uri, null, null)

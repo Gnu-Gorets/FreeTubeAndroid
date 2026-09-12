@@ -320,67 +320,6 @@ internal class DownloadMission(
         }
     }
 
-    private fun downloadRangeWithRetries(file: File, part: JSONObject, start: Long, end: Long) {
-        var attempt = 0
-        while (true) {
-            try {
-                downloadRange(file, part, start, end)
-                return
-            } catch (error: DownloadException) {
-                if (!error.retryable || attempt++ >= MAX_RETRIES || pauseRequested || cancelRequested) throw error
-                Thread.sleep(RETRY_DELAY_MS * attempt)
-            } catch (error: IOException) {
-                if (error is RangeUnsupported || attempt++ >= MAX_RETRIES || pauseRequested || cancelRequested) throw error
-                Thread.sleep(RETRY_DELAY_MS * attempt)
-            }
-        }
-    }
-
-    private fun downloadRange(file: File, part: JSONObject, start: Long, end: Long) {
-        val offset = file.length()
-        val rangeStart = start + offset
-        if (rangeStart > end) return
-        val http = (URL(part.getString("url")).openConnection() as? HttpURLConnection)
-            ?: throw IOException("Unsupported download URL")
-        connections.add(http)
-        http.instanceFollowRedirects = true
-        http.connectTimeout = CONNECT_TIMEOUT_MS
-        http.readTimeout = READ_TIMEOUT_MS
-        http.setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
-        http.setRequestProperty("Accept", "*/*")
-        http.setRequestProperty("Referer", "https://www.youtube.com/")
-        http.setRequestProperty("Range", "bytes=$rangeStart-$end")
-        try {
-            val responseCode = http.responseCode
-            if (responseCode == 200) throw RangeUnsupported("Server does not support byte ranges")
-            if (responseCode == HttpURLConnection.HTTP_FORBIDDEN || responseCode == HttpURLConnection.HTTP_GONE) {
-                throw DownloadException("Stream URL expired", retryable = false, needsRefresh = true)
-            }
-            if (responseCode !in 200..299) throw DownloadException("HTTP $responseCode", retryable = responseCode >= 500)
-            val contentRange = http.getHeaderField("Content-Range") ?: throw RangeUnsupported("Missing Content-Range")
-            if (!contentRange.startsWith("bytes $rangeStart-$end/")) throw RangeUnsupported("Invalid Content-Range")
-            FileOutputStream(file, offset > 0).use { output ->
-                http.inputStream.use { input ->
-                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-                    while (true) {
-                        checkInterrupted()
-                        val count = input.read(buffer)
-                        if (count == -1) break
-                        output.write(buffer, 0, count)
-                        synchronized(data) {
-                            part.put("downloadedBytes", part.optLong("downloadedBytes", 0L) + count)
-                            updateProgressMetrics()
-                        }
-                        onChanged(data)
-                    }
-                }
-            }
-        } finally {
-            connections.remove(http)
-            http.disconnect()
-        }
-    }
-
     private fun downloadWithRetries(temporaryFile: File, part: JSONObject) {
         var attempt = 0
         while (true) {
@@ -616,6 +555,14 @@ internal class DownloadMission(
         const val ERROR_CLASS_RETRYABLE = "retryable"
         const val ERROR_CLASS_TERMINAL = "terminal"
         private val SUPPORTED_MIME_TYPES = setOf("video/mp4", "video/webm", "audio/mp4", "audio/webm", "text/vtt")
+
+        fun isRunningStatus(status: String): Boolean = when (status) {
+            STATUS_QUEUED,
+            STATUS_DOWNLOADING,
+            STATUS_POST_PROCESSING,
+            STATUS_PAUSED -> true
+            else -> false
+        }
 
         fun validateRequest(request: JSONObject) {
             val parts = request.optJSONArray("parts")

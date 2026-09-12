@@ -13,8 +13,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 internal class DownloadManager(
-    context: Context,
-    private val onChanged: (JSONArray) -> Unit = {}
+    context: Context
 ) {
     private val storage = DownloadStorage(context)
     private val executor: ExecutorService = Executors.newFixedThreadPool(MAX_CONCURRENCY)
@@ -322,7 +321,6 @@ internal class DownloadManager(
     private fun persistLocked() {
         val snapshot = snapshotLocked()
         storage.saveMetadata(snapshot)
-        onChanged(snapshot)
         listeners.forEach { it(snapshot) }
     }
 
