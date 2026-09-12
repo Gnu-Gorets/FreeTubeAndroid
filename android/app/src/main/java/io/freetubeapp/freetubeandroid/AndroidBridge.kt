@@ -88,8 +88,9 @@ class AndroidBridge(
         val request = JSONObject(requestJson)
         validateDownloadUrls(request)
         Log.i("FreeTubeDownloads", "enqueue kind=${request.optString("kind")} mime=${request.optString("mimeType")} parts=${request.optJSONArray("parts")?.length() ?: 0}")
+        val id = downloadManager.enqueue(request)
         DownloadService.start(activity)
-        return downloadManager.enqueue(request).toString()
+        return id.toString()
     }
 
     private fun hasRunningDownload(snapshot: org.json.JSONArray): Boolean {
