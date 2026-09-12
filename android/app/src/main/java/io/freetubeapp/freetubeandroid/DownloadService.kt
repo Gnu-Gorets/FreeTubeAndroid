@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import org.json.JSONArray
 
 class DownloadService : Service() {
@@ -20,12 +21,21 @@ class DownloadService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification(null))
         manager = DownloadRuntime.manager(this)
         manager.addListener(downloadListener)
+        updateNotification(manager.snapshot())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        val id = intent?.getStringExtra(EXTRA_MISSION_ID)
+        Log.i("FreeTubeDownloads", "notification action=${intent?.action} id=$id")
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_PAUSE -> id?.let { Log.i("FreeTubeDownloads", "pause result=${manager.pause(it)}") }
+            ACTION_RESUME -> id?.let { Log.i("FreeTubeDownloads", "resume result=${manager.resume(it)}") }
+            ACTION_CANCEL -> id?.let { Log.i("FreeTubeDownloads", "cancel result=${manager.cancel(it)}") }
+            ACTION_DELETE -> id?.let { Log.i("FreeTubeDownloads", "delete result=${manager.delete(it)}") }
         }
         return START_STICKY
     }
@@ -68,7 +78,10 @@ class DownloadService : Service() {
 
         val active = snapshot?.let { findActiveMission(it) }
         if (active != null) {
-            title = active.optString("title", title)
+            title = active.optJSONObject("video")?.optString("title")?.takeIf { it.isNotBlank() }
+                ?: active.optString("title").takeIf { it.isNotBlank() }
+                ?: active.optString("fileName").takeIf { it.isNotBlank() }
+                ?: title
             val status = active.optString("status")
             text = when (status) {
                 DownloadMission.STATUS_POST_PROCESSING -> "Processing"
@@ -93,7 +106,35 @@ class DownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(downloadsPendingIntent())
             .setProgress(max, progress, indeterminate)
+            .apply {
+                if (active != null) {
+                    val id = active.optString("id")
+                    when (active.optString("status")) {
+                        DownloadMission.STATUS_PAUSED -> addAction(action("Resume", ACTION_RESUME, id))
+                        DownloadMission.STATUS_QUEUED,
+                        DownloadMission.STATUS_DOWNLOADING -> addAction(action("Pause", ACTION_PAUSE, id))
+                    }
+                    addAction(action("Cancel", ACTION_CANCEL, id))
+                    addAction(action("Delete", ACTION_DELETE, id))
+                }
+            }
             .build()
+    }
+
+    private fun action(label: String, action: String, id: String): Notification.Action {
+        return Notification.Action.Builder(
+            null,
+            label,
+            PendingIntent.getForegroundService(
+                this,
+                action.hashCode() + id.hashCode(),
+                Intent(this, DownloadService::class.java).apply {
+                    this.action = action
+                    putExtra(EXTRA_MISSION_ID, id)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        ).build()
     }
 
     private fun findActiveMission(snapshot: JSONArray): org.json.JSONObject? {
@@ -133,6 +174,11 @@ class DownloadService : Service() {
         private const val NOTIFICATION_ID = 2001
         private const val REQUEST_CODE = 2001
         const val ACTION_STOP = "io.freetubeapp.freetubeandroid.STOP_DOWNLOADS"
+        private const val ACTION_PAUSE = "io.freetubeapp.freetubeandroid.PAUSE_DOWNLOAD"
+        private const val ACTION_RESUME = "io.freetubeapp.freetubeandroid.RESUME_DOWNLOAD"
+        private const val ACTION_CANCEL = "io.freetubeapp.freetubeandroid.CANCEL_DOWNLOAD"
+        private const val ACTION_DELETE = "io.freetubeapp.freetubeandroid.DELETE_DOWNLOAD"
+        private const val EXTRA_MISSION_ID = "mission_id"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, DownloadService::class.java))
