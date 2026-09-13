@@ -474,6 +474,8 @@ open_search_results() {
 
 clean_logs() { adb_cmd logcat -c; : >"$LOG_FILE"; }
 
+trap cleanup_proxy EXIT
+
 cleanup_proxy() {
   if [[ -n "$PROXY_PID" ]]; then
     adb_cmd reverse --remove "tcp:$PROXY_PORT" >/dev/null 2>&1 || true
@@ -497,17 +499,19 @@ proxy_settings() {
   screenshot proxy-settings
   local toggle_pixel
   toggle_pixel=$(convert "$ARTIFACT_DIR/proxy-settings.png" -format '%[pixel:p{289,358}]' info:)
-  if [[ "$toggle_pixel" != *'33,150,243'* ]]; then
+  if [[ "$toggle_pixel" == *'33,150,243'* ]]; then
     adb_shell input tap 380 358
     sleep 3
   fi
+  adb_shell input tap 380 358
+  sleep 3
   adb_shell input tap 360 670
   sleep 1
   adb_shell input tap 120 700
   sleep 3
   adb_shell input tap 300 880
   adb_shell input keyevent 67 67 67 67 67
-  adb_shell input text "$PROXY_PORT"
+  adb_shell input keyevent KEYCODE_1 KEYCODE_9 KEYCODE_0 KEYCODE_5 KEYCODE_0
   adb_shell input keyevent KEYCODE_BACK
   sleep 3
   adb_shell input tap 360 1050

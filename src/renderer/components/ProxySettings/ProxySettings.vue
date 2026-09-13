@@ -230,12 +230,12 @@ async function handleUpdateProxy(enabled) {
 /**
  * @param {string} value
  */
-function handleUpdateProxyProtocol(value) {
+async function handleUpdateProxyProtocol(value) {
+  await store.dispatch('updateProxyProtocol', value)
+
   if (useProxy.value) {
     enableProxy().catch(showProxyError)
   }
-
-  store.dispatch('updateProxyProtocol', value)
 }
 
 /**
