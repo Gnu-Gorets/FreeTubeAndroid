@@ -268,7 +268,7 @@ const settingsComponentsData = computed(() => {
       icon: ['fas', 'database'],
       component: DataSettings
     },
-    ...(process.env.IS_ELECTRON
+    ...(process.env.IS_ELECTRON || process.env.IS_ANDROID
       ? [
           {
             type: 'proxy',
