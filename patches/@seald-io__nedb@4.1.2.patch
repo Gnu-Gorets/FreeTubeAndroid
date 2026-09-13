@@ -10,7 +10,7 @@ index a8acb22eb007804a75b0254ba1f70d47e96481c6..d447c92f58090fedd64e9554593a3593
     */
    constructor (options) {
      super()
-@@ -265,7 +266,8 @@
+@@ -265,7 +266,8 @@ class Datastore extends EventEmitter {
        beforeDeserialization: options.beforeDeserialization,
        corruptAlertThreshold: options.corruptAlertThreshold,
        modes: options.modes,
@@ -35,7 +35,7 @@ index 23435c1ff6ce4153ebf9ce919491f0facf8da690..a80278b50705a9610f1008543f6b9d42
      this.db = options.db
      this.inMemoryOnly = this.db.inMemoryOnly
      this.filename = this.db.filename
-@@ -109,7 +111,7 @@
+@@ -109,7 +111,7 @@ class Persistence {
        }
      }
  
@@ -44,7 +44,7 @@ index 23435c1ff6ce4153ebf9ce919491f0facf8da690..a80278b50705a9610f1008543f6b9d42
      this.db.emit('compaction.done')
    }
  
-@@ -160,7 +162,7 @@
+@@ -160,7 +162,7 @@ class Persistence {
  
      if (toPersist.length === 0) return
  
@@ -53,7 +53,7 @@ index 23435c1ff6ce4153ebf9ce919491f0facf8da690..a80278b50705a9610f1008543f6b9d42
    }
  
    /**
-@@ -311,16 +313,16 @@
+@@ -311,16 +313,16 @@ class Persistence {
      // In-memory only datastore
      if (this.inMemoryOnly) return
      await Persistence.ensureParentDirectoryExistsAsync(this.filename, this.modes.dirMode)
@@ -74,7 +74,7 @@ index 23435c1ff6ce4153ebf9ce919491f0facf8da690..a80278b50705a9610f1008543f6b9d42
        treatedData = await this.treatRawData(rawData)
      }
      // Recreate all indexes in the datafile
-@@ -362,7 +364,7 @@
+@@ -362,7 +364,7 @@ class Persistence {
      // remove datastore file
      if (!this.db.inMemoryOnly) {
        await this.db.executor.pushAsync(async () => {
@@ -83,7 +83,7 @@ index 23435c1ff6ce4153ebf9ce919491f0facf8da690..a80278b50705a9610f1008543f6b9d42
        }, true)
      }
    }
-@@ -375,7 +377,7 @@
+@@ -375,7 +377,7 @@ class Persistence {
     * @private
     */
    static async ensureParentDirectoryExistsAsync (dir, mode = DEFAULT_DIR_MODE) {
