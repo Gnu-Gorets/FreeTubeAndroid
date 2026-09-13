@@ -109,7 +109,7 @@ overrides:
   uuid@<11.1.1: '>=11.1.1'
 
 patchedDependencies:
-  '@seald-io/nedb@4.1.2': 82137e181c52d27a2282bf9587c377e2c5c15c890f9b4b52d6750a976faf432b
+  '@seald-io/nedb@4.1.2': d11684ebd4c37c24e3c75ef6a88d04767f553e659fe9c4c77d4e134f7234b54c
 
 importers:
 
@@ -132,7 +132,7 @@ importers:
         version: 3.3.3(@fortawesome/fontawesome-svg-core@7.3.1)(vue@3.5.42(typescript@6.0.3))
       '@seald-io/nedb':
         specifier: ^4.1.2
-        version: 4.1.2(patch_hash=82137e181c52d27a2282bf9587c377e2c5c15c890f9b4b52d6750a976faf432b)
+        version: 4.1.2(patch_hash=d11684ebd4c37c24e3c75ef6a88d04767f553e659fe9c4c77d4e134f7234b54c)
       autolinker:
         specifier: ^4.1.5
         version: 4.1.5
@@ -6594,7 +6594,7 @@ snapshots:
 
   '@seald-io/binary-search-tree@1.0.3': {}
 
-  '@seald-io/nedb@4.1.2(patch_hash=82137e181c52d27a2282bf9587c377e2c5c15c890f9b4b52d6750a976faf432b)':
+  '@seald-io/nedb@4.1.2(patch_hash=d11684ebd4c37c24e3c75ef6a88d04767f553e659fe9c4c77d4e134f7234b54c)':
     dependencies:
       '@seald-io/binary-search-tree': 1.0.3
       localforage: 1.10.0
