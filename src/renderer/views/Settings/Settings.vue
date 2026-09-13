@@ -20,7 +20,17 @@
         :settings-sections="settingsSectionComponents"
         :active-section="activeSection"
         @navigate-to-section="navigateToSection"
-      />
+      >
+        <template #mobile-options>
+          <FtToggleSwitch
+            class="settingsMobileSort"
+            compact
+            :label="t('Settings.Sort Settings Sections (A-Z)')"
+            :default-value="settingsSectionSortEnabled"
+            @change="updateSettingsSectionSortEnabled"
+          />
+        </template>
+      </FtSettingsMenu>
       <div
         v-show="isInDesktopView || settingsSectionTypeOpenInMobile != null"
         class="settingsContent"
@@ -178,7 +188,7 @@ const settingsComponentsData = computed(() => {
           icon: ['fas', 'flask'],
           component: ExperimentalSettings
         }]
-      : []),
+      : [])
   ]
 })
 
