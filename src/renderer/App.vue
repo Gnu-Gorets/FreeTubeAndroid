@@ -612,10 +612,6 @@ watch(locale, (value) => {
   document.body.dir = isLocaleRightToLeft.value ? 'rtl' : 'ltr'
 }, { immediate: true })
 
-// en-US is the fallback locale, which means we always need it
-// regardless of the user's settings so we can already start start loading it now
-loadLocale('en-US')
-
 /** @type {import('vue').ComputedRef<string>} */
 const currentInvidiousInstanceUrl = computed(() => store.getters.getCurrentInvidiousInstanceUrl)
 
