@@ -1030,7 +1030,7 @@ export default defineComponent({
       clearTimeout(longPressTimer)
       longPressTimer = setTimeout(() => {
         longPressPlaybackRate = video.value.playbackRate
-        video.value.playbackRate = Math.min(longPressPlaybackRate * 2, maxVideoPlaybackRate.value)
+        video.value.playbackRate = Math.min(2, maxVideoPlaybackRate.value)
         showValueChange(`${video.value.playbackRate.toFixed(2)}x`)
       }, 500)
     }

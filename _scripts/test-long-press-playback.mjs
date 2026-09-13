@@ -5,7 +5,7 @@ const source = await readFile('src/renderer/components/ft-shaka-video-player/ft-
 
 assert.match(source, /if \(!process\.env\.IS_ANDROID \|\| event\.pointerType === 'mouse' \|\| video\.value\.paused\) return/)
 assert.match(source, /longPressTimer = setTimeout\(\(\) => \{/)
-assert.match(source, /video\.value\.playbackRate = Math\.min\(longPressPlaybackRate \* 2, maxVideoPlaybackRate\.value\)/)
+assert.match(source, /video\.value\.playbackRate = Math\.min\(2, maxVideoPlaybackRate\.value\)/)
 assert.match(source, /videoElement\.addEventListener\('pointerup', stopLongPressPlayback\)/)
 assert.match(source, /videoElement\.addEventListener\('pointercancel', stopLongPressPlayback\)/)
 assert.match(source, /videoElement\.addEventListener\('contextmenu', preventLongPressContextMenu\)/)
