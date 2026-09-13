@@ -35,7 +35,7 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -549,6 +549,19 @@ playback() {
   grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' "$ARTIFACT_DIR/media_session.txt" | grep -q 'state=PlaybackState {state=PLAYING'
 }
 
+long_press() {
+  clean_logs
+  media_session | grep -q 'state=PlaybackState {state=PLAYING' || {
+    open_search_results || return 1
+    open_video || return 1
+  }
+  progress "holding video for 700ms"
+  adb_shell input swipe 400 340 400 340 700
+  sleep 1
+  screenshot long-press
+  no_runtime_errors
+}
+
 controls() {
   clean_logs
   media_session | grep -q 'state=PlaybackState {state=PLAYING' || {
@@ -759,6 +772,7 @@ run_unlocked_suite() {
   run_test search search
   run_test reload reload
   run_test playback playback
+  run_test long-press long_press
   run_test controls controls
   run_test audio-focus audio_focus
   run_test persistence persistence
@@ -810,6 +824,7 @@ case "$TEST" in
   search) run_test search search ;;
   reload) run_test reload reload ;;
   playback) run_test playback playback ;;
+  long-press) run_test long-press long_press ;;
   controls) run_test controls controls ;;
   fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;
   fullscreen-auto-rotate) run_test fullscreen-auto-rotate fullscreen_auto_rotate ;;

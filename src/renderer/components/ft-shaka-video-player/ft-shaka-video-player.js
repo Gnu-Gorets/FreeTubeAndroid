@@ -3394,6 +3394,7 @@ export default defineComponent({
      */
     async function destroyPlayer() {
       ignoreErrors = true
+      removeLongPressPlaybackListeners()
 
       let uiState = { startNextVideoInFullscreen: false, startNextVideoInFullwindow: false, startNextVideoInPip: false }
 

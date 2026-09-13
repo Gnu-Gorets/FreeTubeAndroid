@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+
+const source = await readFile('src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.js', 'utf8')
+
+assert.match(source, /if \(!process\.env\.IS_ANDROID \|\| event\.pointerType === 'mouse' \|\| video\.value\.paused\) return/)
+assert.match(source, /longPressTimer = setTimeout\(\(\) => \{/)
+assert.match(source, /video\.value\.playbackRate = Math\.min\(longPressPlaybackRate \* 2, maxVideoPlaybackRate\.value\)/)
+assert.match(source, /videoElement\.addEventListener\('pointerup', stopLongPressPlayback\)/)
+assert.match(source, /videoElement\.addEventListener\('pointercancel', stopLongPressPlayback\)/)
+assert.match(source, /videoElement\.addEventListener\('contextmenu', preventLongPressContextMenu\)/)
+assert.match(source, /ignoreErrors = true\n\s+removeLongPressPlaybackListeners\(\)/)
+
+console.log('long-press playback contract: PASS')
