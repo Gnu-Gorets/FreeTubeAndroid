@@ -161,8 +161,54 @@ class MainActivity : Activity() {
         when (intent?.action) {
             "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
             "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
+            "io.freetubeapp.freetubeandroid.TEST_SETTINGS_SORT" -> {
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    runSettingsSortTest()
+                }
+            }
             Intent.ACTION_VIEW -> dispatchDeepLink(intent)
         }
+    }
+
+    private fun runSettingsSortTest() {
+        webView.evaluateJavascript(
+            """
+            (() => {
+              window.location.hash = '#/settings';
+              setTimeout(() => {
+                const expectedOff = ['general', 'theme', 'player', 'subscription', 'distraction', 'parental-control', 'privacy', 'data', 'proxy', 'sponsor-block', 'password'];
+                const expectedOn = ['general', 'data', 'distraction', 'parental-control', 'password', 'player', 'privacy', 'proxy', 'sponsor-block', 'subscription', 'theme'];
+                const links = [...document.querySelectorAll('.settingsMenu a[data-section]')];
+                const order = links.map(link => link.dataset.section);
+                const label = [...document.querySelectorAll('label')].find(element => element.textContent.includes('Sort settings sections (A-Z)'));
+                const input = label ? document.getElementById(label.htmlFor) : null;
+                const initial = input?.checked;
+                const readOrder = () => [...document.querySelectorAll('.settingsMenu a[data-section]')].map(link => link.dataset.section);
+                const orderMatches = (value, expected) => JSON.stringify(value) === JSON.stringify(expected);
+                const setState = (target, done) => {
+                  if (input.checked === target) {
+                    done();
+                    return;
+                  }
+                  input.click();
+                  setTimeout(done, 300);
+                };
+                setState(false, () => {
+                  const offOrder = readOrder();
+                  setState(true, () => {
+                    const onOrder = readOrder();
+                    setState(initial, () => {
+                      const restored = input.checked === initial;
+                      const pass = orderMatches(offOrder, expectedOff) && orderMatches(onOrder, expectedOn) && restored;
+                      console.log('SETTINGS_SORT_TEST:' + (pass ? 'PASS' : 'FAIL') + ':' + JSON.stringify({ initial, order, offOrder, onOrder, restored }));
+                    });
+                  });
+                });
+              }, 1500);
+            })();
+            """.trimIndent(),
+            null
+        )
     }
 
     @Suppress("DEPRECATION")
