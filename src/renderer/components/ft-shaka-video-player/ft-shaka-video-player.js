@@ -886,6 +886,10 @@ export default defineComponent({
         elementList = uiConfig.controlPanelElements
       }
 
+      if (process.env.IS_ANDROID) {
+        uiConfig.overflowMenuButtons.push('ft_stats')
+      }
+
       if (!enableScreenshot.value || props.format === 'audio') {
         removeFromArrayIfExists(elementList, 'ft_screenshot')
       }
@@ -936,8 +940,8 @@ export default defineComponent({
         /** @type {shaka.extern.UIConfiguration} */
         const firstTimeConfig = {
           addSeekBar: seekingIsPossible.value,
-          customContextMenu: true,
-          contextMenuElements: ['ft_stats'],
+          customContextMenu: !process.env.IS_ANDROID,
+          contextMenuElements: process.env.IS_ANDROID ? [] : ['ft_stats'],
           enableTooltips: true,
           seekBarColors: {
             // shaka-player's chapter markers only show up part of the time for the DASH and audio formats
@@ -1040,15 +1044,16 @@ export default defineComponent({
 
     let longPressTimer
     let longPressPlaybackRate
-    let longPressVideoElement
+    let longPressControlsContainer
 
     function startLongPressPlayback(event) {
       if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+      if (event.target.closest?.('button, input, .shaka-seek-bar-container')) return
 
       clearTimeout(longPressTimer)
       longPressTimer = setTimeout(() => {
         longPressPlaybackRate = video.value.playbackRate
-        video.value.playbackRate = Math.min(longPressPlaybackRate * 2, maxVideoPlaybackRate.value)
+        video.value.playbackRate = Math.min(2, maxVideoPlaybackRate.value)
         showValueChange(`${video.value.playbackRate.toFixed(2)}x`)
       }, 500)
     }
@@ -1062,37 +1067,30 @@ export default defineComponent({
       }
     }
 
-    function preventLongPressContextMenu(event) {
-      if (process.env.IS_ANDROID) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-    }
-
-    function addLongPressPlaybackListeners(videoElement) {
+    function addLongPressPlaybackListeners(controlsContainer) {
       if (!process.env.IS_ANDROID) return
-      longPressVideoElement = videoElement
-      videoElement.addEventListener('pointerdown', startLongPressPlayback)
-      videoElement.addEventListener('pointerup', stopLongPressPlayback)
-      videoElement.addEventListener('pointercancel', stopLongPressPlayback)
-      videoElement.addEventListener('pointerleave', stopLongPressPlayback)
-      videoElement.addEventListener('contextmenu', preventLongPressContextMenu)
+      removeLongPressPlaybackListeners()
+      longPressControlsContainer = controlsContainer
+      controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
+      controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
+      controlsContainer.addEventListener('pointercancel', stopLongPressPlayback)
+      controlsContainer.addEventListener('pointerleave', stopLongPressPlayback)
     }
 
     function removeLongPressPlaybackListeners() {
-      if (!longPressVideoElement) return
-      longPressVideoElement.removeEventListener('pointerdown', startLongPressPlayback)
-      longPressVideoElement.removeEventListener('pointerup', stopLongPressPlayback)
-      longPressVideoElement.removeEventListener('pointercancel', stopLongPressPlayback)
-      longPressVideoElement.removeEventListener('pointerleave', stopLongPressPlayback)
-      longPressVideoElement.removeEventListener('contextmenu', preventLongPressContextMenu)
+      if (!longPressControlsContainer) return
+      longPressControlsContainer.removeEventListener('pointerdown', startLongPressPlayback)
+      longPressControlsContainer.removeEventListener('pointerup', stopLongPressPlayback)
+      longPressControlsContainer.removeEventListener('pointercancel', stopLongPressPlayback)
+      longPressControlsContainer.removeEventListener('pointerleave', stopLongPressPlayback)
       stopLongPressPlayback()
-      longPressVideoElement = null
+      longPressControlsContainer = null
     }
 
     function addUICustomizations() {
       /** @type {HTMLDivElement} */
       const controlsContainer = ui.getControls().getControlsContainer()
+      addLongPressPlaybackListeners(controlsContainer)
 
       controlsContainer.removeEventListener('wheel', handleControlsContainerWheel)
       controlsContainer.removeEventListener('click', handleControlsContainerClick, true)
@@ -2020,7 +2018,10 @@ export default defineComponent({
         }
       }
 
-      shakaContextMenu.registerElement('ft_stats', new StatsButtonFactory())
+      if (!process.env.IS_ANDROID) {
+        shakaContextMenu.registerElement('ft_stats', new StatsButtonFactory())
+      }
+      shakaOverflowMenu.registerElement('ft_stats', new StatsButtonFactory())
     }
 
     function registerScreenshotButton() {
@@ -2092,7 +2093,10 @@ export default defineComponent({
       shakaControls.registerElement('ft_legacy_quality', null)
       shakaOverflowMenu.registerElement('ft_legacy_quality', null)
 
-      shakaContextMenu.registerElement('ft_stats', null)
+      if (!process.env.IS_ANDROID) {
+        shakaContextMenu.registerElement('ft_stats', null)
+      }
+      shakaOverflowMenu.registerElement('ft_stats', null)
 
       shakaControls.registerElement('ft_screenshot', null)
       shakaOverflowMenu.registerElement('ft_screenshot', null)
@@ -2912,7 +2916,6 @@ export default defineComponent({
       }
 
       videoResizeObserver.observe(videoElement)
-      addLongPressPlaybackListeners(videoElement)
 
       registerScreenshotButton()
       registerAudioTrackSelection()
@@ -3412,6 +3415,7 @@ export default defineComponent({
      */
     async function destroyPlayer() {
       ignoreErrors = true
+      removeLongPressPlaybackListeners()
 
       let uiState = { startNextVideoInFullscreen: false, startNextVideoInFullwindow: false, startNextVideoInPip: false }
 
