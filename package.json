@@ -75,11 +75,12 @@
     "vuex": "^4.1.0",
     "youtubei.js": "^18.0.0"
   },
+  "packageManager": "pnpm@12.3.4",
   "pnpm": {
     "patchedDependencies": {
       "@seald-io/nedb@4.1.2": "patches/@seald-io__nedb@4.1.2.patch"
     }
-  },
+  }
   "devDependencies": {
     "@babel/core": "^8.0.5",
     "@babel/preset-env": "^8.0.5",
