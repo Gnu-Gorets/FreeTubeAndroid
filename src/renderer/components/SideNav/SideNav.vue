@@ -26,7 +26,7 @@
         <p
           class="navLabel"
         >
-          {{ $t("Subscriptions.Subscriptions") }}
+          {{ $t('Subscriptions.Subscriptions') }}
         </p>
       </router-link>
       <router-link
