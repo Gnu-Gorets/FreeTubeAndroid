@@ -21,6 +21,10 @@
   margin-block: 0;
 }
 
+.settingsMobileSort {
+  display: none;
+}
+
 .section {
   /* enables anchor link clicks to land with the section title in the top quarter of the page */
   scroll-margin-top: 24vh;
@@ -59,6 +63,12 @@
 
   .switchRow {
     display: none;
+  }
+
+  .settingsMobileSort {
+    display: block;
+    margin-block: 0 12px;
+    font-size: 16px;
   }
 
   .settingsSections {
