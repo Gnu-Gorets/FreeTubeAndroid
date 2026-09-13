@@ -9,6 +9,7 @@ import {
   calculatePublishedDate,
   deepCopy,
   escapeHTML,
+  fetchWithTimeout,
   extractNumberFromString,
   getChannelPlaylistId,
   getRelativeTimeFromDate,
@@ -119,7 +120,7 @@ async function createInnertube({ withPlayer = false, location = undefined, safet
     client_type: clientType,
 
     // use browser fetch
-    fetch: (fetchFunc ?? ((input, init) => fetch(input, init))),
+    fetch: (fetchFunc ?? ((input, init) => fetchWithTimeout(15_000, input, init))),
     cache,
     generate_session_locally: !!generateSessionLocally
   })
@@ -571,16 +572,16 @@ function buildSessionFromYtConfig(ytConfig, fetchFunc) {
  *   adEndTimeUnixMs: number
  * }>}
  */
-export async function getLocalVideoInfo(id) {
+export async function getLocalVideoInfo(id, allowAlternateDownloadFallback = false) {
   let responseTime
   let totalAdTimeMilliseconds = 0
 
   const fetchFunc = async (input, init) => {
     if (!(input.url?.startsWith('https://www.youtube.com/youtubei/v1/player'))) {
-      return fetch(input, init)
+      return fetchWithTimeout(15_000, input, init)
     }
 
-    const response = await fetch(input, init)
+    const response = await fetchWithTimeout(15_000, input, init)
     const responseText = await response.text()
 
     responseTime = Date.now()
@@ -764,7 +765,60 @@ export async function getLocalVideoInfo(id) {
     info.storyboards = trailerInfo.storyboards
   }
 
+  const hasDirectDownloadFormats = info.streaming_data?.adaptive_formats?.some(format => Boolean(format.url))
+
+  console.warn('[Downloads] Local source response ' + JSON.stringify({
+    formats: info.streaming_data?.formats?.length || 0,
+    adaptiveFormats: info.streaming_data?.adaptive_formats?.length || 0,
+    hasDirectDownloadFormats: Boolean(hasDirectDownloadFormats),
+    hasSabr: Boolean(info.streaming_data?.server_abr_streaming_url)
+  }))
+
+  if (allowAlternateDownloadFallback && info.streaming_data && !hasDirectDownloadFormats) {
+    for (const [clientName, clientType] of [['VISIONOS', ClientType.VISIONOS], ['ANDROID', ClientType.ANDROID], ['IOS', ClientType.IOS]]) {
+      try {
+        const alternate = await createInnertube({ clientType })
+        alternate.session.context.client.visitorData = context.client.visitorData
+        alternate.session.player = player
+        const alternateInfo = await alternate.getBasicInfo(id, { client: clientName })
+        const alternateStreaming = alternateInfo.streaming_data
+        const directFormats = [
+          ...(alternateStreaming?.formats || []),
+          ...(alternateStreaming?.adaptive_formats || [])
+        ].filter(format => Boolean(format.url))
+        console.warn('[Downloads] Alternate stream response ' + JSON.stringify({
+          client: clientName,
+          formats: alternateStreaming?.formats?.length || 0,
+          adaptiveFormats: alternateStreaming?.adaptive_formats?.length || 0,
+          directUrls: directFormats.length,
+          directVideoUrls: directFormats.filter(format => format.mime_type?.startsWith('video/')).length,
+          directAudioUrls: directFormats.filter(format => format.mime_type?.startsWith('audio/')).length,
+          signedAdaptiveFormats: alternateStreaming?.adaptive_formats?.filter(format => Boolean(format.signature_cipher || format.cipher)).length || 0
+        }))
+        if (alternateStreaming && directFormats.length > 0) {
+          info.streaming_data = alternateStreaming
+          info.captions = alternateInfo.captions
+          info.storyboards = alternateInfo.storyboards
+          console.warn('[Downloads] Selected alternate download client ' + clientName)
+          break
+        }
+      } catch (error) {
+        console.warn('[Downloads] Alternate stream fallback failed ' + clientName, error)
+      }
+    }
+  }
+
   if (info.streaming_data) {
+    console.warn('[Downloads] Local stream response ' + JSON.stringify({
+      formats: info.streaming_data.formats.length,
+      adaptiveFormats: info.streaming_data.adaptive_formats.length,
+      directAdaptiveUrls: info.streaming_data.adaptive_formats.filter(format => Boolean(format.url)).length,
+      signedAdaptiveFormats: info.streaming_data.adaptive_formats.filter(format => Boolean(format.signature_cipher || format.cipher)).length,
+      hasDashManifest: Boolean(info.streaming_data.dash_manifest_url),
+      hasHlsManifest: Boolean(info.streaming_data.hls_manifest_url),
+      hasSabr: Boolean(info.streaming_data.server_abr_streaming_url),
+      adaptiveMimeTypes: [...new Set(info.streaming_data.adaptive_formats.map(format => format.mime_type).filter(Boolean))]
+    }))
     await decipherFormats(info.streaming_data.formats, player)
 
     if (info.streaming_data.server_abr_streaming_url) {
@@ -1865,7 +1919,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
         type: 'playlist',
         dataSource: 'local',
         playlistId,
-        title: lockupView.metadata.title.text,
+        title: lockupView.metadata.title?.text ?? '',
         thumbnail: lockupView.content_image.primary_thumbnail.image[0].url,
         channelName,
         channelId,
@@ -1961,7 +2015,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
       return {
         type: 'video',
         videoId: lockupView.content_id,
-        title: lockupView.metadata.title.text?.trim(),
+        title: lockupView.metadata.title?.text?.trim() ?? '',
         author,
         authorId: lockupView.metadata.image?.renderer_context?.command_context?.on_tap?.payload.browseId ?? channelId,
         viewCount,
@@ -2102,7 +2156,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       lengthSeconds: video.duration.seconds
@@ -2121,7 +2175,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.video_id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       viewCount: video.view_count == null ? null : extractNumberFromString(video.view_count.text),

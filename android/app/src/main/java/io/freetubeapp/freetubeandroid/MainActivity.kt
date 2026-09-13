@@ -25,6 +25,7 @@ class MainActivity : Activity() {
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
         const val DIRECTORY_REQUEST = 1003
+        const val OPEN_DOWNLOADS_EXTRA = "open_downloads"
     }
 
     private lateinit var webView: WebView
@@ -40,6 +41,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
+        webView.setBackgroundColor(Color.rgb(16, 16, 16))
         ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
             val safeInsets = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
@@ -56,6 +58,7 @@ class MainActivity : Activity() {
                 super.onPageFinished(view, url)
                 pendingDeepLink?.let {
                     dispatchDeepLink(it)
+                    if (it.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false)) openDownloads()
                     pendingDeepLink = null
                 }
             }
@@ -112,6 +115,13 @@ class MainActivity : Activity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    private fun openDownloads() {
+        webView.evaluateJavascript(
+            "window.__freetubeOpenDownloads = true; window.dispatchEvent(new Event('open-downloads'))",
+            null
+        )
+    }
+
     private fun dispatchDeepLink(intent: Intent?) {
         val url = intent?.data?.toString() ?: return
         val event = JSONObject.quote(url)
@@ -134,27 +144,31 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         Log.i("FreeTubeLifecycle", "onPause")
+        Log.i("FreeTubeLifecycle", "dispatch app-pause")
         webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
     }
 
     override fun onResume() {
         super.onResume()
         Log.i("FreeTubeLifecycle", "onResume")
+        Log.i("FreeTubeLifecycle", "dispatch app-resume")
         webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
     }
 
     override fun onDestroy() {
         Log.i("FreeTubeLifecycle", "onDestroy finishing=$isFinishing changingConfigurations=$isChangingConfigurations")
         androidBridge.cancelMediaNotification()
+        androidBridge.dispose()
         webView.destroy()
         super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) openDownloads()
         when (intent?.action) {
-            "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
-            "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
+            "MEDIA_PLAY" -> webView.evaluateJavascript("window.dispatchEvent(new Event('media-play'))", null)
+            "MEDIA_PAUSE" -> webView.evaluateJavascript("window.dispatchEvent(new Event('media-pause'))", null)
             Intent.ACTION_VIEW -> dispatchDeepLink(intent)
         }
     }

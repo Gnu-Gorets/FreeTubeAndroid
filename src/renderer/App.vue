@@ -166,14 +166,29 @@ const defaultInvidiousInstance = computed(() => store.getters.getDefaultInvidiou
 
 const dataReady = ref(false)
 
+function handleOpenDownloads() {
+  if (!process.env.IS_ANDROID) return
+  window.__freetubeOpenDownloads = false
+  router.push('/downloads')
+}
+
 onMounted(async () => {
+  performance.mark('freetube:app-mounted')
+
   if (process.env.IS_ANDROID) {
     window.addEventListener('youtube-link', ({ detail }) => {
       if (detail?.link) handleYoutubeLink(detail.link)
     })
+    window.addEventListener('open-downloads', handleOpenDownloads)
+    store.dispatch('startDownloadUpdates')
+    store.dispatch('grabDownloads')
+    if (window.__freetubeOpenDownloads) handleOpenDownloads()
   }
 
-  await store.dispatch('grabUserSettings')
+  await Promise.all([
+    store.dispatch('grabUserSettings'),
+    store.dispatch('fetchInvidiousInstancesFromFile')
+  ])
 
   if (process.env.IS_ANDROID && store.getters.getUseProxy) {
     const proxyId = crypto.randomUUID()
@@ -195,18 +210,12 @@ onMounted(async () => {
     })
   }
 
+  performance.mark('freetube:critical-local-data-ready')
   updateTheme()
 
-  await store.dispatch('fetchInvidiousInstancesFromFile')
   if (defaultInvidiousInstance.value === '') {
     await store.dispatch('setRandomCurrentInvidiousInstance')
   }
-
-  store.dispatch('fetchInvidiousInstances').then(() => {
-    if (defaultInvidiousInstance.value === '') {
-      store.dispatch('setRandomCurrentInvidiousInstance')
-    }
-  })
 
   store.dispatch('grabAllProfiles', t('Profile.All Channels')).then(() => {
     store.dispatch('grabHistory')
@@ -223,10 +232,16 @@ onMounted(async () => {
     }
 
     dataReady.value = true
+    performance.mark('freetube:shell-ready')
 
     setTimeout(() => {
+      store.dispatch('fetchInvidiousInstances').then(() => {
+        if (defaultInvidiousInstance.value === '') {
+          store.dispatch('setRandomCurrentInvidiousInstance')
+        }
+      })
       checkForNewUpdates()
-    }, 500)
+    }, 2000)
   })
 
   if (route.path === '/') {
@@ -244,6 +259,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleKeyboardShortcuts)
   document.removeEventListener('mousedown', handleMouseDown)
   document.removeEventListener('dragstart', handleDragStart)
+  if (process.env.IS_ANDROID) window.removeEventListener('open-downloads', handleOpenDownloads)
   document.removeEventListener('click', handleClick)
   document.removeEventListener('auxclick', handleAuxClick)
 })

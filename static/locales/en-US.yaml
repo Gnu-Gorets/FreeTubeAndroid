@@ -1009,6 +1009,50 @@ Playlist:
 # On Video Watch Page
 #* Published
 #& Views
+Downloads:
+  Downloads: Downloads
+  Download: Download
+  Type: Download type
+  Video: Video
+  Audio: Audio
+  Format: Format
+  Video format: Video format
+  Audio format: Audio format
+  Download subtitles: Download subtitles
+  Audio format is not available: Audio format is not available
+  ETA: Remaining
+  LabelSeparator: ':'
+  PerSecond: /s
+  Share: Share
+  Empty: No downloads yet
+  Active: Active
+  Post processing: Post-processing
+  Paused: Paused
+  Completed: Completed
+  Failed: Failed
+  Canceled: Canceled
+  Missing: File missing
+  Pause: Pause
+  Resume: Resume
+  Cancel: Cancel
+  Retry: Retry
+  Open: Open
+  Source: Source video
+  Delete: Delete
+  Settings: Download settings
+  Wi-Fi only: Wi-Fi only
+  Concurrent downloads: Concurrent downloads
+  Threads: Threads
+  Threads description: Streams which are not yet supported by the downloader are not shown
+  Audio language: Audio language
+  Original audio: Original audio
+  Default video format: Default video format
+  Default audio format: Default audio format
+  Select directory: Select downloads directory
+  Reset directory permission: Reset downloads directory permission
+  Prefer local files: Prefer downloaded files for playback
+  Play all: Play all downloaded videos
+
 Change Format:
   Change Media Formats: Change Media Formats
   Use Dash Formats: Use DASH Formats

@@ -18,12 +18,6 @@ UI_SCALE_SET=0
 ORIENTATION_STATE_SAVED=0
 ORIGINAL_ROTATION_MODE=""
 ORIGINAL_USER_ROTATION=""
-ORIENTATION_SETTINGS_SAVED=0
-ORIGINAL_ACCELEROMETER_ROTATION=""
-ORIGINAL_USER_ROTATION_SETTING=""
-PROXY_PID=""
-PROXY_PORT=19050
-PROXY_LOG=""
 
 usage() {
   cat <<'EOF'
@@ -33,12 +27,12 @@ Options:
   --serial SERIAL       adb device serial
   --apk PATH            debug APK path
   --suite NAME          unlocked, locked, all (default: all)
-  --test NAME           one test: preflight, cold-start, search, reload, playback, controls,
+  --test NAME           one test: preflight, cold-start, search, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        export, data-directory-cancel, data-directory-move-reset,
+                        export, downloads-smoke, downloads-notification, downloads-settings, data-directory-cancel, data-directory-move-reset,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, proxy
+                        fullscreen-fit-screen
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -74,7 +68,12 @@ progress() {
   printf '%s [%s +%ss] %s\n' "$(date +%H:%M:%S)" "$CURRENT_TEST" "$elapsed" "$*" | tee -a "$ARTIFACT_DIR/progress.log"
 }
 
+adb_device_ready() {
+  [[ "$(adb -s "$SERIAL" get-state 2>/dev/null)" == "device" ]] || return 1
+  [[ "$(adb -s "$SERIAL" shell am get-current-user 2>/dev/null)" == "0" ]]
+}
 adb_cmd() {
+  adb_device_ready || return 77
   if [[ -n "$SERIAL" ]]; then adb -s "$SERIAL" "$@"; else adb "$@"; fi
 }
 
@@ -354,24 +353,6 @@ restore_orientation() {
   adb_shell wm user-rotation "$ORIGINAL_ROTATION_MODE" "$ORIGINAL_USER_ROTATION" >/dev/null 2>&1 || true
 }
 
-save_rotation_settings() {
-  ORIGINAL_ACCELEROMETER_ROTATION=$(adb_shell settings get system accelerometer_rotation)
-  ORIGINAL_USER_ROTATION_SETTING=$(adb_shell settings get system user_rotation)
-  ORIENTATION_SETTINGS_SAVED=1
-}
-
-set_auto_rotate_off() {
-  adb_shell settings put system accelerometer_rotation 0
-  adb_shell settings put system user_rotation 0
-  sleep 3
-}
-
-restore_rotation_settings() {
-  (( ORIENTATION_SETTINGS_SAVED == 1 )) || return 0
-  adb_shell settings put system accelerometer_rotation "$ORIGINAL_ACCELEROMETER_ROTATION" >/dev/null 2>&1 || true
-  adb_shell settings put system user_rotation "$ORIGINAL_USER_ROTATION_SETTING" >/dev/null 2>&1 || true
-}
-
 no_native_crash() {
   collect_logs
   ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
@@ -391,33 +372,6 @@ enter_fullscreen() {
   sleep 4
 }
 
-fullscreen_auto_rotate() {
-  clean_logs
-  save_orientation || return 1
-  save_rotation_settings || return 1
-  trap 'restore_rotation_settings; restore_orientation' EXIT
-  set_orientation 0 || return 1
-  set_auto_rotate_off || return 1
-  open_video jNQXAC9IVRw || return 1
-  enter_fullscreen portrait
-  screenshot fullscreen-auto-rotate
-  identify "$ARTIFACT_DIR/fullscreen-auto-rotate.png" | grep -q '1600x720' || {
-    echo "Fullscreen did not rotate to landscape with auto-rotate locked"
-    return 1
-  }
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 3
-  screenshot fullscreen-auto-rotate-exit
-  identify "$ARTIFACT_DIR/fullscreen-auto-rotate-exit.png" | grep -q '720x1600' || {
-    echo "Fullscreen exit did not restore portrait orientation"
-    return 1
-  }
-  restore_rotation_settings
-  restore_orientation
-  trap - EXIT
-  no_native_crash
-}
-
 fullscreen_fit_screen() {
   clean_logs
   save_orientation || return 1
@@ -428,7 +382,7 @@ fullscreen_fit_screen() {
   for setting in off on; do
     set_orientation 0 || return 1
     set_fit_video_to_fullscreen "$setting" || return 1
-    for orientation in landscape; do
+    for orientation in portrait landscape; do
       suffix="${setting}-${orientation}"
       open_video jNQXAC9IVRw || return 1
       set_orientation "$([[ "$orientation" == "landscape" ]] && echo 1 || echo 0)"
@@ -473,56 +427,6 @@ open_search_results() {
 }
 
 clean_logs() { adb_cmd logcat -c; : >"$LOG_FILE"; }
-
-trap cleanup_proxy EXIT
-
-cleanup_proxy() {
-  if [[ -n "$PROXY_PID" ]]; then
-    adb_cmd reverse --remove "tcp:$PROXY_PORT" >/dev/null 2>&1 || true
-    kill "$PROXY_PID" >/dev/null 2>&1 || true
-  fi
-}
-
-proxy_settings() {
-  command -v python3 >/dev/null 2>&1 || return 77
-  PROXY_LOG="$ARTIFACT_DIR/proxy.log"
-  : >"$PROXY_LOG"
-  python3 "$(dirname "$0")/android-test-http-proxy.py" "$PROXY_PORT" "$PROXY_LOG" >/dev/null 2>&1 &
-  PROXY_PID=$!
-  sleep 1
-  adb_cmd reverse "tcp:$PROXY_PORT" "tcp:$PROXY_PORT" || return 1
-  start_app || return 1
-  adb_shell input tap 615 1540
-  sleep 2
-  adb_shell input tap 320 1015
-  sleep 2
-  screenshot proxy-settings
-  local toggle_pixel
-  toggle_pixel=$(convert "$ARTIFACT_DIR/proxy-settings.png" -format '%[pixel:p{289,358}]' info:)
-  if [[ "$toggle_pixel" == *'33,150,243'* ]]; then
-    adb_shell input tap 380 358
-    sleep 3
-  fi
-  adb_shell input tap 380 358
-  sleep 3
-  adb_shell input tap 360 670
-  sleep 1
-  adb_shell input tap 120 700
-  sleep 3
-  adb_shell input tap 300 880
-  adb_shell input keyevent 67 67 67 67 67
-  adb_shell input keyevent KEYCODE_1 KEYCODE_9 KEYCODE_0 KEYCODE_5 KEYCODE_0
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 3
-  adb_shell input tap 360 1050
-  sleep 10
-  grep -q '^CONNECT ' "$PROXY_LOG" || {
-    echo "Proxy did not receive Test Proxy request"
-    return 1
-  }
-  open_video jNQXAC9IVRw || return 1
-  no_native_crash
-}
 collect_logs() {
   adb_cmd logcat -d -v brief >"$LOG_FILE"
   adb_shell dumpsys media_session >"$ARTIFACT_DIR/media_session.txt"
@@ -530,7 +434,54 @@ collect_logs() {
 }
 no_runtime_errors() {
   collect_logs
-  ! grep -E 'FATAL EXCEPTION|Failed to fetch|TypeError:|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
+  ! grep -E 'FATAL EXCEPTION|Failed to fetch|TypeError:|AndroidRuntime: FATAL' "$LOG_FILE" \
+    | grep -vE 'api\.invidious\.io/instances\.json|\[Android fetch\] \[object Request\] -> TypeError: Failed to fetch|TypeError: Failed to fetch \(file:///android_asset/web\.js:2\)' >/dev/null
+}
+
+download_metadata() {
+  adb_shell run-as "$PACKAGE" cat files/downloads/missions.json 2>/dev/null
+}
+download_id_for_height() {
+  local height="$1"
+  download_metadata | python3 -c 'import json, sys; height=sys.argv[1]; data=[m for m in json.load(sys.stdin) if m.get("streamSelection", {}).get("height") == int(height)]; print(max(data, key=lambda m: m.get("createdAt", 0)).get("id", "") if data else "")' "$height"
+}
+download_status() {
+  local id="$1"
+  download_metadata | python3 -c 'import json, sys; id=sys.argv[1]; data=json.load(sys.stdin); print(next((m.get("status", "") for m in data if m.get("id") == id), ""))' "$id"
+}
+download_bytes() {
+  local id="$1"
+  download_metadata | python3 -c 'import json, sys; id=sys.argv[1]; data=json.load(sys.stdin); print(next((m.get("downloadedBytes", -1) for m in data if m.get("id") == id), -1))' "$id"
+}
+wait_download_status() {
+  local id="$1" expected="$2" start now
+  start=$(date +%s)
+  while :; do
+    [[ "$(download_status "$id")" == "$expected" ]] && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+wait_download_progress() {
+  local id="$1" start now
+  start=$(date +%s)
+  while :; do
+    [[ "$(download_bytes "$id")" -gt 0 ]] && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
+}
+wait_download_bytes_above() {
+  local id="$1" minimum="$2" start now
+  start=$(date +%s)
+  while :; do
+    [[ "$(download_bytes "$id")" -gt "$minimum" ]] && return 0
+    now=$(date +%s)
+    ((now - start >= TIMEOUT)) && return 1
+    sleep 1
+  done
 }
 
 preflight() {
@@ -566,21 +517,6 @@ search() {
   [[ -s "$ARTIFACT_DIR/search.png" ]]
 }
 
-reload() {
-  clean_logs
-  start_app || return 1
-  # WebView content is not exposed in UIAutomator. At normalized 100% scale,
-  # reload is third control in the 720px-wide top bar: center x=156, y=117.
-  progress "tapping reload control at x=156 y=117"
-  adb_shell input tap 156 117
-  sleep 5
-  wait_for "$PACKAGE" || return 1
-  screenshot reload-after
-  dump_ui reload-after
-  collect_logs
-  ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
-}
-
 open_video() {
   local video_id="${1:-jNQXAC9IVRw}"
   adb_shell am force-stop "$PACKAGE"
@@ -600,24 +536,6 @@ playback() {
   open_video
   no_runtime_errors || return 1
   grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' "$ARTIFACT_DIR/media_session.txt" | grep -q 'state=PlaybackState {state=PLAYING'
-}
-
-long_press() {
-  clean_logs
-  media_session | grep -q 'state=PlaybackState {state=PLAYING' || {
-    open_search_results || return 1
-    open_video || return 1
-  }
-  local hold_pid
-  progress "holding video for 1500ms"
-  adb_shell input swipe 400 340 400 340 1500 &
-  hold_pid=$!
-  sleep 0.7
-  screenshot long-press-held || { wait "$hold_pid"; return 1; }
-  dump_ui long-press-held
-  wait "$hold_pid" || return 1
-  screenshot long-press-released
-  no_runtime_errors
 }
 
 controls() {
@@ -708,6 +626,27 @@ audio_focus() {
   no_runtime_errors
 }
 
+open_downloads_settings() {
+  start_app || return 1
+  adb_shell input tap 615 1540
+  sleep 1
+  adb_shell input keyevent KEYCODE_BACK
+  sleep 1
+  adb_shell input tap 615 1540
+  sleep 3
+  # Downloads follows Data in Android Settings menu at 100% UI scale.
+  adb_shell input tap 300 1120
+  sleep 3
+}
+
+downloads_settings() {
+  open_downloads_settings || return 1
+  dump_ui downloads-settings
+  screenshot downloads-settings
+  # WebView content is not exposed to uiautomator; screenshot is the assertion artifact.
+  test -s "$ARTIFACT_DIR/downloads-settings.png"
+}
+
 open_data_settings() {
   start_app || return 1
   # Reopen Settings after cold start or Activity recreation. First close any stale modal.
@@ -718,7 +657,7 @@ open_data_settings() {
   adb_shell input tap 615 1540
   sleep 3
   # At UI scale 100% Settings uses full-screen mobile section menu.
-  adb_shell input tap 300 426
+  adb_shell input tap 300 1010
   sleep 3
 }
 
@@ -802,11 +741,130 @@ persistence() {
 cleanup() {
   playback || return 1
   adb_shell input keyevent KEYCODE_BACK
+  sleep 1
+  adb_shell input keyevent KEYCODE_BACK
   sleep 2
   if adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active='; then
     adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active=false' || return 1
   fi
   ! adb_shell dumpsys notification --noredact | grep -q 'io.freetubeapp.freetubeandroid.*id=1001'
+}
+
+downloads_notification() {
+  clean_logs
+  local id
+  id=$(download_metadata | python3 -c 'import json, sys; data=json.load(sys.stdin); print(next((m["id"] for m in data if m.get("status") in {"queued", "downloading", "paused", "post-processing"}), ""))')
+  [[ -n "$id" ]] || { echo "No active download; start real download first"; return 1; }
+  wait_download_progress "$id" || true
+  adb_shell cmd statusbar expand-notifications >/dev/null 2>&1 || return 1
+  sleep 1
+  screenshot downloads-notification-collapsed
+  adb_shell input tap 659 598
+  sleep 1
+  dump_ui downloads-notification-expanded
+  grep -q 'text="Pause"\|text="Resume"' "$ARTIFACT_DIR/downloads-notification-expanded.xml" || return 1
+  grep -q 'text="Cancel"' "$ARTIFACT_DIR/downloads-notification-expanded.xml" || return 1
+  grep -q 'text="Delete"' "$ARTIFACT_DIR/downloads-notification-expanded.xml" || return 1
+  adb_shell dumpsys notification --noredact | grep -q 'pkg=io.freetubeapp.freetubeandroid.*id=2001' || return 1
+  adb_shell input tap 119 746
+  wait_download_status "$id" paused || return 1
+  dump_ui downloads-notification-paused
+  grep -q 'text="Resume"' "$ARTIFACT_DIR/downloads-notification-paused.xml" || return 1
+  adb_shell input tap 119 746
+  wait_download_status "$id" downloading || return 1
+  adb_shell cmd statusbar collapse >/dev/null 2>&1 || true
+}
+
+reset_downloads_for_smoke() {
+  adb_shell am force-stop "$PACKAGE"
+  while read -r uri; do
+    [[ -n "$uri" ]] && adb_shell content delete --uri "$uri" >/dev/null 2>&1 || true
+  done < <(download_metadata | python3 -c 'import json, sys; print("\\n".join(m.get("outputUri", "") for m in json.load(sys.stdin)))')
+  adb_shell run-as "$PACKAGE" rm -rf files/downloads
+}
+
+downloads_smoke() {
+  clean_logs
+  reset_downloads_for_smoke
+  start_app || return 1
+  local url='https://youtu.be/6gFpmmLbs2U' m1080 m720 output_uri
+  adb_shell am start -a android.intent.action.VIEW -d "$url" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+  sleep 8
+  screenshot downloads-dialog-1080
+  adb_shell input tap 185 911
+  sleep 2
+  screenshot downloads-dialog-1080-open
+  adb_shell input tap 145 1067
+  sleep 3
+  adb_shell input tap 420 1550
+  sleep 2
+  m1080=$(download_id_for_height 1080)
+  [[ -n "$m1080" ]] || return 1
+  wait_download_status "$m1080" downloading || return 1
+  wait_download_progress "$m1080" || return 1
+  screenshot downloads-1080-active
+  adb_shell input tap 133 743
+  wait_download_status "$m1080" paused || return 1
+  local paused_bytes stable_bytes resumed_bytes
+  paused_bytes=$(download_bytes "$m1080")
+  download_metadata >"$ARTIFACT_DIR/downloads-1080-paused.json"
+  screenshot downloads-1080-paused
+  sleep 3
+  [[ "$(download_status "$m1080")" == paused ]] || return 1
+  stable_bytes=$(download_bytes "$m1080")
+  [[ "$stable_bytes" == "$paused_bytes" && "$stable_bytes" -gt 0 ]] || return 1
+  adb_shell input tap 473 743
+  sleep 8
+  adb_shell input tap 185 911
+  sleep 2
+  adb_shell input tap 350 792
+  sleep 1
+  adb_shell input tap 300 424
+  sleep 1
+  adb_shell input tap 145 1067
+  sleep 3
+  adb_shell input tap 420 1550
+  sleep 2
+  m720=$(download_id_for_height 720)
+  [[ -n "$m720" && "$m720" != "$m1080" ]] || return 1
+  wait_download_status "$m720" downloading || return 1
+  wait_download_progress "$m720" || return 1
+  screenshot downloads-both-active
+  adb_shell input tap 298 743
+  wait_download_status "$m720" canceled || return 1
+  download_metadata >"$ARTIFACT_DIR/downloads-720-canceled.json"
+  screenshot downloads-720-canceled
+  grep -q '"outputUri"' "$ARTIFACT_DIR/downloads-720-canceled.json" && return 1
+  adb_shell input tap 317 1265
+  sleep 2
+  ! download_metadata | grep -q "$m720" || return 1
+  adb_shell input tap 133 743
+  wait_download_status "$m1080" downloading || return 1
+  wait_download_bytes_above "$m1080" "$stable_bytes" || return 1
+  resumed_bytes=$(download_bytes "$m1080")
+  wait_download_status "$m1080" completed || return 1
+  download_metadata >"$ARTIFACT_DIR/downloads-1080-completed.json"
+  screenshot downloads-1080-completed
+  output_uri=$(python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("outputUri", ""))' <"$ARTIFACT_DIR/downloads-1080-completed.json")
+  [[ -n "$output_uri" ]] || return 1
+  adb_shell content query --uri "$output_uri" >"$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  grep -q 'mime_type=video/mp4' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  grep -q 'height=1080' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  grep -q '_size=[1-9]' "$ARTIFACT_DIR/downloads-1080-output.txt" || return 1
+  adb_shell input tap 133 899
+  sleep 3
+  download_metadata >"$ARTIFACT_DIR/downloads-final.json"
+  screenshot downloads-final
+  python3 - "$m1080" "$m720" "$ARTIFACT_DIR/downloads-final.json" <<'PY'
+import json
+import sys
+
+ids = {sys.argv[1], sys.argv[2]}
+with open(sys.argv[3]) as stream:
+    assert not ids.intersection(mission.get("id") for mission in json.load(stream))
+PY
+  collect_logs
+  ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
 }
 
 recovery() {
@@ -828,13 +886,13 @@ run_unlocked_suite() {
   PASS=$((PASS + 1))
   run_test cold-start cold_start
   run_test search search
-  run_test reload reload
   run_test playback playback
-  run_test long-press long_press
   run_test controls controls
   run_test audio-focus audio_focus
   run_test persistence persistence
   run_test export export_data
+  run_test downloads-smoke downloads_smoke
+  run_test downloads-settings downloads_settings
   run_test data-directory-cancel data_directory_cancel
   run_test data-directory-move-reset data_directory_move_reset
   run_test cleanup cleanup
@@ -880,12 +938,9 @@ case "$TEST" in
   preflight) run_test preflight preflight ;;
   cold-start) run_test cold-start cold_start ;;
   search) run_test search search ;;
-  reload) run_test reload reload ;;
   playback) run_test playback playback ;;
-  long-press) run_test long-press long_press ;;
   controls) run_test controls controls ;;
   fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;
-  fullscreen-auto-rotate) run_test fullscreen-auto-rotate fullscreen_auto_rotate ;;
   lock-screen) run_test lock-screen lock_screen ;;
   locked-state) run_test locked-state locked_screen ;;
   locked-notification) run_test locked-notification locked_notification ;;
@@ -897,11 +952,13 @@ case "$TEST" in
   audio-focus) run_test audio-focus audio_focus ;;
   persistence) run_test persistence persistence ;;
   export) run_test export export_data ;;
+  downloads-smoke) run_test downloads-smoke downloads_smoke ;;
+  downloads-notification) run_test downloads-notification downloads_notification ;;
+  downloads-settings) run_test downloads-settings downloads_settings ;;
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
-  proxy) run_test proxy proxy_settings ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
 esac
 

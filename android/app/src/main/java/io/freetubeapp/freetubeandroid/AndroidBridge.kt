@@ -17,6 +17,8 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -33,6 +35,8 @@ import androidx.webkit.ProxyController
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -42,6 +46,10 @@ class AndroidBridge(
     private val mainWebView: WebView,
     private val parent: ViewGroup
 ) {
+    private companion object {
+        const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+        const val DOWNLOAD_UPDATE_INTERVAL_MS = 1000L
+    }
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()
     private var pendingDirectoryRequest: String? = null
@@ -57,6 +65,189 @@ class AndroidBridge(
     private var mediaDuration = 0L
     private var mediaThumbnail: android.graphics.Bitmap? = null
     private var pendingFile: Triple<String, String, String>? = null
+    private val downloadManager = DownloadRuntime.manager(activity)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val downloadUpdateLock = Any()
+    private var pendingDownloadSnapshot: org.json.JSONArray? = null
+    private var downloadUpdateScheduled = false
+    private val downloadUpdateRunnable = Runnable(::dispatchDownloadUpdate)
+    private val downloadListener: (org.json.JSONArray) -> Unit = { snapshot ->
+        if (hasRunningDownload(snapshot)) DownloadService.start(activity)
+        synchronized(downloadUpdateLock) {
+            pendingDownloadSnapshot = snapshot
+            if (downloadUpdateScheduled) return@synchronized
+            downloadUpdateScheduled = true
+        }
+        mainHandler.postDelayed(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS)
+    }
+
+    init {
+        downloadManager.addListener(downloadListener)
+        if (hasRunningDownload(downloadManager.snapshot())) DownloadService.start(activity)
+    }
+
+    @JavascriptInterface
+    fun enqueueDownload(requestJson: String): String {
+        val request = JSONObject(requestJson)
+        validateDownloadUrls(request)
+        Log.i("FreeTubeDownloads", "enqueue kind=${request.optString("kind")} mime=${request.optString("mimeType")} parts=${request.optJSONArray("parts")?.length() ?: 0}")
+        val id = downloadManager.enqueue(request)
+        DownloadService.start(activity)
+        return id.toString()
+    }
+
+    private fun hasRunningDownload(snapshot: org.json.JSONArray): Boolean {
+        for (index in 0 until snapshot.length()) {
+            val status = snapshot.optJSONObject(index)?.optString("status")
+            if (DownloadMission.isRunningStatus(status ?: "")) return true
+        }
+        return false
+    }
+
+    private fun validateDownloadUrls(request: JSONObject) {
+        val parts = request.getJSONArray("parts")
+        for (index in 0 until parts.length()) {
+            val part = parts.getJSONObject(index)
+            val url = URL(part.getString("url"))
+            val connection = (url.openConnection() as? HttpURLConnection)
+                ?: throw IllegalStateException("Unsupported stream URL")
+            try {
+                connection.instanceFollowRedirects = true
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 15_000
+                connection.setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+                connection.setRequestProperty("Accept", "*/*")
+                connection.setRequestProperty("Accept-Encoding", "*")
+                connection.setRequestProperty("Referer", "https://www.youtube.com/")
+                connection.setRequestProperty("Range", "bytes=0-")
+                val responseCode = connection.responseCode
+                Log.i("FreeTubeDownloads", "validate source=${request.optString("sourceUrl").isNotEmpty()} part=${part.optString("id")} response=$responseCode type=${connection.contentType} length=${connection.contentLengthLong} range=${connection.getHeaderField("Content-Range")} etag=${connection.getHeaderField("ETag") != null} lastModified=${connection.getHeaderField("Last-Modified") != null} host=${url.host}")
+                if (responseCode !in 200..299) {
+                    throw IllegalStateException("Stream URL validation failed: HTTP $responseCode")
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun probeDownloadUrls(requestJson: String): String {
+        val result = JSONArray()
+        val parts = JSONObject(requestJson).getJSONArray("parts")
+        for (index in 0 until parts.length()) {
+            val part = parts.getJSONObject(index)
+            val connection = (URL(part.getString("url")).openConnection() as HttpURLConnection).apply {
+                requestMethod = "HEAD"
+                instanceFollowRedirects = true
+                connectTimeout = 15_000
+                readTimeout = 15_000
+                setRequestProperty("User-Agent", ANDROID_VR_USER_AGENT)
+                setRequestProperty("Referer", "https://www.youtube.com/")
+            }
+            try {
+                val status = connection.responseCode
+                result.put(JSONObject().apply {
+                    put("id", part.optString("id"))
+                    put("status", status)
+                    put("contentLength", connection.contentLengthLong)
+                    put("contentRange", connection.getHeaderField("Content-Range") ?: JSONObject.NULL)
+                    put("acceptRanges", connection.getHeaderField("Accept-Ranges") ?: JSONObject.NULL)
+                    put("mimeType", connection.contentType ?: JSONObject.NULL)
+                })
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return result.toString()
+    }
+
+    @JavascriptInterface
+    fun validateDownloadUrls(requestJson: String): String {
+        return try {
+            validateDownloadUrls(JSONObject(requestJson))
+            JSONObject().put("ok", true).toString()
+        } catch (error: Exception) {
+            JSONObject().put("ok", false).put("error", error.message ?: "Stream URL validation failed").toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun getDownloads(): String {
+        Log.i("FreeTubeDownloads", "bridge getDownloads")
+        return downloadManager.snapshot().toString()
+    }
+
+    @JavascriptInterface
+    fun getDownloadSettings(): String = downloadManager.settings().toString()
+
+    @JavascriptInterface
+    fun updateDownloadSettings(settingsJson: String): Boolean {
+        downloadManager.updateSettings(JSONObject(settingsJson))
+        return true
+    }
+
+    @JavascriptInterface
+    fun refreshDownload(id: String, requestJson: String): Boolean {
+        val result = downloadManager.replaceUrls(id, JSONObject(requestJson))
+        if (result) DownloadService.start(activity)
+        return result
+    }
+
+    @JavascriptInterface
+    fun pauseDownload(id: String): Boolean = downloadManager.pause(id)
+
+    @JavascriptInterface
+    fun resumeDownload(id: String): Boolean {
+        val result = downloadManager.resume(id)
+        if (result) DownloadService.start(activity)
+        return result
+    }
+
+    @JavascriptInterface
+    fun cancelDownload(id: String): Boolean = downloadManager.cancel(id)
+
+    @JavascriptInterface
+    fun retryDownload(id: String): Boolean {
+        val result = downloadManager.retry(id)
+        if (result) DownloadService.start(activity)
+        return result
+    }
+
+    @JavascriptInterface
+    fun deleteDownload(id: String): Boolean = downloadManager.delete(id)
+
+    private fun dispatchDownloadUpdate() {
+        val snapshot = synchronized(downloadUpdateLock) {
+            val next = pendingDownloadSnapshot
+            pendingDownloadSnapshot = null
+            next
+        } ?: run {
+            synchronized(downloadUpdateLock) { downloadUpdateScheduled = false }
+            return
+        }
+        Log.i("FreeTubeDownloads", "dispatch download-update")
+        mainWebView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('download-update', {detail: ${snapshot}}))",
+            null
+        )
+        synchronized(downloadUpdateLock) {
+            if (pendingDownloadSnapshot == null) {
+                downloadUpdateScheduled = false
+            } else {
+                mainHandler.postDelayed(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS)
+            }
+        }
+    }
+
+    fun dispose() {
+        downloadManager.removeListener(downloadListener)
+        mainHandler.removeCallbacks(downloadUpdateRunnable)
+        synchronized(downloadUpdateLock) {
+            pendingDownloadSnapshot = null
+            downloadUpdateScheduled = false
+        }
+    }
 
     @JavascriptInterface
     fun isLandscape(): Boolean {
@@ -196,6 +387,19 @@ class AndroidBridge(
     @JavascriptInterface
     fun revokePermissionForTree(tree: String) {
         activity.revokeUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+
+    @JavascriptInterface
+    fun getDownloadDirectory(): String = DownloadStorage.DEFAULT_DIRECTORY
+
+    @JavascriptInterface
+    fun revokeDownloadDirectory(tree: String): Boolean {
+        return try {
+            revokePermissionForTree(tree)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @JavascriptInterface
@@ -527,15 +731,15 @@ class AndroidBridge(
     @JavascriptInterface
     fun setScale(scale: Int) {
         activity.runOnUiThread {
-            if (scale == 100) {
-                if (appliedScale != null) {
-                    mainWebView.setInitialScale(0)
-                    appliedScale = null
-                    mainWebView.reload()
-                }
-            } else if (appliedScale != scale) {
-                mainWebView.setInitialScale(scale)
-                appliedScale = scale
+            val initialScale = if (scale == 0) {
+                0
+            } else {
+                (activity.resources.displayMetrics.density * scale).toInt()
+            }
+            val appliedValue = if (initialScale == 0) null else initialScale
+            if (appliedScale != appliedValue) {
+                mainWebView.setInitialScale(initialScale)
+                appliedScale = appliedValue
                 mainWebView.reload()
             }
         }
@@ -560,10 +764,33 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun openDownloadFile(uri: String, mimeType: String): Boolean {
+        return try {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                setDataAndType(Uri.parse(uri), mimeType.ifBlank { "application/octet-stream" })
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+            true
+        } catch (_: android.content.ActivityNotFoundException) {
+            false
+        }
+    }
+
+    @JavascriptInterface
     fun shareText(text: String) {
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
+        }
+        activity.startActivity(Intent.createChooser(sendIntent, null))
+    }
+
+    @JavascriptInterface
+    fun shareFile(uri: String, mimeType: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType.ifBlank { "application/octet-stream" }
+            putExtra(Intent.EXTRA_STREAM, Uri.parse(uri))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         activity.startActivity(Intent.createChooser(sendIntent, null))
     }
