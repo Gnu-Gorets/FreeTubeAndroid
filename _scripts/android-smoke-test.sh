@@ -555,10 +555,15 @@ long_press() {
     open_search_results || return 1
     open_video || return 1
   }
-  progress "holding video for 700ms"
-  adb_shell input swipe 400 340 400 340 700
-  sleep 1
-  screenshot long-press
+  local hold_pid
+  progress "holding video for 1500ms"
+  adb_shell input swipe 400 340 400 340 1500 &
+  hold_pid=$!
+  sleep 0.7
+  screenshot long-press-held || { wait "$hold_pid"; return 1; }
+  dump_ui long-press-held
+  wait "$hold_pid" || return 1
+  screenshot long-press-released
   no_runtime_errors
 }
 
