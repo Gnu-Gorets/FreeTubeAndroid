@@ -38,7 +38,7 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel, data-directory-move-reset,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, proxy
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, proxy
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -610,6 +610,27 @@ reload() {
   ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
 }
 
+settings_sort() {
+  preflight || return 1
+  clean_logs
+  adb_shell am force-stop "$PACKAGE"
+  adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+  wait_for "$PACKAGE" || return 1
+  sleep 3
+  adb_shell am start -a io.freetubeapp.freetubeandroid.TEST_SETTINGS_SORT -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+
+  local result=""
+  for _ in $(seq 1 "$TIMEOUT"); do
+    result=$(adb_cmd logcat -d -v brief | grep 'SETTINGS_SORT_TEST:' | tail -1 || true)
+    [[ -n "$result" ]] && break
+    sleep 1
+  done
+  screenshot settings-sort
+  dump_ui settings-sort
+  echo "${result:-SETTINGS_SORT_TEST:TIMEOUT}"
+  [[ "$result" == *'SETTINGS_SORT_TEST:PASS'* ]]
+}
+
 open_video() {
   local video_id="${1:-jNQXAC9IVRw}"
   adb_shell am force-stop "$PACKAGE"
@@ -930,6 +951,7 @@ case "$TEST" in
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
+  settings-sort) run_test settings-sort settings_sort ;;
   proxy) run_test proxy proxy_settings ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
 esac
