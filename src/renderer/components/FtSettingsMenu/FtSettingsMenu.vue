@@ -9,6 +9,7 @@
       />
       {{ $t('Settings.Settings') }}
     </h2>
+    <slot name="mobile-options" />
     <a
       v-for="settingsSection in settingsSections"
       ref="linkRefs"
