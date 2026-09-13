@@ -6,12 +6,12 @@
           :icon="['fas', 'rss']"
           class="subscriptionIcon"
         />
-        {{ $t("Subscriptions.Subscriptions") }}
+        {{ $t('Subscriptions.Subscriptions') }}
       </h2>
       <FtFlexBox
         class="tabs"
         role="tablist"
-        :aria-label="$t('Subscriptions.Subscriptions Tabs')"
+        :aria-label="$t('Subscriptions.Subscriptions Tabs', { missingWarn: false })"
       >
         <!-- eslint-disable-next-line vuejs-accessibility/interactive-supports-focus -->
         <div
