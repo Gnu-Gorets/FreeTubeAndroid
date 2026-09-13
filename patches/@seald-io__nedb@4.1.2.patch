@@ -1,6 +1,8 @@
+diff --git a/lib/datastore.js b/lib/datastore.js
+index a8acb22eb007804a75b0254ba1f70d47e96481c6..d447c92f58090fedd64e9554593a35933c864e93 100755
 --- a/lib/datastore.js
 +++ b/lib/datastore.js
-@@ -195,6 +195,7 @@
+@@ -195,6 +195,7 @@ class Datastore extends EventEmitter {
     * the right choice.
     * @param {boolean} [options.testSerializationHooks=true] Whether to test the serialization hooks or not,
     * might be CPU-intensive
@@ -18,9 +20,11 @@
      })
  
      // This new executor is ready if we don't use persistence
+diff --git a/lib/persistence.js b/lib/persistence.js
+index 23435c1ff6ce4153ebf9ce919491f0facf8da690..a80278b50705a9610f1008543f6b9d424fbac913 100755
 --- a/lib/persistence.js
 +++ b/lib/persistence.js
-@@ -48,8 +48,10 @@
+@@ -48,8 +48,10 @@ class Persistence {
     * @param {object} [options.modes] Modes to use for FS permissions. Will not work on Windows.
     * @param {number} [options.modes.fileMode=0o644] Mode to use for files.
     * @param {number} [options.modes.dirMode=0o755] Mode to use for directories.
