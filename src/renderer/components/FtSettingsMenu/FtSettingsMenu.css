@@ -86,10 +86,12 @@
 /* overall mobile breakpoint; large text */
 @media only screen and (width <= 1015px) {
   .settingsMenu {
-    inline-size: fit-content;
-    margin-inline: auto;
+    inline-size: 100%;
+    margin: 0;
+    padding-inline: 22px;
     position: relative;
     inset-block-start: 0;
+    box-sizing: border-box;
     font-size: 30px;
     max-block-size: 1100px;
   }
@@ -101,15 +103,25 @@
   }
 
   .title {
-    inline-size: fit-content;
-    max-inline-size: 90vw;
+    inline-size: 100%;
+    max-inline-size: none;
+  }
+
+  .titleContent {
+    inline-size: 100%;
+  }
+
+  .titleUnderline {
+    inline-size: 100%;
+    border-block-end-color: color-mix(in srgb, var(--tertiary-text-color) 8%, transparent);
   }
 
   .header {
+    margin-block-start: 20px;
     font-size: 32px;
   }
 
-  /* hide the settings icon on mobile to avoid confusion */
+  /* hide the settings icon on mobile to match mobile navigation */
   .headingIcon {
     display: none;
   }
