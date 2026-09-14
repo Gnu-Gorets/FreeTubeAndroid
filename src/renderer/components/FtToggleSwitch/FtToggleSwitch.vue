@@ -15,6 +15,7 @@
       class="switch-input"
       :checked="currentValue"
       :disabled="disabled"
+      :data-test="testId"
       @change="change"
     >
     <label
@@ -55,6 +56,10 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  testId: {
+    type: String,
+    default: null
   },
   tooltip: {
     type: String,

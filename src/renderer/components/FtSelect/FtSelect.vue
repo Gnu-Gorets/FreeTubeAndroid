@@ -8,6 +8,7 @@
       :value="value"
       :name="id"
       :disabled="disabled"
+      :data-test="testId"
       @change="change"
     >
       <option
@@ -92,6 +93,10 @@ defineProps({
   isLocaleSelector: {
     type: Boolean,
     default: false
+  },
+  testId: {
+    type: String,
+    default: null
   }
 })
 
