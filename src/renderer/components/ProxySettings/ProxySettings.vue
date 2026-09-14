@@ -16,6 +16,7 @@
       <FtToggleSwitch
         :label="$t('Settings.Proxy Settings.Enable Tor / Proxy')"
         :default-value="useProxy"
+        test-id="proxy-enabled"
         @change="handleUpdateProxy"
       />
     </FtFlexBox>
@@ -30,6 +31,7 @@
           :select-values="PROTOCOL_VALUES"
           class="protocol-dropdown"
           :icon="['fas', 'network-wired']"
+          test-id="proxy-protocol"
           @change="handleUpdateProxyProtocol"
         />
       </FtFlexBox>
@@ -39,6 +41,7 @@
           :show-action-button="false"
           show-label
           :value="proxyHostname"
+          test-id="proxy-host"
           @input="handleUpdateProxyHostname"
           @keydown.enter="testProxy"
         />
@@ -47,6 +50,7 @@
           :show-action-button="false"
           show-label
           :value="proxyPort"
+          test-id="proxy-port"
           :maxlength="5"
           @input="handleUpdateProxyPort"
           @keydown.enter="testProxy"
@@ -81,6 +85,7 @@
       <FtFlexBox>
         <FtButton
           :label="$t('Settings.Proxy Settings.Test Proxy')"
+          test-id="proxy-test"
           @click="testProxy"
         />
       </FtFlexBox>
