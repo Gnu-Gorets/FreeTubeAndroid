@@ -48,6 +48,7 @@
           :max-value="300"
           :step="5"
           value-extension="%"
+          test-id="ui-scale"
           @change="updateUiScale"
         />
       </FtFlexBox>

@@ -12,6 +12,7 @@
       :min="minValue"
       :max="maxValue"
       :step="step"
+      :data-test="testId"
       @change="change"
     >
     <span class="label">
@@ -51,6 +52,10 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  testId: {
+    type: String,
+    default: null
   }
 })
 
