@@ -693,7 +693,14 @@ export async function getLocalVideoInfo(id) {
 
   const cpn = Utils.generateRandomString(16)
 
-  const info = new YT.VideoInfo([playerResponse, nextResponse], htmlExtracts.session.actions, cpn)
+  let info
+  try {
+    info = new YT.VideoInfo([playerResponse, nextResponse], htmlExtracts.session.actions, cpn)
+  } catch (error) {
+    // YouTube can return a watch-next layout unsupported by current youtubei.js.
+    console.warn(`Unable to parse watch-next response, using player response: ${error.message}`)
+    info = new YT.VideoInfo([playerResponse], htmlExtracts.session.actions, cpn)
+  }
 
   // Some time would be used for parsing and maybe additional requests so end time should be calculated sooner to reduce actual waiting time
   // Legacy format requires this
@@ -769,42 +776,54 @@ export async function getLocalVideoInfo(id) {
     await decipherFormats(info.streaming_data.formats, player)
 
     if (info.streaming_data.server_abr_streaming_url) {
-      info.streaming_data.server_abr_streaming_url = await player.decipher(info.streaming_data.server_abr_streaming_url)
+      try {
+        console.warn('[Local API] decipher server ABR URL', {
+          length: info.streaming_data.server_abr_streaming_url.length
+        })
+        const decipheredServerAbrUrl = await player.decipher(info.streaming_data.server_abr_streaming_url)
+        info.streaming_data.server_abr_streaming_url = new URL(decipheredServerAbrUrl).toString()
+      } catch (error) {
+        console.warn('[Local API] server ABR URL is unusable, falling back to DASH', error)
+        info.streaming_data.server_abr_streaming_url = null
+      }
     }
 
-    if (info.streaming_data.dash_manifest_url) {
-      info.streaming_data.dash_manifest_url = await decipherManifestUrl(
-        info.streaming_data.dash_manifest_url,
-        player,
-        contentPoToken,
-        true
-      )
-    }
-
-    if (info.streaming_data.hls_manifest_url) {
-      info.streaming_data.hls_manifest_url = await decipherManifestUrl(
-        info.streaming_data.hls_manifest_url,
-        player,
-        contentPoToken,
-        false
-      )
+    for (const [key, isDash] of [['dash_manifest_url', true], ['hls_manifest_url', false]]) {
+      if (!info.streaming_data[key]) continue
+      try {
+        info.streaming_data[key] = await decipherManifestUrl(
+          info.streaming_data[key],
+          player,
+          contentPoToken,
+          isDash
+        )
+      } catch (error) {
+        console.warn(`Unable to decipher ${key}, continuing with adaptive formats`, error)
+        info.streaming_data[key] = null
+      }
     }
   }
 
   if (info.captions?.caption_tracks) {
-    for (const captionTrack of info.captions.caption_tracks) {
-      const url = new URL(captionTrack.base_url)
+    info.captions.caption_tracks = info.captions.caption_tracks.filter((captionTrack) => {
+      try {
+        const url = new URL(captionTrack.base_url)
 
-      url.searchParams.set('potc', '1')
-      url.searchParams.set('pot', contentPoToken)
-      url.searchParams.set('c', clientName)
+        url.searchParams.set('potc', '1')
+        url.searchParams.set('pot', contentPoToken)
+        url.searchParams.set('c', clientName)
 
-      // Remove &xosf=1 as it adds `position:63% line:0%` to the subtitle lines
-      // placing them in the top right corner
-      url.searchParams.delete('xosf')
+        // Remove &xosf=1 as it adds `position:63% line:0%` to the subtitle lines
+        // placing them in the top right corner
+        url.searchParams.delete('xosf')
 
-      captionTrack.base_url = url.toString()
-    }
+        captionTrack.base_url = url.toString()
+        return true
+      } catch (error) {
+        console.warn('[Local API] skipping invalid caption URL', { error })
+        return false
+      }
+    })
   }
 
   return {
@@ -867,10 +886,21 @@ export async function getLocalComments(id) {
  * @param {import('youtubei.js').Player} player
  */
 async function decipherFormats(formats, player) {
+  console.warn('[Local API] decipher formats', { count: formats.length })
   for (const format of formats) {
     // toDash deciphers the format again, so if we overwrite the original URL,
     // it breaks because the n param would get deciphered twice and then be incorrect
-    format.freeTubeUrl = await format.decipher(player)
+    try {
+      format.freeTubeUrl = await format.decipher(player)
+    } catch (error) {
+      console.warn('[Local API] format decipher failed', {
+        itag: format.itag,
+        mimeType: format.mime_type,
+        hasUrl: Boolean(format.url),
+        hasCipher: Boolean(format.signature_cipher || format.cipher),
+        error
+      })
+    }
   }
 }
 
