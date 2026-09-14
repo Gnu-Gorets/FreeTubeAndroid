@@ -26,6 +26,8 @@ ORIGINAL_USER_ROTATION_SETTING=""
 PROXY_PID=""
 PROXY_PORT=19050
 PROXY_LOG=""
+QUALITY=""
+QUALITY_VIDEO_ID="mXIAYbU3nQI"
 
 usage() {
   cat <<'EOF'
@@ -40,7 +42,7 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -57,6 +59,7 @@ while (($#)); do
     --test) TEST="$2"; shift 2 ;;
     --keep-data) KEEP_DATA=1; shift ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
+    --quality) QUALITY="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -229,7 +232,8 @@ require_unlocked() {
 
 start_app() {
   adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
-  adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+  adb_shell am force-stop --user 0 "$PACKAGE" >/dev/null 2>&1 || return 1
+  adb_shell am start --user 0 -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   wait_for "$PACKAGE" || return 1
   close_picker || return 1
   sleep 5
@@ -536,8 +540,7 @@ settings_sort() {
 
 open_video() {
   local video_id="${1:-jNQXAC9IVRw}"
-  adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
-  wait_for "$PACKAGE" || return 1
+  start_app || return 1
   adb_shell am start -a android.intent.action.VIEW \
     -d "https://www.youtube.com/watch?v=$video_id" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   wait_for_media 'metadata: size=' || return 1
@@ -545,6 +548,32 @@ open_video() {
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null 2>&1
   wait_for_media 'state=PlaybackState {state=PLAYING' || return 1
   screenshot video
+}
+
+check_video_quality() {
+  local expected="$1" state height
+  for _ in $(seq 1 "$TIMEOUT"); do
+    adb_shell am start -a io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION \
+      --es action video_state -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+    sleep 1
+    state=$(adb_cmd logcat -d -v brief | grep 'SMOKE_VIDEO_STATE:' | tail -1 || true)
+    height=$(printf '%s' "$state" | python3 -c 'import json, sys; data=json.JSONDecoder().raw_decode(sys.stdin.read().split("SMOKE_VIDEO_STATE:", 1)[1].lstrip())[0]; print(data["height"] if data["video"] else "")' 2>/dev/null || true)
+    if [[ -n "$height" && "$height" != "0" ]]; then
+      progress "selected video quality: ${height}p, expected ${expected}p"
+      [[ "$height" == "$expected" ]]
+      return
+    fi
+  done
+  progress "video quality check timed out"
+  return 1
+}
+
+network_quality() {
+  [[ "$QUALITY" =~ ^(480|1080)$ ]] || { echo "--quality must be 480 or 1080" >&2; return 2; }
+  clean_logs
+  open_video "$QUALITY_VIDEO_ID" || return 1
+  check_video_quality "$QUALITY" || return 1
+  no_runtime_errors || return 1
 }
 
 playback() {
@@ -829,6 +858,7 @@ case "$TEST" in
   search) run_test search search ;;
   reload) run_test reload reload ;;
   playback) run_test playback playback ;;
+  network-quality) run_test network-quality network_quality ;;
   long-press) run_test long-press long_press ;;
   controls) run_test controls controls ;;
   fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;
