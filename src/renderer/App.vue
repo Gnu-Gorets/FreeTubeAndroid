@@ -128,12 +128,10 @@ import store from './store/index'
 import packageDetails from '../../package.json'
 import { openExternalLink, openInternalPath, showToast } from './helpers/utils'
 import { translateWindowTitle } from './helpers/strings'
-import { loadLocale } from './i18n/index'
 import { getLocalClip } from './helpers/api/local.js'
 import { getClipInvidious } from './helpers/api/invidious.js'
 
-import android from 'android'
-import { getUpdateInfo, updateAndroidTheme } from './helpers/android/system'
+import { updateAndroidTheme } from './helpers/android/system'
 
 const route = useRoute()
 const router = useRouter()
@@ -145,7 +143,6 @@ const backendPreference = computed(() => store.getters.getBackendPreference)
 /** @type {import('vue').ComputedRef<boolean>} */
 const backendFallback = computed(() => store.getters.getBackendFallback)
 
-const tapHighlight = computed(() => store.getters.getTapHighlight)
 /** @type {import('vue').ComputedRef<boolean>} */
 const isSideNavOpen = computed(() => store.getters.getIsSideNavOpen)
 
