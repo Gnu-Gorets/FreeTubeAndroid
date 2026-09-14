@@ -69,6 +69,20 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun getNetworkType(): String {
+        val connectivity = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val network = connectivity.activeNetwork ?: return "unknown"
+        val capabilities = connectivity.getNetworkCapabilities(network) ?: return "unknown"
+        val wifi = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        val mobile = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+        return if (wifi.xor(mobile)) {
+            if (wifi) "wifi" else "mobile"
+        } else {
+            "unknown"
+        }
+    }
+
+    @JavascriptInterface
     fun openFile(eventName: String, mimeTypes: String): Boolean {
         activity.runOnUiThread {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
