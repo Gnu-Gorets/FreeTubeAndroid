@@ -32,6 +32,8 @@ import {
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
 import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
+import { getNetworkType } from '../../helpers/android/network'
+import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -281,16 +283,17 @@ export default defineComponent({
       })
     })
 
-    /** @type {import('vue').ComputedRef<number | 'auto'>} */
-    const defaultQuality = computed(() => {
-      const value = store.getters.getDefaultQuality
+    const wifiDefaultQuality = computed(() => parseInt(store.getters.getWifiDefaultQuality))
+    const mobileDefaultQuality = computed(() => parseInt(store.getters.getMobileDefaultQuality))
 
-      // TODO: Revert when auto is fixed (720 is the default setttings value)
-      if (value === 'auto') { return 720 }
-      // if (value === 'auto') { return value }
+    const defaultQuality = computed(() => getDefaultQualityForNetwork(
+      process.env.IS_ANDROID ? getNetworkType() : 'unknown',
+      wifiDefaultQuality.value,
+      mobileDefaultQuality.value,
+      720
+    ))
 
-      return parseInt(value)
-    })
+    const initialQuality = defaultQuality
 
     /** @type {import('vue').ComputedRef<boolean>} */
     const enterFullscreenOnDisplayRotate = computed(() => {
@@ -1590,12 +1593,12 @@ export default defineComponent({
       const isPortrait = legacyFormats[0].height > legacyFormats[0].width
 
       let matches = legacyFormats.filter(variant => {
-        return previousQuality === isPortrait ? variant.width : variant.height
+        return previousQuality === (isPortrait ? variant.width : variant.height)
       })
 
       if (matches.length === 0) {
         matches = legacyFormats.filter(variant => {
-          return previousQuality > isPortrait ? variant.width : variant.height
+          return previousQuality > (isPortrait ? variant.width : variant.height)
         })
 
         if (matches.length > 0) {
@@ -3013,7 +3016,7 @@ export default defineComponent({
 
           if (defaultQuality.value !== 'auto') {
             if (props.format === 'dash') {
-              setDashQuality(defaultQuality.value)
+              setDashQuality(initialQuality.value)
             } else {
               let variants = player.getVariantTracks()
 
@@ -3032,7 +3035,7 @@ export default defineComponent({
           handleError(error, 'loading dash/audio manifest and setting default quality in mounted')
         }
       } else {
-        await setLegacyQuality(props.startTime)
+        await setLegacyQuality(props.startTime, initialQuality.value)
       }
     }
 
