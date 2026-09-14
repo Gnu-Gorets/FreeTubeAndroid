@@ -179,6 +179,7 @@ onMounted(async () => {
     window.addEventListener('youtube-link', ({ detail }) => {
       if (detail?.link) handleYoutubeLink(detail.link)
     })
+    window.Android?.onAppReady?.()
   }
 
   await store.dispatch('grabUserSettings')
