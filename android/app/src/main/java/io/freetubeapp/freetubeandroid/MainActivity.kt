@@ -13,7 +13,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebView
-import android.webkit.WebSettings
 import android.webkit.WebViewClient
 import androidx.core.view.ViewCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -47,6 +46,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
+        webView.setBackgroundColor(Color.rgb(16, 16, 16))
         swipeRefresh = findViewById(R.id.swipeRefresh)
         swipeRefresh.setOnRefreshListener { webView.reload() }
         ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
@@ -113,9 +113,6 @@ class MainActivity : Activity() {
         window.attributes.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         webView.settings.javaScriptEnabled = true
-        webView.settings.userAgentString = webView.settings.userAgentString
-            .replace(Regex("Mozilla/5.0 \\([^)]*\\)"), "Mozilla/5.0 (X11; Linux x86_64)")
-            .replace("Mobile Safari", "Safari")
         webView.settings.domStorageEnabled = true
         @Suppress("DEPRECATION")
         webView.settings.allowUniversalAccessFromFileURLs = true
@@ -124,7 +121,6 @@ class MainActivity : Activity() {
         webView.settings.mediaPlaybackRequiresUserGesture = false
         androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
         webView.addJavascriptInterface(androidBridge, "Android")
-        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         webView.loadUrl("file:///android_asset/index.html")
     }
 

@@ -555,14 +555,14 @@ export default defineComponent({
         }
 
         // extract localised title first and fall back to the not localised one
-        this.videoTitle = result.primary_info?.title.text?.trim() ?? result.basic_info.title?.trim()
-        this.videoViewCount = result.basic_info.view_count ?? (result.primary_info.view_count ? extractNumberFromString(result.primary_info.view_count.text) : null)
-        this.license = result.secondary_info.metadata.rows.find(element => element.title?.text === 'License')?.contents[0]?.text
+        this.videoTitle = result.primary_info?.title?.text?.trim() ?? result.basic_info.title?.trim()
+        this.videoViewCount = result.basic_info.view_count ?? (result.primary_info?.view_count?.text ? extractNumberFromString(result.primary_info.view_count.text) : null)
+        this.license = result.secondary_info?.metadata?.rows?.find(element => element.title?.text === 'License')?.contents?.[0]?.text
 
-        this.channelId = result.basic_info.channel_id ?? result.secondary_info.owner?.author.id
-        this.channelName = result.basic_info.author ?? result.secondary_info.owner?.author.name
+        this.channelId = result.basic_info.channel_id ?? result.secondary_info?.owner?.author?.id
+        this.channelName = result.basic_info.author ?? result.secondary_info?.owner?.author?.name
 
-        if (result.secondary_info.owner?.author) {
+        if (result.secondary_info?.owner?.author) {
           this.channelThumbnail = result.secondary_info.owner.author.best_thumbnail?.url ?? ''
         } else {
           this.channelThumbnail = ''
@@ -576,19 +576,19 @@ export default defineComponent({
           channelId: this.channelId
         })
 
-        if (result.page[0].microformat?.publish_date) {
+        if (result.page?.[0]?.microformat?.publish_date) {
           // `result.page[0].microformat.publish_date` example value: `2023-08-12T08:59:59-07:00`
           this.videoPublished = Date.parse(result.page[0].microformat.publish_date)
         } else {
           // text date Jan 1, 2000, not as accurate but better than nothing
-          this.videoPublished = Date.parse(result.primary_info.published)
+          this.videoPublished = Date.parse(result.primary_info?.published)
         }
 
-        if (result.secondary_info?.description.runs) {
+        if (result.secondary_info?.description?.runs) {
           try {
             this.videoDescription = parseLocalTextRuns(result.secondary_info.description.runs)
           } catch (error) {
-            console.error('Failed to extract the localised description, falling back to the standard one.', error, JSON.stringify(result.secondary_info.description.runs))
+            console.error('Failed to extract the localised description, falling back to the standard one.', error, JSON.stringify(result.secondary_info?.description?.runs))
             this.videoDescription = result.basic_info.short_description
           }
         } else {
@@ -606,7 +606,7 @@ export default defineComponent({
             this.thumbnail = `https://i.ytimg.com/vi/${this.videoId}/maxres3.jpg`
             break
           default:
-            this.thumbnail = result.basic_info.thumbnail?.[0].url ?? `https://i.ytimg.com/vi/${this.videoId}/maxresdefault.jpg`
+            this.thumbnail = result.basic_info.thumbnail?.[0]?.url ?? `https://i.ytimg.com/vi/${this.videoId}/maxresdefault.jpg`
             break
         }
 
@@ -626,7 +626,8 @@ export default defineComponent({
         this.isPostLiveDvr = !!result.basic_info.is_post_live_dvr
         this.isUnlisted = !!result.basic_info.is_unlisted
 
-        const subCount = !result.secondary_info.owner.subscriber_count.isEmpty() ? parseLocalSubscriberCount(result.secondary_info.owner.subscriber_count.text) : NaN
+        const subscriberCount = result.secondary_info?.owner?.subscriber_count
+        const subCount = subscriberCount && !subscriberCount.isEmpty() ? parseLocalSubscriberCount(subscriberCount.text) : NaN
 
         if (!isNaN(subCount)) {
           this.channelSubscriptionCountText = formatNumber(subCount, subCount >= 10000 ? { notation: 'compact' } : undefined)
@@ -671,7 +672,7 @@ export default defineComponent({
               }
               chaptersKind = 'keyMoments'
             } else {
-              chapters = this.extractChaptersFromDescription(result.basic_info.short_description ?? result.secondary_info.description.text)
+              chapters = this.extractChaptersFromDescription(result.basic_info.short_description ?? result.secondary_info?.description?.text ?? '')
             }
           }
 
@@ -923,10 +924,22 @@ export default defineComponent({
               })
               ?.projection_type ?? null
 
+            const hasDirectAdaptiveFormats = result.streaming_data.adaptive_formats.some(format =>
+              format.url || format.signature_cipher || format.cipher
+            )
+            console.warn('[Local playback] stream selection', {
+              adaptiveFormats: result.streaming_data.adaptive_formats.length,
+              hasDirectAdaptiveFormats,
+              hasServerAbr: Boolean(videoInfo.info.streaming_data?.server_abr_streaming_url),
+              hasUstreamerConfig: Boolean(videoInfo.info.player_config.media_common_config.media_ustreamer_request_config)
+            })
+
             if (
+              !hasDirectAdaptiveFormats &&
               videoInfo.info.streaming_data?.server_abr_streaming_url &&
               videoInfo.info.player_config.media_common_config.media_ustreamer_request_config
             ) {
+              console.warn('[Local playback] selecting SABR')
               const storyboards = storyboard
                 ? [{
                     templateUrl: storyboard.template_url,
@@ -948,6 +961,7 @@ export default defineComponent({
               result.streaming_data.adaptive_formats[0]?.signature_cipher ||
               result.streaming_data.adaptive_formats[0]?.cipher
             ) {
+              console.warn('[Local playback] selecting DASH')
               this.manifestSrc = await this.createLocalDashManifest(result)
               this.manifestMimeType = MANIFEST_TYPE_DASH
             } else {
