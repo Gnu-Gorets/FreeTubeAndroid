@@ -9,10 +9,12 @@
       <FtFlexBox class="dataSettingsBox">
         <FtButton
           :label="$t('Settings.Data Settings.Select Data Directory')"
+          test-id="data-select-directory"
           @click="selectDirectory"
         />
         <FtButton
           :label="$t('Settings.Data Settings.Reset Data Directory')"
+          test-id="data-reset-directory"
           @click="resetDirectory"
         />
         <FtToggleSwitch
@@ -79,6 +81,7 @@
       />
       <FtButton
         :label="$t('Settings.Data Settings.Export Playlists')"
+        test-id="data-export-playlists"
         @click="exportPlaylists"
       />
     </FtFlexBox>
