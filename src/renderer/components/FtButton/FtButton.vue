@@ -1,6 +1,7 @@
 <template>
   <button
     class="btn ripple"
+    :data-test="testId"
     :style="{
       color: textColor,
       backgroundColor: backgroundColor,
@@ -36,6 +37,10 @@ defineProps({
   },
   icon: {
     type: Array,
+    default: null
+  },
+  testId: {
+    type: String,
     default: null
   }
 })
