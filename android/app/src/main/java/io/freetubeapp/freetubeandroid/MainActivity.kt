@@ -328,7 +328,10 @@ class MainActivity : Activity() {
                   networkState: video?.networkState,
                   error: video?.error?.code,
                   paused: video?.paused,
-                  currentSrc: video?.currentSrc
+                  width: video?.videoWidth,
+                  height: video?.videoHeight,
+                  currentSrc: video?.currentSrc,
+                  networkType: window.Android?.getNetworkType?.()
                 }));
                 return;
               }
