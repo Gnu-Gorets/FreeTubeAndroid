@@ -310,7 +310,7 @@ class MainActivity : Activity() {
     }
 
     private fun runSmokeAction(action: String?, query: String?) {
-        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check") {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout") {
             Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
             return
         }
@@ -346,7 +346,8 @@ class MainActivity : Activity() {
                     return;
                   }
                   const original = Number(input.value);
-                  const target = original === 300 ? original - 5 : original + 5;
+                  const requested = Number(value);
+                  const target = value !== '' && Number.isFinite(requested) ? requested : (original === 300 ? original - 5 : original + 5);
                   input.value = target;
                   input.dispatchEvent(new Event('input', { bubbles: true }));
                   input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -370,6 +371,15 @@ class MainActivity : Activity() {
                   input.dispatchEvent(new Event('change', { bubbles: true }));
                   console.log('SMOKE_PERSISTENCE_CHECK_TEST:' + (passed ? 'PASS' : 'FAIL') + ':' + input.value);
                 }, 1000);
+                return;
+              }
+              if ('$action' === 'scale_layout') {
+                const input = document.querySelector('[data-test="ui-scale"]');
+                const expectedScale = Number(value.split(':')[0]);
+                const expectedLayout = value.split(':')[1];
+                const mobile = matchMedia('(width <= 680px)').matches;
+                const passed = Number(input?.value) === expectedScale && (expectedLayout === 'unchanged' || mobile === (expectedLayout === 'mobile'));
+                console.log('SMOKE_SCALE_LAYOUT_TEST:' + (passed ? 'PASS' : 'FAIL') + ':scale=' + input?.value + ',width=' + innerWidth + ',layout=' + (mobile ? 'mobile' : 'desktop'));
                 return;
               }
               if ('$action' === 'data_export' || '$action' === 'data_select' || '$action' === 'data_reset') {

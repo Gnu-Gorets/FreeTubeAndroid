@@ -539,7 +539,8 @@ class AndroidBridge(
                     mainWebView.reload()
                 }
             } else if (appliedScale != scale) {
-                mainWebView.setInitialScale(scale)
+                val initialScale = if (scale > 100) (scale * activity.resources.displayMetrics.density).toInt() else scale
+                mainWebView.setInitialScale(initialScale)
                 appliedScale = scale
                 mainWebView.reload()
             }

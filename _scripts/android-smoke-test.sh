@@ -40,7 +40,7 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, proxy
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -716,6 +716,36 @@ persistence() {
   screenshot persistence-after-restart
 }
 
+check_ui_scale_layout() {
+  local scale="$1" layout="$2"
+  clean_logs
+  start_app || return 1
+  run_web_smoke_action settings theme || return 1
+  sleep 2
+  run_web_smoke_action persistence_set "$scale" || return 1
+  sleep 5
+  clean_logs
+  start_app || return 1
+  run_web_smoke_action settings theme || return 1
+  sleep 2
+  run_web_smoke_action scale_layout "$scale:$layout" || return 1
+  adb_cmd logcat -d -v brief | grep 'SMOKE_SCALE_LAYOUT_TEST:' | tail -1
+  screenshot "ui-scale-$scale"
+}
+
+ui_scale_layout() {
+  preflight || return 1
+  local status=0 scale layout
+  for scale in 100 105 115 90; do
+    layout="$([[ "$scale" -ge 100 ]] && echo mobile || echo unchanged)"
+    check_ui_scale_layout "$scale" "$layout" || status=1
+  done
+  clean_logs
+  start_app && run_web_smoke_action settings theme && sleep 2 && run_web_smoke_action persistence_set 100 || status=1
+  sleep 5
+  return "$status"
+}
+
 cleanup() {
   playback || return 1
   adb_shell input keyevent KEYCODE_BACK
@@ -819,6 +849,7 @@ case "$TEST" in
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   settings-sort) run_test settings-sort settings_sort ;;
+  ui-scale-layout) run_test ui-scale-layout ui_scale_layout ;;
   proxy) run_test proxy proxy_settings ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
 esac
