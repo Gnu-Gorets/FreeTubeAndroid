@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -19,6 +20,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : Activity() {
@@ -30,8 +32,11 @@ class MainActivity : Activity() {
     }
 
     private lateinit var webView: WebView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var androidBridge: AndroidBridge
     private var pendingDeepLink: Intent? = null
+    private var reloadSmokePending = false
+    private var webAppReady = false
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +47,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
-        val swipeRefresh = findViewById<SwipeRefreshLayout>(R.id.swipeRefresh)
+        swipeRefresh = findViewById(R.id.swipeRefresh)
         swipeRefresh.setOnRefreshListener { webView.reload() }
         ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
             val safeInsets = insets.getInsets(
@@ -56,17 +61,22 @@ class MainActivity : Activity() {
         }
         pendingDeepLink = intent
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                webAppReady = false
+                if (reloadSmokePending) {
+                    reloadSmokePending = false
+                    Log.i("FreeTubeSmoke", "SMOKE_RELOAD_TEST:PASS")
+                }
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 swipeRefresh.isRefreshing = false
-                pendingDeepLink?.let {
-                    dispatchDeepLink(it)
-                    pendingDeepLink = null
-                }
             }
         }
         var fullscreenView: View? = null
-        val root = webView.parent as ViewGroup
+        val root = findViewById<ViewGroup>(android.R.id.content)
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
         webView.webChromeClient = object : WebChromeClient() {
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
@@ -118,6 +128,16 @@ class MainActivity : Activity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    fun onWebAppReady() {
+        runOnUiThread {
+            webAppReady = true
+            pendingDeepLink?.let {
+                dispatchDeepLink(it)
+                pendingDeepLink = null
+            }
+        }
+    }
+
     private fun dispatchDeepLink(intent: Intent?) {
         val url = intent?.data?.toString() ?: return
         val event = JSONObject.quote(url)
@@ -166,8 +186,327 @@ class MainActivity : Activity() {
                     runSettingsSortTest()
                 }
             }
-            Intent.ACTION_VIEW -> dispatchDeepLink(intent)
+            "io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION" -> {
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    val action = intent?.getStringExtra("action")
+                    if (action == "fullscreen") runFullscreenSmokeAction()
+                    else if (action == "long_press") runLongPressSmokeAction()
+                    else if (action == "reload") runReloadSmokeAction()
+                    else runSmokeAction(action, intent?.getStringExtra("query"))
+                }
+            }
+            Intent.ACTION_VIEW -> {
+                pendingDeepLink = intent
+                if (webAppReady) onWebAppReady()
+            }
         }
+    }
+
+    private fun runReloadSmokeAction() {
+        if (reloadSmokePending) {
+            Log.i("FreeTubeSmoke", "SMOKE_RELOAD_TEST:FAIL:already-pending")
+            return
+        }
+        reloadSmokePending = true
+        swipeRefresh.post {
+            val width = swipeRefresh.width.toFloat()
+            val height = swipeRefresh.height.toFloat()
+            val x = width / 2
+            val startY = height * 0.2f
+            val endY = height * 0.7f
+            val start = android.os.SystemClock.uptimeMillis()
+            val down = MotionEvent.obtain(start, start, MotionEvent.ACTION_DOWN, x, startY, 0)
+            swipeRefresh.dispatchTouchEvent(down)
+            down.recycle()
+            for (step in 1..5) {
+                val eventTime = start + step * 100L
+                val y = startY + (endY - startY) * step / 5
+                val move = MotionEvent.obtain(start, eventTime, MotionEvent.ACTION_MOVE, x, y, 0)
+                swipeRefresh.dispatchTouchEvent(move)
+                move.recycle()
+            }
+            val up = MotionEvent.obtain(start, start + 600L, MotionEvent.ACTION_UP, x, endY, 0)
+            swipeRefresh.dispatchTouchEvent(up)
+            up.recycle()
+            swipeRefresh.postDelayed({
+                if (reloadSmokePending) {
+                    reloadSmokePending = false
+                    Log.i("FreeTubeSmoke", "SMOKE_RELOAD_TEST:FAIL:gesture-not-triggered")
+                }
+            }, 5000)
+        }
+    }
+
+    private fun runLongPressSmokeAction() {
+        webView.evaluateJavascript(
+            """
+            (() => {
+              const video = document.querySelector('video');
+              const target = document.querySelector('.shaka-spacer, .shaka-controls-container');
+              if (!video || !target || video.paused) return '';
+              const rect = target.getBoundingClientRect();
+              return [rect.left + rect.width / 2, rect.top + rect.height / 2, video.playbackRate].join(',');
+            })();
+            """.trimIndent()
+        ) { rawPoint ->
+            val point = rawPoint.trim('"').split(',').mapNotNull { it.toFloatOrNull() }
+            if (point.size != 3) {
+                Log.i("FreeTubeSmoke", "SMOKE_LONG_PRESS_TEST:FAIL:control-not-found")
+                return@evaluateJavascript
+            }
+            webView.post {
+                val now = android.os.SystemClock.uptimeMillis()
+                val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, point[0], point[1], 0)
+                webView.dispatchTouchEvent(down)
+                down.recycle()
+                webView.postDelayed({
+                    webView.evaluateJavascript("document.querySelector('video')?.playbackRate || 0") { rate ->
+                        val accelerated = rate.trim('"').toFloatOrNull()?.let { it > point[2] } == true
+                        val upTime = android.os.SystemClock.uptimeMillis()
+                        val up = MotionEvent.obtain(upTime, upTime, MotionEvent.ACTION_UP, point[0], point[1], 0)
+                        webView.dispatchTouchEvent(up)
+                        up.recycle()
+                        webView.postDelayed({
+                            webView.evaluateJavascript("document.querySelector('video')?.playbackRate || 0") { restoredRate ->
+                                val restored = restoredRate.trim('"').toFloatOrNull() == point[2]
+                                Log.i("FreeTubeSmoke", "SMOKE_LONG_PRESS_TEST:${if (accelerated && restored) "PASS" else "FAIL"}:accelerated=$accelerated,restored=$restored")
+                            }
+                        }, 300)
+                    }
+                }, 700)
+            }
+        }
+    }
+
+    private fun runFullscreenSmokeAction() {
+        webView.evaluateJavascript(
+            """
+            (() => {
+              const button = document.querySelector('.shaka-fullscreen-button');
+              if (!button) return '';
+              const rect = button.getBoundingClientRect();
+              return (rect.left + rect.width / 2) + ',' + (rect.top + rect.height / 2);
+            })();
+            """.trimIndent()
+        ) { rawPoint ->
+            val point = rawPoint.trim('"').split(',').mapNotNull { it.toFloatOrNull() }
+            if (point.size != 2) {
+                Log.i("FreeTubeSmoke", "SMOKE_FULLSCREEN_TEST:FAIL:control-not-found")
+                return@evaluateJavascript
+            }
+            webView.post {
+                val now = android.os.SystemClock.uptimeMillis()
+                val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, point[0], point[1], 0)
+                val up = MotionEvent.obtain(now, now + 50, MotionEvent.ACTION_UP, point[0], point[1], 0)
+                webView.dispatchTouchEvent(down)
+                webView.dispatchTouchEvent(up)
+                down.recycle()
+                up.recycle()
+                webView.postDelayed({
+                    webView.evaluateJavascript(
+                        "document.fullscreenElement ? 'PASS' : 'FAIL'"
+                    ) { result ->
+                        Log.i("FreeTubeSmoke", "SMOKE_FULLSCREEN_TEST:${result.trim('"')}")
+                    }
+                }, 1000)
+            }
+        }
+    }
+
+    private fun runSmokeAction(action: String?, query: String?) {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check") {
+            Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
+            return
+        }
+        val value = JSONObject.quote(query ?: "linux")
+        webView.evaluateJavascript(
+            """
+            (() => {
+              const value = $value;
+              if ('$action' === 'video_state') {
+                const video = document.querySelector('video');
+                console.log('SMOKE_VIDEO_STATE:' + JSON.stringify({
+                  hash: location.hash,
+                  video: !!video,
+                  readyState: video?.readyState,
+                  networkState: video?.networkState,
+                  error: video?.error?.code,
+                  paused: video?.paused,
+                  currentSrc: video?.currentSrc
+                }));
+                return;
+              }
+              if ('$action' === 'fullscreen') {
+                setTimeout(() => {
+                  console.log('SMOKE_FULLSCREEN_TEST:' + (document.fullscreenElement ? 'PASS' : 'FAIL'));
+                }, 500);
+                return;
+              }
+              if ('$action' === 'persistence_set') {
+                setTimeout(() => {
+                  const input = document.querySelector('[data-test="ui-scale"]');
+                  if (!input) {
+                    console.log('SMOKE_PERSISTENCE_SET_TEST:FAIL:control-not-found');
+                    return;
+                  }
+                  const original = Number(input.value);
+                  const target = original === 300 ? original - 5 : original + 5;
+                  input.value = target;
+                  input.dispatchEvent(new Event('input', { bubbles: true }));
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                  console.log('SMOKE_PERSISTENCE_SET_TEST:PASS:' + original + ':' + target);
+                }, 1000);
+                return;
+              }
+              if ('$action' === 'persistence_check') {
+                setTimeout(() => {
+                  const input = document.querySelector('[data-test="ui-scale"]');
+                  const parts = value.split(':');
+                  const target = Number(parts[0]);
+                  const original = Number(parts[1]);
+                  if (!input) {
+                    console.log('SMOKE_PERSISTENCE_CHECK_TEST:FAIL:control-not-found');
+                    return;
+                  }
+                  const passed = Number(input.value) === target;
+                  input.value = original;
+                  input.dispatchEvent(new Event('input', { bubbles: true }));
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                  console.log('SMOKE_PERSISTENCE_CHECK_TEST:' + (passed ? 'PASS' : 'FAIL') + ':' + input.value);
+                }, 1000);
+                return;
+              }
+              if ('$action' === 'data_export' || '$action' === 'data_select' || '$action' === 'data_reset') {
+                const selector = '$action' === 'data_export'
+                  ? '[data-test="data-export-playlists"]'
+                  : ('$action' === 'data_reset'
+                      ? '[data-test="data-reset-directory"]'
+                      : '[data-test="data-select-directory"]');
+                window.location.hash = '#/settings';
+                setTimeout(() => {
+                  const link = document.querySelector('[data-section="data"]');
+                  link?.click();
+                  setTimeout(() => {
+                    const button = document.querySelector(selector);
+                    if (!button) {
+                      console.log('SMOKE_' + ('$action' === 'data_export' ? 'DATA_EXPORT' : ('$action' === 'data_reset' ? 'DATA_RESET' : 'DATA_SELECT')) + '_TEST:FAIL:button-not-found');
+                      return;
+                    }
+                    button.click();
+                    console.log('SMOKE_' + ('$action' === 'data_export' ? 'DATA_EXPORT' : ('$action' === 'data_reset' ? 'DATA_RESET' : 'DATA_SELECT')) + '_TEST:PASS');
+                  }, 700);
+                }, 300);
+                return;
+              }
+              if ('$action' === 'proxy_off') {
+                const input = document.querySelector('[data-test="proxy-enabled"]');
+                if (!input) {
+                  console.log('SMOKE_PROXY_OFF_TEST:FAIL:control-not-found');
+                  return;
+                }
+                if (input.checked) input.click();
+                setTimeout(() => console.log('SMOKE_PROXY_OFF_TEST:' + (!input.checked ? 'PASS' : 'FAIL')), 300);
+                return;
+              }
+              if ('$action' === 'proxy') {
+                const enabled = document.querySelector('[data-test="proxy-enabled"]');
+                if (!enabled) {
+                  console.log('SMOKE_PROXY_TEST:FAIL:toggle-not-found');
+                  return;
+                }
+                if (!enabled.checked) enabled.click();
+                setTimeout(() => {
+                  const inputValue = (selector, value) => {
+                    const input = document.querySelector(selector);
+                    if (!input) return false;
+                    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                    setter.call(input, value);
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    return true;
+                  };
+                  const protocol = document.querySelector('[data-test="proxy-protocol"]');
+                  const host = inputValue('[data-test="proxy-host"]', '127.0.0.1');
+                  const port = inputValue('[data-test="proxy-port"]', value);
+                  if (!protocol || !host || !port) {
+                    console.log('SMOKE_PROXY_TEST:FAIL:controls-not-found:' + JSON.stringify({
+                      protocol: !!protocol,
+                      host,
+                      port
+                    }));
+                    return;
+                  }
+                  protocol.value = 'http';
+                  protocol.dispatchEvent(new Event('change', { bubbles: true }));
+                  setTimeout(() => {
+                    const button = document.querySelector('[data-test="proxy-test"]');
+                    if (!button) {
+                      console.log('SMOKE_PROXY_TEST:FAIL:test-button-not-found');
+                      return;
+                    }
+                    button.click();
+                    setTimeout(() => console.log('SMOKE_PROXY_TEST:PASS'), 1000);
+                  }, 500);
+                }, 700);
+                return;
+              }
+              if ('$action' === 'fit_visual') {
+                const video = document.querySelector('.ftVideoPlayer > .player');
+                const expected = value === 'on' ? 'cover' : 'contain';
+                const actual = video ? getComputedStyle(video).objectFit : '';
+                console.log('SMOKE_FIT_VISUAL_TEST:' + (actual === expected ? 'PASS' : 'FAIL') + ':' + actual);
+                return;
+              }
+              if ('$action' === 'fit') {
+                window.location.hash = '#/settings';
+                setTimeout(() => {
+                  const input = document.querySelector('[data-test="fit-video-fullscreen"]');
+                  const target = value === 'on';
+                  if (!input) {
+                    console.log('SMOKE_FIT_TEST:FAIL:control-not-found');
+                    return;
+                  }
+                  if (input.checked !== target) input.click();
+                  setTimeout(() => {
+                    console.log('SMOKE_FIT_TEST:' + (input.checked === target ? 'PASS' : 'FAIL') + ':' + input.checked);
+                  }, 300);
+                }, 300);
+                return;
+              }
+              if ('$action' === 'settings') {
+                window.location.hash = '#/settings';
+                setTimeout(() => {
+                  const link = document.querySelector('[data-section="' + value + '"]');
+                  link?.click();
+                  setTimeout(() => {
+                    const section = document.querySelector('.settingsSections [data-section="' + value + '"]');
+                    const passed = !!link && !!section && !section.classList.contains('hideOnMobile');
+                    console.log('SMOKE_SETTINGS_TEST:' + (passed ? 'PASS' : 'FAIL') + ':' + value);
+                  }, 300);
+                }, 300);
+                return;
+              }
+              const open = document.querySelector('[data-test="search-open"]');
+              open?.click();
+              setTimeout(() => {
+                const input = document.querySelector('.searchInput input');
+                const action = document.querySelector('.searchInput .inputAction');
+                if (!input || !action) {
+                  console.log('SMOKE_SEARCH_TEST:FAIL:controls-not-found');
+                  return;
+                }
+                const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                setter.call(input, value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                action.click();
+                setTimeout(() => {
+                  const passed = location.hash.startsWith('#/search/');
+                  console.log('SMOKE_SEARCH_TEST:' + (passed ? 'PASS' : 'FAIL') + ':' + location.hash);
+                }, 500);
+              }, 300);
+            })();
+            """.trimIndent(),
+            null
+        )
     }
 
     private fun runSettingsSortTest() {

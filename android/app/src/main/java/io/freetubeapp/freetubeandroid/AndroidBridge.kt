@@ -59,6 +59,11 @@ class AndroidBridge(
     private var pendingFile: Triple<String, String, String>? = null
 
     @JavascriptInterface
+    fun onAppReady() {
+        (activity as? MainActivity)?.onWebAppReady()
+    }
+
+    @JavascriptInterface
     fun isLandscape(): Boolean {
         return activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     }
@@ -198,7 +203,6 @@ class AndroidBridge(
         activity.revokeUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     }
 
-    @JavascriptInterface
     fun requestDirectoryAccessDialog(): String {
         val id = UUID.randomUUID().toString()
         pendingDirectoryRequest = id
