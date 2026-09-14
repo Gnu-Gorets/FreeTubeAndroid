@@ -78,6 +78,7 @@
           :compact="true"
           :default-value="fitVideoToFullscreen"
           :tooltip="t('Tooltips.Player Settings.Fit Video to Fullscreen')"
+          test-id="fit-video-fullscreen"
           @change="updateFitVideoToFullscreen"
         />
       </div>
