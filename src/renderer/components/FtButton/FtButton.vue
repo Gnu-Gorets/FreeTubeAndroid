@@ -1,6 +1,7 @@
 <template>
   <button
     class="btn ripple"
+    :data-test="testId"
     :data-settings-search-label="label"
     :style="{
       color: textColor,
@@ -37,6 +38,10 @@ defineProps({
   },
   icon: {
     type: Array,
+    default: null
+  },
+  testId: {
+    type: String,
     default: null
   }
 })
