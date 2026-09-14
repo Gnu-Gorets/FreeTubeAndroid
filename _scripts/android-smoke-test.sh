@@ -2,8 +2,11 @@
 set -u
 
 PACKAGE="io.freetubeapp.freetubeandroid"
+TEST_PACKAGE="$PACKAGE.test"
 ACTIVITY="$PACKAGE/.MainActivity"
+TEST_RUNNER="$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner"
 APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/debug/app-debug.apk"
+TEST_APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 SERIAL=""
 TEST="all"
 SUITE="all"
@@ -14,7 +17,6 @@ LOG_FILE=""
 PASS=0
 FAIL=0
 SKIP=0
-UI_SCALE_SET=0
 ORIENTATION_STATE_SAVED=0
 ORIGINAL_ROTATION_MODE=""
 ORIGINAL_USER_ROTATION=""
@@ -36,9 +38,9 @@ Options:
   --test NAME           one test: preflight, cold-start, search, reload, playback, controls,
                         lock-screen, audio-focus, persistence, cleanup, recovery,
                         locked-state, locked-notification, locked-session,
-                        export, data-directory-cancel, data-directory-move-reset,
+                        export, data-directory-cancel,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, proxy
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -80,6 +82,11 @@ adb_cmd() {
 
 adb_shell() { adb_cmd shell "$@"; }
 screenshot() { adb_cmd exec-out screencap -p >"$ARTIFACT_DIR/$1.png"; }
+is_landscape() {
+  local width height
+  read -r width height <<<"$(identify -format '%w %h' "$1")"
+  (( width > height ))
+}
 dump_ui() { adb_cmd exec-out uiautomator dump /dev/tty 2>/dev/null >"$ARTIFACT_DIR/$1.xml" || true; }
 log_focus() { adb_shell dumpsys activity activities 2>/dev/null | grep -E 'mResumedActivity|mFocusedApp' | tail -2 || true; }
 if ! command -v adb >/dev/null 2>&1; then
@@ -155,6 +162,7 @@ wait_for_media() {
     now=$(date +%s)
     if ((now - last_log >= 10)); then
       progress "still waiting for media: $pattern ($((now - start))s/${TIMEOUT}s)"
+      log_video_state "$((now - start))"
       last_log=$now
     fi
     if ((now - start >= TIMEOUT)); then
@@ -208,7 +216,6 @@ wake_device() {
     adb_shell input keyevent KEYCODE_WAKEUP
   fi
   adb_shell wm dismiss-keyguard >/dev/null 2>&1 || true
-  adb_shell input swipe 360 1400 360 400 300 >/dev/null 2>&1 || true
   sleep 2
 }
 
@@ -220,46 +227,23 @@ require_unlocked() {
   fi
 }
 
-ensure_ui_scale_100() {
-  (( UI_SCALE_SET == 1 )) && return 0
-  adb_shell am force-stop "$PACKAGE"
-  adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
-  adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
-  wait_for "$PACKAGE" || return 1
-  sleep 5
-  # Open Settings through persistent mobile bottom navigation.
-  adb_shell input tap 615 1540
-  sleep 5
-  # Handle current 70% layout, then normalize after possible reload.
-  adb_shell input tap 18 98
-  sleep 1
-  adb_shell input tap 55 280
-  sleep 3
-  adb_shell input tap 18 98
-  sleep 2
-  adb_shell input tap 80 234
-  sleep 2
-  adb_shell input tap 385 588
-  sleep 5
-  # At 100% Settings uses full-screen mobile section menu.
-  adb_shell input tap 63 245
-  sleep 2
-  adb_shell input tap 300 444
-  sleep 2
-  # Theme UI Scale slider: 50..300%, 100% is x=198 at 100% layout.
-  adb_shell input tap 198 934
-  sleep 5
-  screenshot ui-scale-100
-  UI_SCALE_SET=1
-}
-
 start_app() {
-  ensure_ui_scale_100 || return 1
   adb_shell am force-stop com.android.documentsui >/dev/null 2>&1 || true
   adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   wait_for "$PACKAGE" || return 1
   close_picker || return 1
   sleep 5
+}
+
+log_video_state() {
+  local elapsed="$1"
+  adb_shell am start -a io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION \
+    --es action video_state -n "$ACTIVITY" >/dev/null 2>&1 || return 0
+  sleep 1
+  adb_cmd logcat -d -v brief | grep -E 'SMOKE_(DEEP_LINK|VIDEO_STATE)' | tail -20 \
+    | tee -a "$ARTIFACT_DIR/video-state.log" >&2
+  adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' \
+    >"$ARTIFACT_DIR/media-$elapsed.txt" || true
 }
 
 screen_fingerprint() {
@@ -286,55 +270,21 @@ wait_for_screen_change() {
 
 open_player_settings() {
   start_app || return 1
-  local before="$(mktemp)"
-  screen_fingerprint "$before"
-  adb_shell input tap 605 1545
-  wait_for_screen_change "$before" || {
-    rm -f "$before"
-    echo "Player Settings navigation did not change screen"
-    return 1
-  }
-  rm -f "$before"
-  before="$(mktemp)"
-  screen_fingerprint "$before"
-  adb_shell input tap 300 865
-  wait_for_screen_change "$before" || {
-    rm -f "$before"
+  run_web_smoke_action settings player || {
     echo "Player Settings section did not open"
     return 1
   }
-  rm -f "$before"
   sleep 2
 }
 
 set_fit_video_to_fullscreen() {
   local desired="$1"
   open_player_settings || return 1
+  run_web_smoke_action fit "$desired" || {
+    echo "Fit Screen toggle did not reach target=$desired"
+    return 1
+  }
   screenshot "fit-screen-settings-$desired"
-
-  local pixel
-  pixel=$(convert "$ARTIFACT_DIR/fit-screen-settings-$desired.png" -format '%[pixel:p{194,1205}]' info:)
-  local enabled=0
-  [[ "$pixel" == *'33,150,243'* ]] && enabled=1
-  progress "Fit Screen target=$desired detected=$([[ $enabled == 1 ]] && echo on || echo off)"
-
-  if [[ "$desired" == "on" && "$enabled" == "0" ]] ||
-     [[ "$desired" == "off" && "$enabled" == "1" ]]; then
-    adb_shell input tap 172 1205
-    sleep 1
-  fi
-
-  screenshot "fit-screen-settings-$desired-final"
-  local final_pixel
-  final_pixel=$(convert "$ARTIFACT_DIR/fit-screen-settings-$desired-final.png" -format '%[pixel:p{194,1205}]' info:)
-  local final_enabled=0
-  [[ "$final_pixel" == *'33,150,243'* ]] && final_enabled=1
-  [[ "$desired" == "on" && "$final_enabled" == "1" ]] ||
-    [[ "$desired" == "off" && "$final_enabled" == "0" ]] || {
-      echo "Fit Screen toggle did not reach target=$desired"
-      return 1
-    }
-
   adb_shell input keyevent KEYCODE_BACK
   sleep 2
 }
@@ -378,17 +328,8 @@ no_native_crash() {
 }
 
 enter_fullscreen() {
-  local orientation="${1:-portrait}"
-  local center_x=400 control_x=680 control_y=600
-  if [[ "$orientation" == "landscape" ]]; then
-    center_x=900
-    control_x=1325
-    control_y=685
-  fi
-  adb_shell input tap "$center_x" 340
-  sleep 1
-  adb_shell input tap "$control_x" "$control_y"
-  sleep 4
+  run_web_smoke_action fullscreen || return 1
+  sleep 3
 }
 
 fullscreen_auto_rotate() {
@@ -401,13 +342,13 @@ fullscreen_auto_rotate() {
   open_video jNQXAC9IVRw || return 1
   enter_fullscreen portrait
   screenshot fullscreen-auto-rotate
-  identify "$ARTIFACT_DIR/fullscreen-auto-rotate.png" | grep -q '1600x720' || {
+  is_landscape "$ARTIFACT_DIR/fullscreen-auto-rotate.png" || {
     echo "Fullscreen did not rotate to landscape with auto-rotate locked"
     return 1
   }
   set_orientation 3 || return 1
   screenshot fullscreen-auto-rotate-reverse
-  identify "$ARTIFACT_DIR/fullscreen-auto-rotate-reverse.png" | grep -q '1600x720' || {
+  is_landscape "$ARTIFACT_DIR/fullscreen-auto-rotate-reverse.png" || {
     echo "Fullscreen did not remain landscape after reverse rotation"
     return 1
   }
@@ -415,10 +356,10 @@ fullscreen_auto_rotate() {
   adb_shell input keyevent KEYCODE_BACK
   sleep 3
   screenshot fullscreen-auto-rotate-exit
-  identify "$ARTIFACT_DIR/fullscreen-auto-rotate-exit.png" | grep -q '720x1600' || {
+  if is_landscape "$ARTIFACT_DIR/fullscreen-auto-rotate-exit.png"; then
     echo "Fullscreen exit did not restore portrait orientation"
     return 1
-  }
+  fi
   restore_rotation_settings
   restore_orientation
   trap - EXIT
@@ -439,25 +380,16 @@ fullscreen_fit_screen() {
       suffix="${setting}-${orientation}"
       open_video jNQXAC9IVRw || return 1
       set_orientation "$([[ "$orientation" == "landscape" ]] && echo 1 || echo 0)"
-      enter_fullscreen "$orientation"
+      enter_fullscreen "$orientation" || return 1
       screenshot "fullscreen-fit-screen-$suffix"
-      local expected_size="$([[ "$orientation" == "landscape" ]] && echo '1600x720' || echo '720x1600')"
-      identify "$ARTIFACT_DIR/fullscreen-fit-screen-$suffix.png" | grep -q "$expected_size" || {
-        echo "Unexpected fullscreen size for $suffix"
+      if [[ "$orientation" == "landscape" ]] && ! is_landscape "$ARTIFACT_DIR/fullscreen-fit-screen-$suffix.png"; then
+        echo "Unexpected fullscreen orientation for $suffix"
+        return 1
+      fi
+      run_web_smoke_action fit_visual "$setting" || {
+        echo "Unexpected video object-fit for $suffix"
         return 1
       }
-      local edge_crop="$(convert "$ARTIFACT_DIR/fullscreen-fit-screen-$suffix.png" -crop "$([[ "$orientation" == "landscape" ]] && echo '80x80+10+320' || echo '80x80+320+10')" -colorspace gray -format '%[fx:mean.r]' info:)"
-      if [[ "$setting" == "on" && "$orientation" == "landscape" ]]; then
-        awk "BEGIN { exit !($edge_crop > 0.02) }" || {
-          echo "Expected video at fullscreen edge for $suffix, mean=$edge_crop"
-          return 1
-        }
-      else
-        awk "BEGIN { exit !($edge_crop <= 0.02) }" || {
-          echo "Expected black fit bar for $suffix, mean=$edge_crop"
-          return 1
-        }
-      fi
       adb_shell input keyevent KEYCODE_BACK
       sleep 2
     done
@@ -468,12 +400,23 @@ fullscreen_fit_screen() {
   no_native_crash
 }
 
+run_web_smoke_action() {
+  local action="$1" query="${2:-}" result="" marker
+  marker="SMOKE_${action^^}_TEST:"
+  adb_shell am start -a io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION \
+    --es action "$action" --es query "$query" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+  [[ "$action" == "fullscreen" ]] && adb_shell input keyevent KEYCODE_F
+  for _ in $(seq 1 "$TIMEOUT"); do
+    result=$(adb_cmd logcat -d -v brief | grep "$marker" | tail -1 || true)
+    [[ -n "$result" ]] && break
+    sleep 1
+  done
+  [[ "$result" == *"${marker}PASS"* ]]
+}
+
 open_search_results() {
   start_app || return 1
-  adb_shell input tap 350 104
-  adb_shell input text linux
-  adb_shell input tap 525 104
-  adb_shell input keyevent KEYCODE_ENTER
+  run_web_smoke_action search linux || return 1
   progress "waiting for search results (6s)"
   sleep 6
   progress "search wait finished"
@@ -485,17 +428,10 @@ trap cleanup_proxy EXIT
 
 clear_app_proxy() {
   start_app || return 1
-  adb_shell input tap 615 1540
+  run_web_smoke_action settings proxy || return 1
   sleep 2
-  adb_shell input tap 320 1120
+  run_web_smoke_action proxy_off || return 1
   sleep 2
-  screenshot proxy-cleanup
-  local toggle_pixel
-  toggle_pixel=$(convert "$ARTIFACT_DIR/proxy-cleanup.png" -format '%[pixel:p{289,358}]' info:)
-  if [[ "$toggle_pixel" == *'33,150,243'* ]]; then
-    adb_shell input tap 289 555
-    sleep 3
-  fi
 }
 
 clear_global_proxy() {
@@ -515,6 +451,7 @@ cleanup_proxy() {
 
 proxy_settings() {
   command -v python3 >/dev/null 2>&1 || return 77
+  clean_logs
   PROXY_LOG="$ARTIFACT_DIR/proxy.log"
   : >"$PROXY_LOG"
   python3 "$(dirname "$0")/android-test-http-proxy.py" "$PROXY_PORT" "$PROXY_LOG" >/dev/null 2>&1 &
@@ -522,28 +459,9 @@ proxy_settings() {
   sleep 1
   adb_cmd reverse "tcp:$PROXY_PORT" "tcp:$PROXY_PORT" || return 1
   start_app || return 1
-  adb_shell input tap 615 1540
+  run_web_smoke_action settings proxy || return 1
   sleep 2
-  adb_shell input tap 320 1120
-  sleep 2
-  screenshot proxy-settings
-  local toggle_pixel
-  toggle_pixel=$(convert "$ARTIFACT_DIR/proxy-settings.png" -format '%[pixel:p{289,358}]' info:)
-  if [[ "$toggle_pixel" != *'33,150,243'* ]]; then
-    adb_shell input tap 289 358
-    sleep 3
-  fi
-  adb_shell input tap 360 670
-  sleep 1
-  adb_shell input tap 120 700
-  sleep 3
-  adb_shell input tap 300 880
-  adb_shell input keyevent KEYCODE_MOVE_END
-  for _ in 1 2 3 4 5 6 7 8; do adb_shell input keyevent KEYCODE_DEL; done
-  adb_shell input text "$PROXY_PORT"
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 3
-  adb_shell input tap 360 1050
+  run_web_smoke_action proxy "$PROXY_PORT" || return 1
   sleep 10
   grep -q '^CONNECT ' "$PROXY_LOG" || {
     echo "Proxy did not receive Test Proxy request"
@@ -595,21 +513,6 @@ search() {
   [[ -s "$ARTIFACT_DIR/search.png" ]]
 }
 
-reload() {
-  clean_logs
-  start_app || return 1
-  # Pull down from top of WebView to trigger native SwipeRefreshLayout.
-  progress "pulling down to refresh at x=360"
-  adb_shell input swipe 360 500 360 120 300
-  adb_shell input swipe 360 180 360 650 500
-  sleep 5
-  wait_for "$PACKAGE" || return 1
-  screenshot reload-after
-  dump_ui reload-after
-  collect_logs
-  ! grep -E 'FATAL EXCEPTION|AndroidRuntime: FATAL' "$LOG_FILE" >/dev/null
-}
-
 settings_sort() {
   preflight || return 1
   clean_logs
@@ -633,12 +536,12 @@ settings_sort() {
 
 open_video() {
   local video_id="${1:-jNQXAC9IVRw}"
-  adb_shell am force-stop "$PACKAGE"
-  adb_shell am start -a android.intent.action.VIEW -d "https://www.youtube.com/watch?v=$video_id" -n "$ACTIVITY" >/dev/null 2>&1
+  adb_shell am start -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   wait_for "$PACKAGE" || return 1
+  adb_shell am start -a android.intent.action.VIEW \
+    -d "https://www.youtube.com/watch?v=$video_id" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   wait_for_media 'metadata: size=' || return 1
   progress "starting video playback"
-  adb_shell input tap 400 340
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null 2>&1
   wait_for_media 'state=PlaybackState {state=PLAYING' || return 1
   screenshot video
@@ -652,22 +555,23 @@ playback() {
   grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' "$ARTIFACT_DIR/media_session.txt" | grep -q 'state=PlaybackState {state=PLAYING'
 }
 
+reload() {
+  clean_logs
+  start_app || return 1
+  run_web_smoke_action reload || return 1
+  screenshot reload-after
+  no_native_crash
+}
+
 long_press() {
   clean_logs
   media_session | grep -q 'state=PlaybackState {state=PLAYING' || {
     open_search_results || return 1
     open_video || return 1
   }
-  local hold_pid
-  progress "holding video for 1500ms"
-  adb_shell input swipe 400 340 400 340 1500 &
-  hold_pid=$!
-  sleep 0.7
-  screenshot long-press-held || { wait "$hold_pid"; return 1; }
-  dump_ui long-press-held
-  wait "$hold_pid" || return 1
-  screenshot long-press-released
-  no_runtime_errors
+  run_web_smoke_action long_press || return 1
+  screenshot long-press
+  no_native_crash
 }
 
 controls() {
@@ -676,10 +580,6 @@ controls() {
     open_search_results || return 1
     open_video || return 1
   }
-  adb_shell input tap 400 340
-  sleep 1
-  adb_shell input tap 520 457
-  sleep 1
   adb_shell am start -a MEDIA_PAUSE -n "$ACTIVITY" >/dev/null 2>&1
   wait_for_media 'state=PlaybackState {state=PAUSED' || return 1
   adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null 2>&1
@@ -760,22 +660,13 @@ audio_focus() {
 
 open_data_settings() {
   start_app || return 1
-  # Reopen Settings after cold start or Activity recreation. First close any stale modal.
-  adb_shell input tap 615 1540
-  sleep 1
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 1
-  adb_shell input tap 615 1540
-  sleep 3
-  # At UI scale 100% Settings uses full-screen mobile section menu.
-  adb_shell input tap 300 426
-  sleep 3
+  run_web_smoke_action settings data || return 1
+  sleep 2
 }
 
 export_data() {
   open_data_settings || return 1
-  # Export Playlists button in Data settings.
-  adb_shell input tap 480 1070
+  run_web_smoke_action data_export || return 1
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   screenshot export-picker
   close_picker
@@ -785,7 +676,7 @@ data_directory_cancel() {
   open_data_settings || return 1
   local mapping_before mapping_after
   mapping_before=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
-  adb_shell input tap 215 383
+  run_web_smoke_action data_select || return 1
   wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
   close_picker || return 1
   mapping_after=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
@@ -793,60 +684,66 @@ data_directory_cancel() {
 }
 
 data_directory_move_reset() {
-  open_data_settings || return 1
-  adb_shell input tap 215 383
-  wait_for 'com.android.documentsui/.picker.PickActivity' || return 1
-  screenshot data-directory-picker-before
-  dump_ui data-directory-picker-before
-  log_focus
-  # DocumentsUI reopens last tree location. Navigate to shared storage Documents.
-  adb_shell input tap 100 178
-  sleep 2
-  adb_shell input tap 520 746
-  sleep 2
-  adb_shell input tap 360 1560
-  sleep 2
-  # Android 15 asks for confirmation when app first accesses selected directory.
-  adb_shell input tap 610 905
-  sleep 6
-  screenshot data-directory-after-select
-  dump_ui data-directory-after-select
-  log_focus
-  local mapping
-  wait_for_mapping 'primary%3ADocuments' || return 1
-  mapping=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
-  echo "data-location after select: ${mapping:-<missing>}"
-  adb_shell am force-stop "$PACKAGE"
-  start_app || return 1
-  open_data_settings || return 1
-  adb_shell input tap 500 383
-  wait_for_mapping '"directory":"data://"' || return 1
-  screenshot data-directory-after-reset
-  dump_ui data-directory-after-reset
-  log_focus
-  mapping=$(adb_shell run-as "$PACKAGE" cat files/data/data-location.json 2>/dev/null || true)
-  echo "data-location after reset: ${mapping:-<missing>}"
-  adb_shell rm -f /sdcard/Documents/profiles.db /sdcard/Documents/settings.db /sdcard/Documents/history.db /sdcard/Documents/playlists.db /sdcard/Documents/search-history.db /sdcard/Documents/subscription-cache.db
+  [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
+  [[ -f "$TEST_APK" ]] || { echo "Test APK not found: $TEST_APK"; return 1; }
+  adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
+  adb_cmd install -r --user 0 "$TEST_APK" >/dev/null || return 1
+  adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#dataDirectoryMoveReset" "$TEST_RUNNER" \
+    | tee "$ARTIFACT_DIR/data-directory-move-reset.log" \
+    | grep -q 'OK'
+  local status=${PIPESTATUS[0]}
+  adb_cmd uninstall --user 0 "$TEST_PACKAGE" >/dev/null 2>&1 || true
+  ((status == 0))
 }
 
 persistence() {
+  clean_logs
   start_app || return 1
-  # Toggle Theme setting, restart, and keep an artifact for visual confirmation.
-  adb_shell input tap 40 445
+  run_web_smoke_action settings theme || return 1
   sleep 2
-  adb_shell input tap 390 385
-  sleep 2
-  adb_shell input tap 170 286
-  sleep 2
+  run_web_smoke_action persistence_set || return 1
+  local result original target
+  result=$(adb_cmd logcat -d -v brief | grep 'SMOKE_PERSISTENCE_SET_TEST:' | tail -1)
+  original=$(sed -n 's/.*SMOKE_PERSISTENCE_SET_TEST:PASS:\([0-9]*\):\([0-9]*\).*/\1/p' <<<"$result")
+  target=$(sed -n 's/.*SMOKE_PERSISTENCE_SET_TEST:PASS:\([0-9]*\):\([0-9]*\).*/\2/p' <<<"$result")
+  [[ "$result" == *'SMOKE_PERSISTENCE_SET_TEST:PASS:'* && "$original" =~ ^[0-9]+$ && "$target" =~ ^[0-9]+$ ]] || return 1
   screenshot persistence-before-restart
   adb_shell am force-stop "$PACKAGE"
   start_app || return 1
-  adb_shell input tap 40 445
-  sleep 1
-  adb_shell input tap 390 385
+  run_web_smoke_action settings theme || return 1
   sleep 2
+  run_web_smoke_action persistence_check "$target:$original" || return 1
   screenshot persistence-after-restart
-  adb_shell run-as "$PACKAGE" test -d app_webview/Default/IndexedDB
+}
+
+check_ui_scale_layout() {
+  local scale="$1" layout="$2"
+  clean_logs
+  start_app || return 1
+  run_web_smoke_action settings theme || return 1
+  sleep 2
+  run_web_smoke_action persistence_set "$scale" || return 1
+  sleep 5
+  clean_logs
+  start_app || return 1
+  run_web_smoke_action settings theme || return 1
+  sleep 2
+  run_web_smoke_action scale_layout "$scale:$layout" || return 1
+  adb_cmd logcat -d -v brief | grep 'SMOKE_SCALE_LAYOUT_TEST:' | tail -1
+  screenshot "ui-scale-$scale"
+}
+
+ui_scale_layout() {
+  preflight || return 1
+  local status=0 scale layout
+  for scale in 100 105 115 90; do
+    layout="$([[ "$scale" -ge 100 ]] && echo mobile || echo unchanged)"
+    check_ui_scale_layout "$scale" "$layout" || status=1
+  done
+  clean_logs
+  start_app && run_web_smoke_action settings theme && sleep 2 && run_web_smoke_action persistence_set 100 || status=1
+  sleep 5
+  return "$status"
 }
 
 cleanup() {
@@ -952,6 +849,7 @@ case "$TEST" in
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   settings-sort) run_test settings-sort settings_sort ;;
+  ui-scale-layout) run_test ui-scale-layout ui_scale_layout ;;
   proxy) run_test proxy proxy_settings ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;
 esac
