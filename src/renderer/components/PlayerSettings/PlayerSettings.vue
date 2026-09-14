@@ -103,12 +103,22 @@
         @change="updateDefaultVideoFormat"
       />
       <FtSelect
-        :placeholder="t('Settings.Player Settings.Default Quality.Default Quality')"
-        :value="defaultQuality"
+        v-if="IS_ANDROID"
+        :placeholder="wifiQualityLabel"
+        :value="wifiDefaultQuality"
         :select-names="qualityNames"
         :select-values="QUALITY_VALUES"
-        :icon="['fas', 'photo-film']"
-        @change="updateDefaultQuality"
+        :icon="['fas', 'wifi']"
+        @change="updateWifiDefaultQuality"
+      />
+      <FtSelect
+        v-if="IS_ANDROID"
+        :placeholder="mobileQualityLabel"
+        :value="mobileDefaultQuality"
+        :select-names="qualityNames"
+        :select-values="QUALITY_VALUES"
+        :icon="['fas', 'network-wired']"
+        @change="updateMobileDefaultQuality"
       />
       <FtSelect
         :placeholder="t('Settings.Player Settings.Video Playback Rate Interval')"
@@ -474,6 +484,8 @@ function updateDefaultViewingMode(value) {
   store.dispatch('updateDefaultViewingMode', value)
 }
 
+const IS_ANDROID = process.env.IS_ANDROID
+
 const FORMAT_VALUES = ['dash', 'legacy', 'audio']
 
 const formatNames = computed(() => [
@@ -510,21 +522,20 @@ const qualityNames = computed(() => [
   // t('Settings.Player Settings.Default Quality.Auto')
 ])
 
-/** @type {import('vue').ComputedRef<'2160' | '1440' | '1080' | '720' | '480' | '360' | '240' | '144' | 'auto'>} */
-const defaultQuality = computed(() => {
-  const value = store.getters.getDefaultQuality
+const wifiQualityLabel = computed(() => `${t('Settings.Player Settings.Default Quality.Default Quality')} (Wi-Fi)`)
+const mobileQualityLabel = computed(() => `${t('Settings.Player Settings.Default Quality.Default Quality')} (mobile)`)
 
-  // TODO: Revert when auto is fixed (720 is the default setttings value)
-  if (value === 'auto') { return '720' }
+const wifiDefaultQuality = computed(() => store.getters.getWifiDefaultQuality)
+const mobileDefaultQuality = computed(() => store.getters.getMobileDefaultQuality)
 
-  return value
-})
+/** @param {string} value */
+function updateWifiDefaultQuality(value) {
+  store.dispatch('updateWifiDefaultQuality', value)
+}
 
-/**
- * @param {'2160' | '1440' | '1080' | '720' | '480' | '360' | '240' | '144' | 'auto'} value
- */
-function updateDefaultQuality(value) {
-  store.dispatch('updateDefaultQuality', value)
+/** @param {string} value */
+function updateMobileDefaultQuality(value) {
+  store.dispatch('updateMobileDefaultQuality', value)
 }
 
 const PLAYBACK_RATE_INTERVAL_VALUES = ['0.1', '0.25', '0.5', '1']
