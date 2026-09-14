@@ -2,9 +2,11 @@
 set -u
 
 PACKAGE="io.freetubeapp.freetubeandroid"
+TEST_PACKAGE="$PACKAGE.test"
 ACTIVITY="$PACKAGE/.MainActivity"
-TEST_RUNNER="$PACKAGE.test/androidx.test.runner.AndroidJUnitRunner"
+TEST_RUNNER="$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner"
 APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/debug/app-debug.apk"
+TEST_APK="$(cd "$(dirname "$0")/.." && pwd)/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 SERIAL=""
 TEST="all"
 SUITE="all"
@@ -558,7 +560,6 @@ reload() {
   start_app || return 1
   run_web_smoke_action reload || return 1
   screenshot reload-after
-  dump_ui reload-after
   no_native_crash
 }
 
@@ -683,9 +684,16 @@ data_directory_cancel() {
 }
 
 data_directory_move_reset() {
+  [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
+  [[ -f "$TEST_APK" ]] || { echo "Test APK not found: $TEST_APK"; return 1; }
+  adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
+  adb_cmd install -r --user 0 "$TEST_APK" >/dev/null || return 1
   adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#dataDirectoryMoveReset" "$TEST_RUNNER" \
     | tee "$ARTIFACT_DIR/data-directory-move-reset.log" \
     | grep -q 'OK'
+  local status=${PIPESTATUS[0]}
+  adb_cmd uninstall --user 0 "$TEST_PACKAGE" >/dev/null 2>&1 || true
+  ((status == 0))
 }
 
 persistence() {

@@ -62,12 +62,16 @@ class CoordinateFreeSmokeTest {
             device.findObject(folderSelector).click()
         }
 
-        val useFolderSelector = By.res(packageName, "action")
+        val useFolderSelector = By.res("android", "button1")
         if (!device.wait(Until.hasObject(useFolderSelector), 1_000)) {
             println("SKIP: DocumentsUI use-folder action not found")
             return
         }
         device.findObject(useFolderSelector).click()
+        val allowSelector = By.res("android", "button1").text("ALLOW")
+        if (device.wait(Until.hasObject(allowSelector), 2_000)) {
+            device.findObject(allowSelector).click()
+        }
         assertTrue(device.wait(Until.hasObject(By.pkg(appPackage)), 15_000))
     }
 
