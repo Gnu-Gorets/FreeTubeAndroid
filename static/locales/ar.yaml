@@ -207,6 +207,7 @@ Settings:
     General Settings: 'العامة'
     Fallback to Non-Preferred Backend on Failure: 'الرجوع إلى الواجهة الخلفية الغير مفضلة عند الفشل'
     Enable Search Suggestions: 'تفعيل الإقتراحات عند البحث'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'الصفحة ‪المقصودة الافتراضية'
     Locale Preference: 'اللغات المفضلة'
     Preferred API Backend:
