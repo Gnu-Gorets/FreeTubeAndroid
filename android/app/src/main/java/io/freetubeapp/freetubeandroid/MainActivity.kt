@@ -480,18 +480,15 @@ class MainActivity : Activity() {
                 return;
               }
               if ('$action' === 'fit') {
-                window.location.hash = '#/settings';
+                const button = document.querySelector('[data-test="fit-screen"]');
+                const target = value === 'on';
+                if (!button) {
+                  console.log('SMOKE_FIT_TEST:FAIL:control-not-found');
+                  return;
+                }
+                if (button.getAttribute('aria-pressed') !== String(target)) button.click();
                 setTimeout(() => {
-                  const input = document.querySelector('[data-test="fit-video-fullscreen"]');
-                  const target = value === 'on';
-                  if (!input) {
-                    console.log('SMOKE_FIT_TEST:FAIL:control-not-found');
-                    return;
-                  }
-                  if (input.checked !== target) input.click();
-                  setTimeout(() => {
-                    console.log('SMOKE_FIT_TEST:' + (input.checked === target ? 'PASS' : 'FAIL') + ':' + input.checked);
-                  }, 300);
+                  console.log('SMOKE_FIT_TEST:' + (button.getAttribute('aria-pressed') === String(target) ? 'PASS' : 'FAIL') + ':' + button.getAttribute('aria-pressed'));
                 }, 300);
                 return;
               }
