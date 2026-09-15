@@ -27,6 +27,7 @@ import {
 } from '../../helpers/utils'
 import {
   getLocalVideoInfo,
+  getOriginalVideoLanguage,
   mapLocalLegacyFormat,
   parseLocalSubscriberCount,
   parseLocalTextRuns,
@@ -121,7 +122,10 @@ export default defineComponent({
       thumbnail: '',
       videoId: '',
       videoTitle: '',
+      originalVideoTitle: '',
+      originalVideoLanguage: '',
       videoDescription: '',
+      originalVideoDescription: '',
       videoDescriptionHtml: '',
       license: '',
       videoViewCount: 0,
@@ -201,6 +205,20 @@ export default defineComponent({
     },
     saveVideoHistoryWithLastViewedPlaylist: function () {
       return this.$store.getters.getSaveVideoHistoryWithLastViewedPlaylist
+    },
+    displayVideoTitle: function () {
+      const useOriginalTitle = this.$store.getters.getUseOriginalVideoTitles && this.originalVideoTitle
+      return useOriginalTitle ? this.originalVideoTitle : this.videoTitle
+    },
+    displayVideoDescription: function () {
+      return this.$store.getters.getUseOriginalVideoTitles && this.originalVideoDescription
+        ? this.originalVideoDescription
+        : this.videoDescription
+    },
+    displayVideoDescriptionHtml: function () {
+      return this.$store.getters.getUseOriginalVideoTitles && this.originalVideoDescription
+        ? ''
+        : this.videoDescriptionHtml
     },
     backendPreference: function () {
       return this.$store.getters.getBackendPreference
@@ -346,7 +364,7 @@ export default defineComponent({
       this.onMountedDependOnLocalStateLoading()
     },
     thumbnail() {
-      if (process.env.IS_ANDROID) createMediaSession(this.videoTitle, this.channelName, this.videoLengthSeconds * 1000, this.thumbnail)
+      if (process.env.IS_ANDROID) createMediaSession(this.displayVideoTitle, this.channelName, this.videoLengthSeconds * 1000, this.thumbnail)
     }
   },
   created: function () {
@@ -418,7 +436,10 @@ export default defineComponent({
       this.upcomingTimeLeft = null
       this.thumbnail = ''
       this.videoTitle = ''
+      this.originalVideoTitle = ''
+      this.originalVideoLanguage = ''
       this.videoDescription = ''
+      this.originalVideoDescription = ''
       this.videoDescriptionHtml = ''
       this.license = ''
       this.contentDisclosures = null
@@ -561,6 +582,9 @@ export default defineComponent({
 
         // extract localised title first and fall back to the not localised one
         this.videoTitle = result.primary_info?.title?.text?.trim() ?? result.basic_info.title?.trim()
+        this.originalVideoTitle = result.basic_info.title?.trim() ?? ''
+        this.originalVideoLanguage = getOriginalVideoLanguage(result) ?? ''
+        this.originalVideoDescription = result.basic_info.short_description ?? ''
         this.videoViewCount = result.basic_info.view_count ?? (result.primary_info?.view_count?.text ? extractNumberFromString(result.primary_info.view_count.text) : null)
         this.license = result.secondary_info?.metadata?.rows?.find(element => element.title?.text === 'License')?.contents?.[0]?.text
 
@@ -1022,6 +1046,9 @@ export default defineComponent({
           }
 
           this.videoTitle = result.title
+          this.originalVideoTitle = ''
+          this.originalVideoLanguage = ''
+          this.originalVideoDescription = result.description ?? ''
           this.videoViewCount = result.viewCount
 
           const subCount = parseLocalSubscriberCount(result.subCountText)
@@ -1967,7 +1994,7 @@ export default defineComponent({
     },
 
     updateTitle: function () {
-      this.setAppTitle(this.videoTitle)
+      this.setAppTitle(this.displayVideoTitle)
     },
 
     isHiddenVideo: function (forbiddenTitles, channelsHidden, video) {

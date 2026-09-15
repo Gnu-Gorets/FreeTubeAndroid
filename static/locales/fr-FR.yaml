@@ -209,6 +209,7 @@ Settings:
     General Settings: 'Général'
     Fallback to Non-Preferred Backend on Failure: 'Basculer vers l''API interne non préférée en cas d''échec'
     Enable Search Suggestions: 'Activer les suggestions de recherche'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Page de lancement par défaut'
     Locale Preference: 'Paramètres régionaux'
     Preferred API Backend:
