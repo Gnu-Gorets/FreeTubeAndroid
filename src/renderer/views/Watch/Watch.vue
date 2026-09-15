@@ -34,7 +34,7 @@
           :chapters="videoChapters"
           :current-chapter-index="videoCurrentChapterIndex"
           :chapters-src="chaptersSrc"
-          :title="videoTitle"
+          :title="displayVideoTitle"
           :theatre-possible="theatrePossible"
           :use-theatre-mode="useTheatreMode"
           :autoplay-possible="autoplayPossible"
@@ -133,7 +133,7 @@
       <watch-video-info
         v-if="!isLoading"
         :id="videoId"
-        :title="videoTitle"
+        :title="displayVideoTitle"
         :channel-id="channelId"
         :channel-name="channelName"
         :channel-thumbnail="channelThumbnail"
@@ -173,8 +173,9 @@
       />
       <watch-video-description
         v-if="!isLoading && !hideVideoDescription"
-        :description="videoDescription"
-        :description-html="videoDescriptionHtml"
+        :key="displayVideoDescription"
+        :description="displayVideoDescription"
+        :description-html="displayVideoDescriptionHtml"
         :license="license"
         :content-disclosures="contentDisclosures"
         class="watchVideo"
