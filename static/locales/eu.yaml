@@ -215,6 +215,7 @@ Settings:
     Check for Updates: 'Bilatu eguneraketak'
     Fallback to Non-Preferred Backend on Failure: 'Hutsegitean, joan hobetsi gabeko motorrera'
     Enable Search Suggestions: 'Gaitu bilaketa-iradokizunak'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Lehenetsitako hasierako orria'
     Locale Preference: 'Tokiko hobespena'
     Preferred API Backend:

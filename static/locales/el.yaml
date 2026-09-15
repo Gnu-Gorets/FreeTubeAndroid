@@ -207,6 +207,7 @@ Settings:
     General Settings: 'Γενικά'
     Fallback to Non-Preferred Backend on Failure: 'Εναλλαγή σε μη προτιμώμενο σύστημα υποστήριξης σε περίπτωση αποτυχίας'
     Enable Search Suggestions: 'Ενεργοποίηση προτάσεων αναζήτησης'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Προεπιλεγμένη σελίδα προορισμού'
     Locale Preference: 'Προτιμήσεις γλώσσας'
     Preferred API Backend:
