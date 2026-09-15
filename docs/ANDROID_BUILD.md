@@ -18,7 +18,7 @@ APK output:
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Gradle and pnpm stores use Docker named volumes. The repository and generated Android assets are bind-mounted into `/workspace`; generated output is ignored by Git.
+Gradle cache, pnpm store, and Android debug keystore use Docker named volumes. This keeps app and androidTest debug signatures compatible across separate containers. The repository and generated Android assets are bind-mounted into `/workspace`; generated output is ignored by Git.
 
 ## Install on device
 
