@@ -206,6 +206,7 @@ Settings:
     General Settings: 'Chung'
     Fallback to Non-Preferred Backend on Failure: 'Trở về Backend không mong muốn khi có lỗi'
     Enable Search Suggestions: 'Bật gợi ý tìm kiếm'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Trang mặc định'
     Locale Preference: 'Ngôn ngữ'
     Preferred API Backend:

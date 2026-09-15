@@ -218,6 +218,7 @@ Settings:
     Check for Updates: 'Frissítések keresése'
     Fallback to Non-Preferred Backend on Failure: 'Nem előnyben részesített háttéralkalmazásra történő visszatérés hiba esetén'
     Enable Search Suggestions: 'Keresési javaslatok engedélyezése'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Alapértelmezett kezdőlap'
     Locale Preference: 'Területi beállítás'
     Preferred API Backend:
