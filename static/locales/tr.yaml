@@ -216,6 +216,7 @@ Settings:
     Check for Updates: 'Güncellemeleri Denetle'
     Fallback to Non-Preferred Backend on Failure: 'Hata Durumunda Tercih Edilmeyen Arka Uca Geç'
     Enable Search Suggestions: 'Arama Önerilerini Etkinleştir'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Öntanımlı Açılış Ekranı'
     Locale Preference: 'Tercih Edilen Yerel Ayar'
     Preferred API Backend:

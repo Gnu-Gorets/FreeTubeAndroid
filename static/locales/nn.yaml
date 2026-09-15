@@ -185,6 +185,7 @@ Settings:
     Check for Updates: 'Sjå etter oppdateringar'
     Fallback to Non-Preferred Backend on Failure: 'Tilbakefall til ikkje-føretrekte backend ved feil'
     Enable Search Suggestions: 'Slå på søkeforslag'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Standardlandingside'
     Locale Preference: 'Språkinnstilling'
     Preferred API Backend:
