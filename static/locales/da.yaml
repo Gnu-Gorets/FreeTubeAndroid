@@ -210,6 +210,7 @@ Settings:
     Check for Updates: 'Søg efter opdateringer'
     Fallback to Non-Preferred Backend on Failure: 'Fallback til ikke-foretrukken backend ved fejl'
     Enable Search Suggestions: 'Aktivér søgeforslag'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Standard landingsside'
     Locale Preference: 'Sprogindstilling'
     Preferred API Backend:
