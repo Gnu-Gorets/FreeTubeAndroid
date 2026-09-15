@@ -9,6 +9,7 @@ services:
       - .:/workspace
       - /workspace/node_modules
       - gradle-cache:/root/.gradle
+      - android-debug-keystore:/root/.android
       - pnpm-store:/pnpm/store
     environment:
       ANDROID_HOME: /opt/android-sdk
@@ -22,4 +23,5 @@ services:
 
 volumes:
   gradle-cache: {}
+  android-debug-keystore: {}
   pnpm-store: {}
