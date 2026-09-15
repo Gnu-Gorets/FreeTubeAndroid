@@ -216,6 +216,7 @@ Settings:
     Check for Updates: 'Cek Pembaruan'
     Fallback to Non-Preferred Backend on Failure: 'Beralih ke Layanan Cadangan saat terjadi Kegagalan'
     Enable Search Suggestions: 'Aktifkan Saran Pencarian'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Halaman Awal Baku'
     Locale Preference: 'Bahasa'
     Preferred API Backend:

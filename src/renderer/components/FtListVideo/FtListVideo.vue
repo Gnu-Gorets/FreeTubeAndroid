@@ -297,7 +297,7 @@
 
 <script setup>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 
@@ -318,7 +318,11 @@ import {
   debounce
 } from '../../helpers/utils.js'
 import { deArrowData, deArrowThumbnail } from '../../helpers/sponsorblock.js'
+import { getOriginalVideoTitle } from '../../helpers/api/original-video-title.mjs'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
+
+const originalTitles = new Map()
+const originalTitleRequests = new Map()
 
 const props = defineProps({
   data: {
@@ -413,6 +417,7 @@ const route = useRoute()
 
 const id = ref('')
 const title = ref('')
+const originalTitle = ref('')
 const channelName = ref(null)
 const channelId = ref(null)
 const viewCount = ref(0)
@@ -821,10 +826,14 @@ const saveVideoHistoryWithLastViewedPlaylist = computed(() => store.getters.getS
 const showDistractionFreeTitles = computed(() => store.getters.getShowDistractionFreeTitles)
 
 /** @type {import('vue').ComputedRef<string>} */
+const useOriginalVideoTitles = computed(() => store.getters.getUseOriginalVideoTitles)
+
 const displayTitle = computed(() => {
   let title_
   if (showDeArrowTitle.value && deArrowCache.value?.title) {
     title_ = deArrowCache.value.title
+  } else if (useOriginalVideoTitles.value && originalTitle.value) {
+    title_ = originalTitle.value
   } else {
     title_ = title.value
   }
@@ -1060,6 +1069,7 @@ function handleExternalPlayer() {
 function parseVideoData() {
   id.value = props.data.videoId
   title.value = props.data.title
+  originalTitle.value = props.data.originalTitle ?? originalTitles.get(id.value) ?? ''
 
   channelName.value = props.data.author ?? null
   channelId.value = props.data.authorId ?? null
@@ -1290,6 +1300,38 @@ function onDragStart(event) {
 }
 
 parseVideoData()
+
+async function loadOriginalTitle() {
+  if (!(process.env.SUPPORTS_LOCAL_API && backendPreference.value === 'local' && useOriginalVideoTitles.value && !originalTitle.value)) {
+    return
+  }
+
+  if (originalTitleRequests.has(id.value)) {
+    originalTitle.value = await originalTitleRequests.get(id.value)
+    return
+  }
+
+  const request = (async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const title_ = await getOriginalVideoTitle(id.value)
+        if (title_) return title_
+      } catch {
+        // Retry transient YouTube/WebView requests.
+      }
+    }
+    return ''
+  })()
+
+  originalTitleRequests.set(id.value, request)
+  originalTitle.value = await request
+  originalTitleRequests.delete(id.value)
+  if (originalTitle.value) {
+    originalTitles.set(id.value, originalTitle.value)
+  }
+}
+
+onMounted(loadOriginalTitle)
 
 showDeArrowTitle.value = useDeArrowTitles.value
 showDeArrowThumbnail.value = useDeArrowThumbnails.value
