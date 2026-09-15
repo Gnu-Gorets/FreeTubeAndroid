@@ -209,6 +209,7 @@ Settings:
     General Settings: '一般'
     Fallback to Non-Preferred Backend on Failure: '連線失敗時連線到非預設伺服器'
     Enable Search Suggestions: '啟用搜尋建議'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: '預設加載頁面'
     Locale Preference: '介面語言'
     Preferred API Backend:

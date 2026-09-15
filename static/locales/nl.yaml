@@ -208,6 +208,7 @@ Settings:
     General Settings: 'Algemeen'
     Fallback to Non-Preferred Backend on Failure: 'Terugvallen op alternatieve backend bij problemen'
     Enable Search Suggestions: 'Zoeksuggesties inschakelen'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Standaard startscherm'
     Locale Preference: 'Regiovoorkeur'
     Preferred API Backend:

@@ -204,6 +204,7 @@ Settings:
     General Settings: 'Общие'
     Fallback to Non-Preferred Backend on Failure: 'Откатить к непредпочтительному движку при сбое'
     Enable Search Suggestions: 'Включить поисковые предложения'
+    Use Original Video Titles: 'Использовать оригинальные названия видео'
     Default Landing Page: 'Страница по умолчанию'
     Locale Preference: 'Язык приложения'
     Preferred API Backend:
