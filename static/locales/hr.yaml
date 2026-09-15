@@ -209,6 +209,7 @@ Settings:
     General Settings: 'Opće'
     Fallback to Non-Preferred Backend on Failure: 'U slučaju problema koristi sekundarni pozadinski sustav'
     Enable Search Suggestions: 'Aktiviraj prijedloge pretrage'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Standardna početna stranica'
     Locale Preference: 'Jezik'
     Preferred API Backend:
