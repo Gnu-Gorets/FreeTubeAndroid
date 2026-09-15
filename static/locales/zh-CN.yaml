@@ -209,6 +209,7 @@ Settings:
     General Settings: '常规'
     Fallback to Non-Preferred Backend on Failure: '失败时回撤到非首选后端'
     Enable Search Suggestions: '允许搜索建议'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: '默认加载页面'
     Locale Preference: '地域偏好'
     Preferred API Backend:

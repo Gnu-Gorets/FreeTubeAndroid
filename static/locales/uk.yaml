@@ -212,6 +212,7 @@ Settings:
     Check for Updates: 'Перевіряти наявність оновлень'
     Fallback to Non-Preferred Backend on Failure: 'Повернення до допоміжного бекенду у разі невдачі'
     Enable Search Suggestions: 'Увімкнути рекомендації пошуку'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Типова головна сторінка'
     Locale Preference: 'Локальні налаштування'
     Preferred API Backend:

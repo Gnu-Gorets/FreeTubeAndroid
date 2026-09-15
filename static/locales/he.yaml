@@ -211,6 +211,7 @@ Settings:
     Check for Updates: 'לבדוק אם קיימים עדכונים'
     Fallback to Non-Preferred Backend on Failure: 'נסיגה למנגנון שאינו מועדף בעת כשל'
     Enable Search Suggestions: 'לאפשר הצעות לחיפוש'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'דף נחיתה כברירת מחדל'
     Locale Preference: 'שפה מועדפת'
     Preferred API Backend:

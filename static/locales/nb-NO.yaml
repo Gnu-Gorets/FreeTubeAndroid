@@ -212,6 +212,7 @@ Settings:
     General Settings: 'Generelle'
     Fallback to Non-Preferred Backend on Failure: 'Tilbakefall til alternativ bakende ved feil'
     Enable Search Suggestions: 'Slå på søkeforslag'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Standard landingsside'
     Locale Preference: 'Språkinnstillinger'
     Preferred API Backend:

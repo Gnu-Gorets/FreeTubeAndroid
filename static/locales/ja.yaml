@@ -209,6 +209,7 @@ Settings:
     General Settings: '一般'
     Fallback to Non-Preferred Backend on Failure: 'データ取得の問題発生時には取得方法を自動変更'
     Enable Search Suggestions: '検索候補の有効化'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: '既定の言語ページ'
     Locale Preference: '言語設定'
     Preferred API Backend:

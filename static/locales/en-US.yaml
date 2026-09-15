@@ -282,6 +282,7 @@ Settings:
     Fallback to Non-Preferred Backend on Failure: Fallback to Non-Preferred Backend
       on Failure
     Enable Search Suggestions: Enable Search Suggestions
+    Use Original Video Titles: Use Original Video Titles
     Open Deep Links In New Window: Open URLs Passed to FreeTube in a New Window
     Minimize to system tray: Minimize to system tray
     Auto Load Next Page:
