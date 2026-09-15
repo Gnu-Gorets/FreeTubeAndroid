@@ -116,6 +116,7 @@ Settings:
     Check for Updates: 'Tikrinti ar yra atnaujinimų'
     Fallback to Non-Preferred Backend on Failure: 'Nepavykus rinktis alternatyvią posistemę'
     Enable Search Suggestions: 'Įjungti paieškos pasiūlymus'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Numatytasis pradinis puslapis'
     Locale Preference: 'Kalbos pasirinkimas'
     System Default: 'Sistemos numatytieji'

@@ -213,6 +213,7 @@ Settings:
     Check for Updates: 'Проверка за актуализации'
     Fallback to Non-Preferred Backend on Failure: 'При грешка, връщане към непредпочитан интерфейс'
     Enable Search Suggestions: 'Активиране на препоръките при търсене'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Страница по подразбиране'
     Locale Preference: 'Език'
     Preferred API Backend:

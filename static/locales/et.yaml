@@ -216,6 +216,7 @@ Settings:
     Check for Updates: 'Kontrolli uuendusi'
     Fallback to Non-Preferred Backend on Failure: 'Luba vigade korral kasutada teist taustateenust'
     Enable Search Suggestions: 'Kasuta otsingusoovitusi'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Vaikimisi avaleht'
     Locale Preference: 'Lokaadi eelistus'
     Preferred API Backend:
