@@ -106,6 +106,7 @@ Settings:
     Check for Updates: 'Comprovar si hi ha actualitzacions'
     Fallback to Non-Preferred Backend on Failure: 'Torna al motor per defecte en cas d''error'
     Enable Search Suggestions: 'Habilitar els suggeriments de cerca'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Pàgina d''aterratge per defecte'
     Locale Preference: 'Preferència de configuració regional'
     Preferred API Backend:

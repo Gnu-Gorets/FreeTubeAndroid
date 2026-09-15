@@ -268,6 +268,7 @@ Settings:
     Check for Updates: 'புதுப்பிப்புகளை சரிபார்க்கவும்'
     Fallback to Non-Preferred Backend on Failure: 'தோல்வியில் முதலீடு செய்யப்படாத பின்தளத்தில் குறைவடையும்'
     Enable Search Suggestions: 'தேடல் பரிந்துரைகளை இயக்கவும்'
+    Use Original Video Titles: Use Original Video Titles
     Auto Load Next Page:
       Label: 'ஆட்டோ சுமை அடுத்த பக்கம்'
       Tooltip: 'கூடுதல் பக்கங்கள் மற்றும் கருத்துகளை தானாக ஏற்றவும்.'
