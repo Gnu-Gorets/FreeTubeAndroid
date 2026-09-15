@@ -181,6 +181,7 @@ const state = {
   disableChannelLinks: false,
   displayVideoPlayButton: false,
   enableSearchSuggestions: true,
+  useOriginalVideoTitles: true,
   enableSubtitlesByDefault: false,
   enterFullscreenOnDisplayRotate: false,
   fitVideoToFullscreen: false,

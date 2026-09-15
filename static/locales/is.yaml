@@ -216,6 +216,7 @@ Settings:
     Check for Updates: 'Athuga með uppfærslur'
     Fallback to Non-Preferred Backend on Failure: 'Nota varaleið um ekki-forgangsbakenda þegar villa kemur upp'
     Enable Search Suggestions: 'Virkja tillögur í leit'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Sjálfgefin upphafssíða'
     Locale Preference: 'Umbeðin staðfærsla'
     Preferred API Backend:
