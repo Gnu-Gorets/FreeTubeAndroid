@@ -87,17 +87,7 @@ class MainActivity : Activity() {
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 fullscreenView = view
                 root.addView(view)
-                ViewCompat.setOnApplyWindowInsetsListener(view) { fullscreen, insets ->
-                    val safeInsets = insets.getInsets(
-                        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-                    )
-                    (fullscreen.layoutParams as? ViewGroup.MarginLayoutParams)?.let { params ->
-                        params.setMargins(safeInsets.left, safeInsets.top, safeInsets.right, safeInsets.bottom)
-                        fullscreen.layoutParams = params
-                    }
-                    insets
-                }
-                ViewCompat.requestApplyInsets(view)
+                (view.layoutParams as? ViewGroup.MarginLayoutParams)?.setMargins(0, 0, 0, 0)
                 insetsController.hide(WindowInsetsCompat.Type.systemBars())
                 insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }

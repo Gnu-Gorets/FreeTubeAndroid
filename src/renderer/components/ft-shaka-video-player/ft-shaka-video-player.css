@@ -179,7 +179,7 @@
   position: absolute;
   margin: 0;
   top: 0;
-  left: max(3px, env(safe-area-inset-left));
+  left: max(24px, env(safe-area-inset-left));
   max-width: calc(100% - max(6px, env(safe-area-inset-left) + env(safe-area-inset-right)));
   font-size: xx-large;
   color: #fff;
