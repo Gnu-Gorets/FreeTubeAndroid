@@ -203,6 +203,7 @@ Settings:
     General Settings: 'Yleistä'
     Fallback to Non-Preferred Backend on Failure: 'Vikatilanteessa palaa toissijaiseen taustaohjelmaan'
     Enable Search Suggestions: 'Salli hakuehdotukset'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Oletusaloitussivu'
     Locale Preference: 'Maa-asetus'
     Preferred API Backend:
