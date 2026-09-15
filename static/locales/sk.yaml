@@ -209,6 +209,7 @@ Settings:
     General Settings: 'Všeobecné'
     Fallback to Non-Preferred Backend on Failure: 'Pri chybe prepnúť na alternatívny backend'
     Enable Search Suggestions: 'Zapnúť návrhy vyhľadávania'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Predvolená vstupná stránka'
     Locale Preference: 'Nastaviť jazyk'
     Preferred API Backend:
