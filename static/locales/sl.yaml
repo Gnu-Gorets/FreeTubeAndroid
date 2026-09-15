@@ -113,6 +113,7 @@ Settings:
     Check for Updates: 'Preveri posodobitve'
     Fallback to Non-Preferred Backend on Failure: 'Ob napaki začasno uporabi sekundarni zaledni sistem'
     Enable Search Suggestions: 'Vklopi iskalne predloge'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Prevzeta vstopna stran'
     Locale Preference: 'Izbira lokacije'
     Preferred API Backend:
