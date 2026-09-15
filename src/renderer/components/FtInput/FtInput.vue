@@ -413,7 +413,7 @@ function handleRemoveClick(index) {
  */
 function handleKeyDown(event) {
 // Update Input box value if enter key was pressed and option selected
-  if (event.key === 'Enter' && !event.isComposing) {
+  if ((event.key === 'Enter' && !event.isComposing) || event.keyCode === 13) {
     if (removeButtonSelectedIndex.value !== -1) {
       handleRemoveClick(removeButtonSelectedIndex.value)
     } else if (searchState.selectedOption !== -1) {
