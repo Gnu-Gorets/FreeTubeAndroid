@@ -188,6 +188,7 @@ Settings:
     General Settings: 'Ajustes generales'
     Fallback to Non-Preferred Backend on Failure: 'Recurrir a otro motor en caso de fallo'
     Enable Search Suggestions: 'Activar sugerencias de búsqueda'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Página de destino predeterminada'
     Locale Preference: 'Ajustes de ubicación'
     Preferred API Backend:

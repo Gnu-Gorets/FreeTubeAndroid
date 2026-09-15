@@ -212,6 +212,7 @@ Settings:
     Check for Updates: 'Comprobar actualizacións'
     Fallback to Non-Preferred Backend on Failure: 'Usar motor API non preferido en caso de falla'
     Enable Search Suggestions: 'Activar suxestións de busca'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Páxina inicial'
     Locale Preference: 'Preferencia de localización'
     Preferred API Backend:

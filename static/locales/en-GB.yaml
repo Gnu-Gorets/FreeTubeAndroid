@@ -215,6 +215,7 @@ Settings:
     Check for Updates: 'Check for updates'
     Fallback to Non-Preferred Backend on Failure: 'Revert to non-preferred backend on failure'
     Enable Search Suggestions: 'Enable search suggestions'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Default landing page'
     Locale Preference: 'Language preference'
     Preferred API Backend:
