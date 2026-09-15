@@ -573,6 +573,17 @@ function buildSessionFromYtConfig(ytConfig, fetchFunc) {
  *   adEndTimeUnixMs: number
  * }>}
  */
+/**
+ * Returns language of original audio track when YouTube provides it.
+ * @param {import('youtubei.js').YT.VideoInfo} info
+ * @returns {string | undefined}
+ */
+export function getOriginalVideoLanguage(info) {
+  const formats = info.streaming_data?.adaptive_formats ?? []
+  const originalFormat = formats.find(format => format.is_original && format.language)
+  return originalFormat?.language ?? formats.find(format => format.language)?.language
+}
+
 export async function getLocalVideoInfo(id) {
   let responseTime
   let totalAdTimeMilliseconds = 0
@@ -1813,6 +1824,7 @@ export function parseLocalListVideo(item, channelId, channelName) {
       type: 'video',
       videoId: video.video_id,
       title: video.title.text?.trim(),
+      originalTitle: video.untranslated_title?.text?.trim(),
       author: video.author.name !== 'N/A' ? video.author.name : channelName,
       authorId: video.author.id !== 'N/A' ? video.author.id : channelId,
       description: video.description,

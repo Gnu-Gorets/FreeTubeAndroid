@@ -34,6 +34,12 @@
           @change="updateEnableSearchSuggestions"
         />
         <FtToggleSwitch
+          :label="t('Settings.General Settings.Use Original Video Titles')"
+          :default-value="useOriginalVideoTitles"
+          :compact="true"
+          @change="updateUseOriginalVideoTitles"
+        />
+        <FtToggleSwitch
           v-if="USING_ELECTRON"
           :label="t('Settings.General Settings.Open Deep Links In New Window')"
           :default-value="openDeepLinksInNewWindow"
@@ -252,6 +258,16 @@ const enableSearchSuggestions = computed(() => store.getters.getEnableSearchSugg
  */
 function updateEnableSearchSuggestions(value) {
   store.dispatch('updateEnableSearchSuggestions', value)
+}
+
+/** @type {import('vue').ComputedRef<boolean>} */
+const useOriginalVideoTitles = computed(() => store.getters.getUseOriginalVideoTitles)
+
+/**
+ * @param {boolean} value
+ */
+function updateUseOriginalVideoTitles(value) {
+  store.dispatch('updateUseOriginalVideoTitles', value)
 }
 
 /** @type {import('vue').ComputedRef<boolean>} */
