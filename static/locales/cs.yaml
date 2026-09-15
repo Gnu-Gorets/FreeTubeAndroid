@@ -217,6 +217,7 @@ Settings:
     Check for Updates: 'Kontrolovat aktualizace'
     Fallback to Non-Preferred Backend on Failure: 'Při chybě přepnout na nepreferovaný backend'
     Enable Search Suggestions: 'Zapnout návrhy vyhledávání'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Výchozí vstupní stránka'
     Locale Preference: 'Předvolby jazyka'
     Preferred API Backend:

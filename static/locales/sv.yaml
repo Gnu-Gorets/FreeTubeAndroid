@@ -214,6 +214,7 @@ Settings:
     Check for Updates: 'Sök efter uppdateringar'
     Fallback to Non-Preferred Backend on Failure: 'Använd en alternativ API-källa vid fel'
     Enable Search Suggestions: 'Aktivera sökförslag'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Förvald startsida'
     Locale Preference: 'Språk'
     Preferred API Backend:

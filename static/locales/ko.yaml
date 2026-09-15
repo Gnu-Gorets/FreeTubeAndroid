@@ -133,6 +133,7 @@ Settings:
     Check for Updates: '업데이트 확인하기'
     Fallback to Non-Preferred Backend on Failure: '실패시 선호되지않는 백엔드로 대체하기'
     Enable Search Suggestions: '검색추천 허용'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: '기본 페이지'
     Locale Preference: '로케일 설정'
     Preferred API Backend:

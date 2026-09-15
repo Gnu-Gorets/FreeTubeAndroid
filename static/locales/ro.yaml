@@ -213,6 +213,7 @@ Settings:
     Check for Updates: 'Căutați actualizări'
     Fallback to Non-Preferred Backend on Failure: 'Revenire la backend-ul nepreferat în caz de eroare'
     Enable Search Suggestions: 'Activați sugestiile de căutare'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Pagina de pornire implicită'
     Locale Preference: 'Preferința de localizare'
     Preferred API Backend:
