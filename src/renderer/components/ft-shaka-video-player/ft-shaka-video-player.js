@@ -6,6 +6,7 @@ import store from '../../store/index'
 import { KeyboardShortcuts } from '../../../constants'
 import { AudioTrackSelection } from './player-components/AudioTrackSelection'
 import { FullWindowButton } from './player-components/FullWindowButton'
+import { FitScreenButton } from './player-components/FitScreenButton'
 import { LegacyQualitySelection } from './player-components/LegacyQualitySelection'
 import { ScreenshotButton } from './player-components/ScreenshotButton'
 import { StatsButton } from './player-components/StatsButton'
@@ -335,6 +336,12 @@ export default defineComponent({
     /** @type {import('vue').ComputedRef<boolean>} */
     const fitVideoToFullscreen = computed(() => {
       return store.getters.getFitVideoToFullscreen
+    })
+
+    watch(fitVideoToFullscreen, (newValue) => {
+      events.dispatchEvent(new CustomEvent('setFitScreen', {
+        detail: newValue
+      }))
     })
 
     /** @type {import('vue').ComputedRef<number>} */
@@ -835,7 +842,8 @@ export default defineComponent({
         'ft_skip_next',
         'mute_volume',
         'time_and_duration',
-        'spacer'
+        'spacer',
+        'ft_fit_screen'
       ]
 
       /** @type {shaka.extern.UIConfiguration} */
@@ -1952,6 +1960,23 @@ export default defineComponent({
       shakaOverflowMenu.registerElement('ft_theatre_mode', new TheatreModeButtonFactory())
     }
 
+    function registerFitScreenButton() {
+      events.addEventListener('toggleFitScreen', (/** @type {CustomEvent} */ event) => {
+        store.dispatch('updateFitVideoToFullscreen', event.detail)
+      })
+
+      /**
+       * @implements {shaka.extern.IUIElement.Factory}
+       */
+      class FitScreenButtonFactory {
+        create(rootElement, controls) {
+          return new FitScreenButton(fitVideoToFullscreen.value, events, rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_fit_screen', new FitScreenButtonFactory())
+    }
+
     function registerFullWindowButton() {
       events.addEventListener('setFullWindow', (/** @type {CustomEvent} */ event) => {
         if (event.detail) {
@@ -2110,6 +2135,8 @@ export default defineComponent({
 
       shakaControls.registerElement('ft_full_window', null)
       shakaOverflowMenu.registerElement('ft_full_window', null)
+
+      shakaControls.registerElement('ft_fit_screen', null)
 
       shakaControls.registerElement('ft_legacy_quality', null)
       shakaOverflowMenu.registerElement('ft_legacy_quality', null)
@@ -2970,6 +2997,7 @@ export default defineComponent({
 
       registerTheatreModeButton()
       registerFullWindowButton()
+      registerFitScreenButton()
       registerLegacyQualitySelection()
       registerStatsButton()
       registerSkipButtons()
