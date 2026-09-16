@@ -272,25 +272,14 @@ wait_for_screen_change() {
   done
 }
 
-open_player_settings() {
-  start_app || return 1
-  run_web_smoke_action settings player || {
-    echo "Player Settings section did not open"
-    return 1
-  }
-  sleep 2
-}
-
 set_fit_video_to_fullscreen() {
   local desired="$1"
-  open_player_settings || return 1
+  open_video jNQXAC9IVRw || return 1
   run_web_smoke_action fit "$desired" || {
     echo "Fit Screen toggle did not reach target=$desired"
     return 1
   }
-  screenshot "fit-screen-settings-$desired"
-  adb_shell input keyevent KEYCODE_BACK
-  sleep 2
+  screenshot "fit-screen-player-$desired"
 }
 
 save_orientation() {
