@@ -669,7 +669,7 @@ export async function getLocalVideoInfo(id) {
   let nextResponse
   const context = htmlExtracts.session.context
 
-  if (htmlExtracts.playerResponse && !contentPoToken) {
+  if (htmlExtracts.playerResponse) {
     totalAdTimeMilliseconds = extractTotalAdTimeMilliseconds(htmlExtracts.playerResponse)
 
     playerResponse = { data: htmlExtracts.playerResponse }

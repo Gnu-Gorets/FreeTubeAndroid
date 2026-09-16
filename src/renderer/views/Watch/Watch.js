@@ -962,7 +962,6 @@ export default defineComponent({
             })
 
             if (
-              !hasDirectAdaptiveFormats &&
               videoInfo.info.streaming_data?.server_abr_streaming_url &&
               videoInfo.info.player_config.media_common_config.media_ustreamer_request_config
             ) {
