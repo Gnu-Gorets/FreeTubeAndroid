@@ -5,6 +5,7 @@ import android.app.Notification
 import android.graphics.drawable.Icon
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
@@ -28,6 +29,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.util.Log
+import android.util.Rational
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.WebViewFeature
@@ -534,6 +536,18 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun disableKeepScreenOn() { activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+
+    @JavascriptInterface
+    fun enterPictureInPicture(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || activity.isInPictureInPictureMode) return false
+        activity.runOnUiThread {
+            val params = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .build()
+            activity.enterPictureInPictureMode(params)
+        }
+        return true
+    }
 
     @JavascriptInterface
     fun restart() { activity.runOnUiThread { activity.recreate() } }

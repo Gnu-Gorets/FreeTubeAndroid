@@ -9,6 +9,7 @@ import { FullWindowButton } from './player-components/FullWindowButton'
 import { FitScreenButton } from './player-components/FitScreenButton'
 import { LegacyQualitySelection } from './player-components/LegacyQualitySelection'
 import { ScreenshotButton } from './player-components/ScreenshotButton'
+import { PictureInPictureButton } from './player-components/PictureInPictureButton'
 import { StatsButton } from './player-components/StatsButton'
 import { TheatreModeButton } from './player-components/TheatreModeButton'
 import { AutoplayToggle } from './player-components/AutoplayToggle'
@@ -807,6 +808,7 @@ export default defineComponent({
     })
 
     const uiConfig = computed(() => {
+      const pictureInPictureButton = process.env.IS_ANDROID ? 'ft_picture_in_picture' : 'picture_in_picture'
       const controlPanelElements = [
         'ft_skip_previous',
         'play_pause',
@@ -845,7 +847,7 @@ export default defineComponent({
           'chapter',
           'loop',
           'ft_screenshot',
-          'picture_in_picture',
+          pictureInPictureButton,
           'ft_full_window',
           'recenter_vr',
           'toggle_stereoscopic',
@@ -859,7 +861,7 @@ export default defineComponent({
           'ft_screenshot',
           'ft_autoplay_toggle',
           'overflow_menu',
-          'picture_in_picture',
+          pictureInPictureButton,
           'ft_theatre_mode',
           'ft_full_window',
           'fullscreen'
@@ -896,7 +898,7 @@ export default defineComponent({
       }
 
       if (props.format === 'audio') {
-        removeFromArrayIfExists(elementList, 'picture_in_picture')
+        removeFromArrayIfExists(elementList, pictureInPictureButton)
       }
 
       if (isLive.value) {
@@ -2036,6 +2038,19 @@ export default defineComponent({
       shakaOverflowMenu.registerElement('ft_stats', new StatsButtonFactory())
     }
 
+    function registerPictureInPictureButton() {
+      if (!process.env.IS_ANDROID) return
+
+      class PictureInPictureButtonFactory {
+        create(rootElement, controls) {
+          return new PictureInPictureButton(events, rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
+      shakaOverflowMenu.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
+    }
+
     function registerScreenshotButton() {
       events.addEventListener('takeScreenshot', () => {
         takeScreenshot()
@@ -2589,7 +2604,9 @@ export default defineComponent({
           // Toggle picture in picture
           if (props.format !== 'audio') {
             const controls = ui.getControls()
-            if (controls.isPiPAllowed()) {
+            if (process.env.IS_ANDROID) {
+              window.Android?.enterPictureInPicture()
+            } else if (controls.isPiPAllowed()) {
               controls.togglePiP()
             }
           }
@@ -2934,6 +2951,7 @@ export default defineComponent({
       videoResizeObserver.observe(videoElement)
 
       registerScreenshotButton()
+      registerPictureInPictureButton()
       registerAudioTrackSelection()
       registerAutoplayToggle()
 
