@@ -42,7 +42,8 @@ import java.util.concurrent.Executors
 class AndroidBridge(
     private val activity: Activity,
     private val mainWebView: WebView,
-    private val parent: ViewGroup
+    private val parent: ViewGroup,
+    private val onSwipeRefreshEnabledChanged: (Boolean) -> Unit
 ) {
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()
@@ -59,6 +60,11 @@ class AndroidBridge(
     private var mediaDuration = 0L
     private var mediaThumbnail: android.graphics.Bitmap? = null
     private var pendingFile: Triple<String, String, String>? = null
+
+    @JavascriptInterface
+    fun setSwipeRefreshEnabled(enabled: Boolean) {
+        activity.runOnUiThread { onSwipeRefreshEnabledChanged(enabled) }
+    }
 
     @JavascriptInterface
     fun onAppReady() {

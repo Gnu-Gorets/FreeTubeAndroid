@@ -193,6 +193,7 @@ export default defineComponent({
 
     /** @type {shaka.ui.Overlay|null} */
     let ui = null
+    let playerMenuObserver = null
 
     const events = new EventTarget()
 
@@ -2985,6 +2986,20 @@ export default defineComponent({
       controls.addEventListener('uiupdated', addUICustomizations)
       configureUI(true)
 
+      if (process.env.IS_ANDROID) {
+        playerMenuObserver = new MutationObserver(() => {
+          const menuIsOpen = container.value.querySelector(
+            '.shaka-overflow-menu:not(.shaka-hidden), .shaka-settings-menu:not(.shaka-hidden), .shaka-sub-menu:not(.shaka-hidden)'
+          )
+          window.Android?.setSwipeRefreshEnabled(!menuIsOpen)
+        })
+        playerMenuObserver.observe(container.value, {
+          attributes: true,
+          attributeFilter: ['class'],
+          subtree: true
+        })
+      }
+
       document.removeEventListener('keydown', keyboardShortcutHandler)
       document.addEventListener('keydown', keyboardShortcutHandler)
       document.addEventListener('fullscreenchange', fullscreenChangeHandler)
@@ -3406,6 +3421,12 @@ export default defineComponent({
       if (containerResizeObserver) {
         containerResizeObserver.disconnect()
         containerResizeObserver = null
+      }
+
+      if (playerMenuObserver) {
+        playerMenuObserver.disconnect()
+        playerMenuObserver = null
+        window.Android?.setSwipeRefreshEnabled(true)
       }
 
       if (videoResizeObserver) {

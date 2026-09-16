@@ -123,7 +123,9 @@ class MainActivity : Activity() {
         @Suppress("DEPRECATION")
         webView.settings.allowFileAccessFromFileURLs = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
-        androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
+        androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup) { enabled ->
+            swipeRefresh.isEnabled = enabled
+        }
         webView.addJavascriptInterface(androidBridge, "Android")
         webView.loadUrl("file:///android_asset/index.html")
     }
