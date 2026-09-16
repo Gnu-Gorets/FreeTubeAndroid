@@ -886,7 +886,13 @@ export default defineComponent({
       }
 
       if (process.env.IS_ANDROID) {
-        uiConfig.overflowMenuButtons.push('ft_stats')
+        removeFromArrayIfExists(uiConfig.overflowMenuButtons, pictureInPictureButton)
+        removeFromArrayIfExists(uiConfig.controlPanelElements, 'ft_full_window')
+        removeFromArrayIfExists(uiConfig.overflowMenuButtons, 'ft_full_window')
+        if (props.format !== 'audio' && !uiConfig.controlPanelElements.includes(pictureInPictureButton)) {
+          uiConfig.controlPanelElements.push(pictureInPictureButton)
+        }
+        uiConfig.overflowMenuButtons.push('ft_full_window', 'ft_stats')
       }
 
       if (!enableScreenshot.value || props.format === 'audio') {

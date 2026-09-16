@@ -134,9 +134,13 @@ PIP не скрывает status bar и не переводит экран в fu
 
 ## Исправление позиции
 
-В Android-режиме PIP добавлен непосредственно в нижний control row при узкой/mobile-разметке:
+В Android-режиме controls разделены так:
 
-`overflow/settings → PIP → full window → fullscreen`
+- главный player row: `overflow/settings → PIP → fullscreen`;
+- меню settings: `Chapters`, `Loop`, `full window`, `Stats` и остальные настройки;
+- PIP в меню settings отсутствует;
+- full window в главном player row отсутствует;
+- full window доступен только внутри settings.
 
 Для audio-only видео PIP не добавляется. Desktop-разметка не меняется.
 
