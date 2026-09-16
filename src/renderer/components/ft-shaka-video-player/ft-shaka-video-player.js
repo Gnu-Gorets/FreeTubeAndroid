@@ -1278,6 +1278,8 @@ export default defineComponent({
     }
 
     function handleCanPlay() {
+      isBuffering.value = false
+
       // PiP can only be activated once the video's readState and video track are populated
       if (startInPip && props.format !== 'audio' && ui.getControls().isPiPAllowed() && process.env.IS_ELECTRON) {
         startInPip = false
@@ -2682,6 +2684,8 @@ export default defineComponent({
      * @param {object?} details
      */
     function handleError(error, context, details) {
+      isBuffering.value = false
+
       // These two errors are just wrappers around another error, so use the original error instead
       // As they can be nested (e.g. multiple googlevideo redirects because the Invidious server was far away from the user) we should pick the inner most one
       while (error.code === ErrorCode.REQUEST_FILTER_ERROR || error.code === ErrorCode.RESPONSE_FILTER_ERROR) {
@@ -2998,6 +3002,7 @@ export default defineComponent({
       })
     })
     onUnmounted(() => {
+      isBuffering.value = false
       removeLongPressPlaybackListeners()
       initLoadWaitTimeToastAC.abort()
     })
@@ -3534,6 +3539,7 @@ export default defineComponent({
 
       skippedSponsorBlockSegments,
 
+      isBuffering,
       showOfflineMessage,
 
       handlePlay,
