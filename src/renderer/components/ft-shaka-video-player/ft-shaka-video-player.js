@@ -36,6 +36,7 @@ import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
 import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
 import { getNetworkType } from '../../helpers/android/network'
 import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
+import { isPlayerMenuOpen } from '../../helpers/player/player-menu.mjs'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -2988,10 +2989,7 @@ export default defineComponent({
 
       if (process.env.IS_ANDROID) {
         playerMenuObserver = new MutationObserver(() => {
-          const menuIsOpen = container.value.querySelector(
-            '.shaka-overflow-menu:not(.shaka-hidden), .shaka-settings-menu:not(.shaka-hidden), .shaka-sub-menu:not(.shaka-hidden)'
-          )
-          window.Android?.setSwipeRefreshEnabled(!menuIsOpen)
+          window.Android?.setSwipeRefreshEnabled(!isPlayerMenuOpen(container.value))
         })
         playerMenuObserver.observe(container.value, {
           attributes: true,
