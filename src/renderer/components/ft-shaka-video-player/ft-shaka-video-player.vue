@@ -39,6 +39,15 @@
       class="vrCanvas"
     />
     <div
+      v-if="isBuffering"
+      class="bufferingOverlay"
+      aria-hidden="true"
+    >
+      <span
+        class="bufferingSpinner"
+      />
+    </div>
+    <div
       v-if="showStats"
       class="stats"
     >
