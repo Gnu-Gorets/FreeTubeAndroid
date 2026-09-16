@@ -114,21 +114,36 @@ PIP не скрывает status bar и не переводит экран в fu
 - paused state с отображением Play;
 - видимость status bar и launcher вокруг PIP.
 
-## Положение кнопки в FreeTube
+## Эталон кнопки
 
-Эталон dev/desktop player: `tmp/pi-clipboard-e08401a9-09bd-407c-9966-960f0e3121b6.png`.
+Эталон dev/desktop player: `tmp/pi-clipboard-93eb58b6-bf71-4acd-beec-b19fe70eb7a0.png`.
 
-PIP-кнопка находится в нижнем control row справа от overflow/settings controls и перед fullscreen controls. Над кнопкой показывается tooltip:
+- PIP-кнопка находится в нижнем control row.
+- Порядок справа налево: overflow/settings с `HD`, PIP, full window, fullscreen.
+- PIP - вторая кнопка справа после settings.
+- Иконка: контур прямоугольника с маркером PIP.
+- Tooltip: `Enter picture-in-picture (i)`.
 
-`Enter picture-in-picture (i)`
+## Текущее состояние FreeTube на устройстве
 
-В Android player кнопка должна занимать тот же слот и использовать тот же PIP icon. Клик вызывает системный Android PIP, сохраняя текущий HTML video.
+Скриншот: `tmp/android-pip/freetube-current.png`.
+
+- Видео открыто в portrait-экране FreeTube.
+- Нижний control row показывает Play, volume, time, fit-screen, overflow/settings с `HD` и fullscreen.
+- PIP был только в overflow menu, поэтому desktop-позиция не соблюдалась.
+
+## Исправление позиции
+
+В Android-режиме PIP добавлен непосредственно в нижний control row при узкой/mobile-разметке:
+
+`overflow/settings → PIP → full window → fullscreen`
+
+Для audio-only видео PIP не добавляется. Desktop-разметка не меняется.
 
 ## Реализовано
 
 - Android `MainActivity` объявлен как PIP-capable.
 - Добавлен узкий `AndroidBridge.enterPictureInPicture()`.
-- Android player использует отдельную PIP-кнопку в том же control row, что desktop-кнопка.
 - Для PIP передается aspect ratio `16:9`.
 - HTML video/WebView не заменяются отдельным native player.
 

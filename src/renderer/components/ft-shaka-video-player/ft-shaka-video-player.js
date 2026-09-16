@@ -855,7 +855,11 @@ export default defineComponent({
 
         elementList = uiConfig.overflowMenuButtons
 
-        uiConfig.controlPanelElements.push('overflow_menu', 'fullscreen')
+        uiConfig.controlPanelElements.push('overflow_menu')
+        if (process.env.IS_ANDROID && props.format !== 'audio') {
+          uiConfig.controlPanelElements.push(pictureInPictureButton, 'ft_full_window')
+        }
+        uiConfig.controlPanelElements.push('fullscreen')
       } else {
         uiConfig.controlPanelElements.push(
           'ft_screenshot',
