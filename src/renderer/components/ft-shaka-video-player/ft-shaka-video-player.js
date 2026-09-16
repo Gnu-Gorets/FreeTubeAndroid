@@ -1434,11 +1434,12 @@ export default defineComponent({
           request.body = new Uint8Array([0x78, 0]) // protobuf: { 15: 0 } (no idea what it means but this is what YouTube uses)
 
           if (request.headers.Range) {
-            request.uris[0] += `&range=${request.headers.Range.split('=')[1]}`
+            url.searchParams.set('range', request.headers.Range.split('=')[1])
             delete request.headers.Range
           }
 
-          request.uris[0] += '&alr=yes'
+          url.searchParams.set('alr', 'yes')
+          request.uris[0] = url.toString()
         }
       }
     }
