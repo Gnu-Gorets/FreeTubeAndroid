@@ -36,6 +36,30 @@
   pointer-events: none;
 }
 
+.bufferingOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.bufferingSpinner {
+  width: 40px;
+  aspect-ratio: 1;
+  border: 5px solid rgb(255 255 255 / 35%);
+  border-block-start-color: #fff;
+  border-radius: 50%;
+  animation: buffering-spinner 0.8s linear infinite;
+}
+
+@keyframes buffering-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 :deep(.shaka-bottom-controls) {
   /*
     Force left to right, so that the UI doesn't break.
