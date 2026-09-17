@@ -9,6 +9,7 @@ import { FullWindowButton } from './player-components/FullWindowButton'
 import { FitScreenButton } from './player-components/FitScreenButton'
 import { LegacyQualitySelection } from './player-components/LegacyQualitySelection'
 import { ScreenshotButton } from './player-components/ScreenshotButton'
+import { PictureInPictureButton } from './player-components/PictureInPictureButton'
 import { StatsButton } from './player-components/StatsButton'
 import { TheatreModeButton } from './player-components/TheatreModeButton'
 import { AutoplayToggle } from './player-components/AutoplayToggle'
@@ -36,6 +37,7 @@ import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
 import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
 import { getNetworkType } from '../../helpers/android/network'
 import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
+import { isPlayerMenuOpen } from '../../helpers/player/player-menu.mjs'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -203,6 +205,7 @@ export default defineComponent({
 
     /** @type {shaka.ui.Overlay|null} */
     let ui = null
+    let playerMenuObserver = null
 
     const events = new EventTarget()
 
@@ -836,6 +839,7 @@ export default defineComponent({
     })
 
     const uiConfig = computed(() => {
+      const pictureInPictureButton = process.env.IS_ANDROID ? 'ft_picture_in_picture' : 'picture_in_picture'
       const controlPanelElements = [
         'ft_skip_previous',
         'play_pause',
@@ -873,7 +877,7 @@ export default defineComponent({
           'chapter',
           'loop',
           'ft_screenshot',
-          'picture_in_picture',
+          pictureInPictureButton,
           'ft_full_window',
           'recenter_vr',
           'toggle_stereoscopic',
@@ -881,13 +885,17 @@ export default defineComponent({
 
         elementList = uiConfig.overflowMenuButtons
 
-        uiConfig.controlPanelElements.push('overflow_menu', 'fullscreen')
+        uiConfig.controlPanelElements.push('overflow_menu')
+        if (process.env.IS_ANDROID && props.format !== 'audio') {
+          uiConfig.controlPanelElements.push(pictureInPictureButton, 'ft_full_window')
+        }
+        uiConfig.controlPanelElements.push('fullscreen')
       } else {
         uiConfig.controlPanelElements.push(
           'ft_screenshot',
           'ft_autoplay_toggle',
           'overflow_menu',
-          'picture_in_picture',
+          pictureInPictureButton,
           'ft_theatre_mode',
           'ft_full_window',
           'fullscreen'
@@ -908,7 +916,13 @@ export default defineComponent({
       }
 
       if (process.env.IS_ANDROID) {
-        uiConfig.overflowMenuButtons.push('ft_stats')
+        removeFromArrayIfExists(uiConfig.overflowMenuButtons, pictureInPictureButton)
+        removeFromArrayIfExists(uiConfig.controlPanelElements, 'ft_full_window')
+        removeFromArrayIfExists(uiConfig.overflowMenuButtons, 'ft_full_window')
+        if (props.format !== 'audio' && !uiConfig.controlPanelElements.includes(pictureInPictureButton)) {
+          uiConfig.controlPanelElements.push(pictureInPictureButton)
+        }
+        uiConfig.overflowMenuButtons.push('ft_full_window', 'ft_stats')
       }
 
       if (!enableScreenshot.value || props.format === 'audio') {
@@ -924,7 +938,7 @@ export default defineComponent({
       }
 
       if (props.format === 'audio') {
-        removeFromArrayIfExists(elementList, 'picture_in_picture')
+        removeFromArrayIfExists(elementList, pictureInPictureButton)
       }
 
       if (isLive.value) {
@@ -1460,11 +1474,12 @@ export default defineComponent({
           request.body = new Uint8Array([0x78, 0]) // protobuf: { 15: 0 } (no idea what it means but this is what YouTube uses)
 
           if (request.headers.Range) {
-            request.uris[0] += `&range=${request.headers.Range.split('=')[1]}`
+            url.searchParams.set('range', request.headers.Range.split('=')[1])
             delete request.headers.Range
           }
 
-          request.uris[0] += '&alr=yes'
+          url.searchParams.set('alr', 'yes')
+          request.uris[0] = url.toString()
         }
       }
     }
@@ -2072,6 +2087,19 @@ export default defineComponent({
       shakaOverflowMenu.registerElement('ft_stats', new StatsButtonFactory())
     }
 
+    function registerPictureInPictureButton() {
+      if (!process.env.IS_ANDROID) return
+
+      class PictureInPictureButtonFactory {
+        create(rootElement, controls) {
+          return new PictureInPictureButton(events, rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
+      shakaOverflowMenu.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
+    }
+
     function registerScreenshotButton() {
       events.addEventListener('takeScreenshot', () => {
         takeScreenshot()
@@ -2647,7 +2675,9 @@ export default defineComponent({
           // Toggle picture in picture
           if (props.format !== 'audio') {
             const controls = ui.getControls()
-            if (controls.isPiPAllowed()) {
+            if (process.env.IS_ANDROID) {
+              window.Android?.enterPictureInPicture(!video_.paused)
+            } else if (controls.isPiPAllowed()) {
               controls.togglePiP()
             }
           }
@@ -2996,6 +3026,7 @@ export default defineComponent({
       videoResizeObserver.observe(videoElement)
 
       registerScreenshotButton()
+      registerPictureInPictureButton()
       registerAudioTrackSelection()
       registerAutoplayToggle()
 
@@ -3017,6 +3048,17 @@ export default defineComponent({
 
       controls.addEventListener('uiupdated', addUICustomizations)
       configureUI(true)
+
+      if (process.env.IS_ANDROID) {
+        playerMenuObserver = new MutationObserver(() => {
+          window.Android?.setSwipeRefreshEnabled(!isPlayerMenuOpen(container.value))
+        })
+        playerMenuObserver.observe(container.value, {
+          attributes: true,
+          attributeFilter: ['class'],
+          subtree: true
+        })
+      }
 
       document.removeEventListener('keydown', keyboardShortcutHandler)
       document.addEventListener('keydown', keyboardShortcutHandler)
@@ -3439,6 +3481,12 @@ export default defineComponent({
       if (containerResizeObserver) {
         containerResizeObserver.disconnect()
         containerResizeObserver = null
+      }
+
+      if (playerMenuObserver) {
+        playerMenuObserver.disconnect()
+        playerMenuObserver = null
+        window.Android?.setSwipeRefreshEnabled(true)
       }
 
       if (videoResizeObserver) {
