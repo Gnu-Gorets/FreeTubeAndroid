@@ -15,6 +15,7 @@ import android.webkit.WebChromeClient
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -243,6 +244,38 @@ class MainActivity : Activity() {
             y = (metrics.heightPixels * 0.125f).toInt()
         }
         getSystemService(WindowManager::class.java).addView(webView, params)
+        var dragging = false
+        var downRawX = 0f
+        var downRawY = 0f
+        val downX = params.x
+        val downY = params.y
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        webView.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragging = false
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!dragging &&
+                        (kotlin.math.abs(event.rawX - downRawX) > touchSlop ||
+                            kotlin.math.abs(event.rawY - downRawY) > touchSlop)
+                    ) dragging = true
+                    if (dragging) {
+                        params.x = (downX + (event.rawX - downRawX).toInt())
+                            .coerceIn(0, metrics.widthPixels - params.width)
+                        params.y = (downY + (event.rawY - downRawY).toInt())
+                            .coerceIn(0, metrics.heightPixels - params.height)
+                        getSystemService(WindowManager::class.java).updateViewLayout(webView, params)
+                    }
+                    dragging
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging
+                else -> false
+            }
+        }
         pipOverlayActive = true
         webView.postDelayed({
             webView.evaluateJavascript("document.querySelector('video.player')?.ui?.getControls()?.show()", null)
@@ -255,6 +288,7 @@ class MainActivity : Activity() {
         if (!pipOverlayActive) return
         val windowManager = getSystemService(WindowManager::class.java)
         windowManager.removeViewImmediate(webView)
+        webView.setOnTouchListener(null)
         swipeRefresh.addView(webView, pipOverlayLayoutParams)
         pipOverlayLayoutParams = null
         pipOverlayActive = false
