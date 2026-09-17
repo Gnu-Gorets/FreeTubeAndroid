@@ -8,7 +8,9 @@ import android.app.PictureInPictureParams
 import android.app.PendingIntent
 import android.app.RemoteAction
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.graphics.drawable.Icon
+import android.os.Build
 import android.util.Rational
 import android.os.Bundle
 import android.util.Log
@@ -240,23 +242,26 @@ class MainActivity : Activity() {
     fun enterPictureInPicture(isPlaying: Boolean): Boolean {
         if (isInPictureInPictureMode) return false
         updatePictureInPictureAction(isPlaying)
-        return enterPictureInPictureMode(
-            PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-                .setActions(pictureInPictureActions(isPlaying))
-                .build()
-        )
+        return enterPictureInPictureMode(pictureInPictureParams(isPlaying))
     }
 
     fun updatePictureInPictureAction(isPlaying: Boolean) {
         if (isInPictureInPictureMode) {
-            setPictureInPictureParams(
-                PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .setActions(pictureInPictureActions(isPlaying))
-                    .build()
-            )
+            setPictureInPictureParams(pictureInPictureParams(isPlaying))
         }
+    }
+
+    private fun pictureInPictureParams(isPlaying: Boolean): PictureInPictureParams {
+        val sourceRect = Rect()
+        webView.getGlobalVisibleRect(sourceRect)
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setSourceRectHint(sourceRect)
+            .setActions(pictureInPictureActions(isPlaying))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
     }
 
     private fun pictureInPictureActions(isPlaying: Boolean): List<RemoteAction> {
