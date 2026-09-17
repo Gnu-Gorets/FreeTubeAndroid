@@ -245,34 +245,74 @@ class MainActivity : Activity() {
         }
         getSystemService(WindowManager::class.java).addView(webView, params)
         var dragging = false
+        var pinching = false
         var downRawX = 0f
         var downRawY = 0f
+        var initialSpan = 0f
+        var initialWidth = width
         val downX = params.x
         val downY = params.y
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        fun pointerSpan(event: MotionEvent): Float {
+            return kotlin.math.hypot(
+                event.getX(0) - event.getX(1),
+                event.getY(0) - event.getY(1)
+            )
+        }
         webView.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     dragging = false
+                    pinching = false
                     downRawX = event.rawX
                     downRawY = event.rawY
                     false
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    if (!dragging &&
-                        (kotlin.math.abs(event.rawX - downRawX) > touchSlop ||
-                            kotlin.math.abs(event.rawY - downRawY) > touchSlop)
-                    ) dragging = true
-                    if (dragging) {
-                        params.x = (downX + (event.rawX - downRawX).toInt())
-                            .coerceIn(0, metrics.widthPixels - params.width)
-                        params.y = (downY + (event.rawY - downRawY).toInt())
-                            .coerceIn(0, metrics.heightPixels - params.height)
-                        getSystemService(WindowManager::class.java).updateViewLayout(webView, params)
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (event.pointerCount >= 2) {
+                        pinching = true
+                        initialSpan = pointerSpan(event)
+                        initialWidth = params.width
                     }
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (pinching && event.pointerCount >= 2) {
+                        val scale = pointerSpan(event) / initialSpan
+                        val newWidth = (initialWidth * scale).toInt()
+                            .coerceIn(280, metrics.widthPixels)
+                        val newHeight = newWidth * 9 / 16
+                        val centerX = params.x + params.width / 2
+                        val centerY = params.y + params.height / 2
+                        params.width = newWidth
+                        params.height = newHeight
+                        params.x = (centerX - newWidth / 2).coerceIn(0, metrics.widthPixels - newWidth)
+                        params.y = (centerY - newHeight / 2).coerceIn(0, metrics.heightPixels - newHeight)
+                        getSystemService(WindowManager::class.java).updateViewLayout(webView, params)
+                        true
+                    } else {
+                        if (!dragging &&
+                            (kotlin.math.abs(event.rawX - downRawX) > touchSlop ||
+                                kotlin.math.abs(event.rawY - downRawY) > touchSlop)
+                        ) dragging = true
+                        if (dragging) {
+                            params.x = (downX + (event.rawX - downRawX).toInt())
+                                .coerceIn(0, metrics.widthPixels - params.width)
+                            params.y = (downY + (event.rawY - downRawY).toInt())
+                                .coerceIn(0, metrics.heightPixels - params.height)
+                            getSystemService(WindowManager::class.java).updateViewLayout(webView, params)
+                        }
+                        dragging
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    pinching = false
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    pinching = false
                     dragging
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging
                 else -> false
             }
         }
