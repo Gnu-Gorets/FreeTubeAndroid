@@ -791,8 +791,37 @@ export default defineComponent({
             this.manifestSrc = result.streaming_data.hls_manifest_url
             this.manifestMimeType = MANIFEST_TYPE_HLS
 
-            this.hlsAudioMetadata = result.streaming_data.adaptive_formats
-              .filter((format) => format.mime_type.startsWith('audio/mp4'))
+          let useRemoteManifest = true
+
+          if (this.isPostLiveDvr) {
+            // I wasn't able to get SABR working with Post-Live-DVR yet, so for the moment we'll use YouTube's provided DASH manifest instead.
+            // It only contains the last 4 hours of the stream, instead of starting from the beginning but that is better than nothing.
+            if (
+              result.streaming_data.adaptive_formats[0]?.url ||
+              result.streaming_data.adaptive_formats[0]?.signature_cipher ||
+              result.streaming_data.adaptive_formats[0]?.cipher
+            ) {
+              try {
+                this.manifestSrc = await this.createLocalDashManifest(result, true, poToken)
+                this.manifestMimeType = MANIFEST_TYPE_DASH
+                useRemoteManifest = false
+              } catch (error) {
+                console.error(`Failed to generate DASH manifest for this Post Live DVR video ${this.videoId}, falling back to using YouTube's provided one...`, error)
+              }
+            }
+          }
+
+          if (useRemoteManifest) {
+            if (result.streaming_data.dash_manifest_url) {
+              this.manifestSrc = result.streaming_data.dash_manifest_url
+              this.manifestMimeType = MANIFEST_TYPE_DASH
+            } else {
+              this.manifestSrc = result.streaming_data.hls_manifest_url
+              this.manifestMimeType = MANIFEST_TYPE_HLS
+              this.hlsAudioMetadata = result.streaming_data.adaptive_formats
+                .filter((format) => format.mime_type.startsWith('audio/mp4'))
+            }
+          }
           }
 
           this.streamingDataExpiryDate = result.streaming_data.expires
@@ -953,7 +982,6 @@ export default defineComponent({
             })
 
             if (
-              !hasDirectAdaptiveFormats &&
               videoInfo.info.streaming_data?.server_abr_streaming_url &&
               videoInfo.info.player_config.media_common_config.media_ustreamer_request_config
             ) {
@@ -980,7 +1008,7 @@ export default defineComponent({
               result.streaming_data.adaptive_formats[0]?.cipher
             ) {
               console.warn('[Local playback] selecting DASH')
-              this.manifestSrc = await this.createLocalDashManifest(result)
+              this.manifestSrc = await this.createLocalDashManifest(result, false, poToken)
               this.manifestMimeType = MANIFEST_TYPE_DASH
             } else {
               this.manifestSrc = null
@@ -1711,8 +1739,12 @@ export default defineComponent({
      * @param {import('youtubei.js').YT.VideoInfo} videoInfo
      * @param {boolean} includeThumbnails
      */
-    createLocalDashManifest: async function (videoInfo, includeThumbnails = false) {
+    createLocalDashManifest: async function (videoInfo, includeThumbnails = false, poToken) {
       const xmlData = await videoInfo.toDash({
+        url_transformer: (url) => {
+          if (poToken) url.searchParams.set('pot', poToken)
+          return url
+        },
         manifest_options: {
           include_thumbnails: includeThumbnails,
         },
