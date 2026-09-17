@@ -250,6 +250,8 @@ class MainActivity : Activity() {
         var downRawY = 0f
         var initialSpan = 0f
         var initialWidth = width
+        var initialCenterX = params.x + width / 2
+        var initialCenterY = params.y + height / 2
         val downX = params.x
         val downY = params.y
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
@@ -273,21 +275,26 @@ class MainActivity : Activity() {
                         pinching = true
                         initialSpan = pointerSpan(event)
                         initialWidth = params.width
+                        initialCenterX = params.x + params.width / 2
+                        initialCenterY = params.y + params.height / 2
                     }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (pinching && event.pointerCount >= 2) {
                         val scale = pointerSpan(event) / initialSpan
-                        val newWidth = (initialWidth * scale).toInt()
+                        val targetWidth = (initialWidth * scale).toInt()
                             .coerceIn(280, metrics.widthPixels)
+                        val newWidth = if (kotlin.math.abs(targetWidth - params.width) <= 1) {
+                            targetWidth
+                        } else {
+                            params.width + ((targetWidth - params.width) * 0.45f).toInt()
+                        }
                         val newHeight = newWidth * 9 / 16
-                        val centerX = params.x + params.width / 2
-                        val centerY = params.y + params.height / 2
                         params.width = newWidth
                         params.height = newHeight
-                        params.x = (centerX - newWidth / 2).coerceIn(0, metrics.widthPixels - newWidth)
-                        params.y = (centerY - newHeight / 2).coerceIn(0, metrics.heightPixels - newHeight)
+                        params.x = (initialCenterX - newWidth / 2).coerceIn(0, metrics.widthPixels - newWidth)
+                        params.y = (initialCenterY - newHeight / 2).coerceIn(0, metrics.heightPixels - newHeight)
                         getSystemService(WindowManager::class.java).updateViewLayout(webView, params)
                         true
                     } else {
