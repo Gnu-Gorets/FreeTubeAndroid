@@ -51,6 +51,7 @@
     "checkforbadtemplates": "node _scripts/findMissingTemplates.mjs",
     "test:long-press": "node _scripts/test-long-press-playback.mjs",
     "test:network-default-resolution": "node _scripts/test-network-default-resolution.mjs",
+    "test:player-menu": "node _scripts/test-player-menu.mjs",
     "ci": "pnpm install --frozen-lockfile"
   },
   "dependencies": {
