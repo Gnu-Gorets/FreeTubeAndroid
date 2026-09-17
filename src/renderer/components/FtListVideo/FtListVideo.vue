@@ -312,6 +312,7 @@ import {
   formatNumber,
   getRelativeTimeFromDate,
   openExternalLink,
+  openExternalPlayer,
   showToast,
   toDistractionFreeTitle,
   deepCopy,
@@ -768,7 +769,9 @@ const hideVideoViews = computed(() => store.getters.getHideVideoViews)
 const addWatchedStyle = computed(() => historyEntryExists.value && !inHistory.value)
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => store.getters.getExternalPlayer)
+const externalPlayer = computed(() => process.env.IS_ANDROID && store.getters.getExternalPlayer !== ''
+  ? t('Settings.External Player Settings.External Player')
+  : store.getters.getExternalPlayer)
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const externalPlayerIsDefaultViewingMode = computed(() => {
@@ -1023,9 +1026,7 @@ function handleExternalPlayer() {
     })
   }
 
-  if (process.env.IS_ELECTRON) {
-    window.ftElectron.openInExternalPlayer(payload)
-  }
+  openExternalPlayer(payload)
 
   if (rememberHistory.value) {
     markAsWatched()

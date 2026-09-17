@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import android.provider.OpenableColumns
@@ -20,6 +21,7 @@ import android.os.Build
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -598,6 +600,20 @@ class AndroidBridge(
     @JavascriptInterface
     fun openExternalLink(url: String) {
         activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
+    @JavascriptInterface
+    fun openExternalPlayer(url: String) {
+        val uri = Uri.parse(url)
+        if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return
+
+        activity.runOnUiThread {
+            try {
+                activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, uri), null))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     @JavascriptInterface

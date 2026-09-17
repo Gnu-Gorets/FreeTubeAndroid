@@ -272,6 +272,34 @@ export async function openExternalLink(url) {
 }
 
 /**
+ * Opens video or playlist in Android external player or Electron external player.
+ * @param {{ videoId?: string | null, mediaUrl?: string | null, playlistId?: string | null, startTime?: number | null, playbackRate?: number | null, playlistIndex?: number | null, playlistReverse?: boolean | null, playlistShuffle?: boolean | null, playlistLoop?: boolean | null }} payload
+ */
+export function openExternalPlayer(payload) {
+  if (process.env.IS_ANDROID && typeof window.Android?.openExternalPlayer === 'function') {
+    const videoId = typeof payload.videoId === 'string' ? encodeURIComponent(payload.videoId) : null
+    const playlistId = typeof payload.playlistId === 'string' ? encodeURIComponent(payload.playlistId) : null
+
+    if (!videoId && !playlistId) return
+
+    let url = typeof payload.mediaUrl === 'string' && /^https?:\/\//.test(payload.mediaUrl)
+      ? payload.mediaUrl
+      : videoId
+        ? `https://www.youtube.com/watch?v=${videoId}`
+        : `https://www.youtube.com/playlist?list=${playlistId}`
+
+    if (!payload.mediaUrl && videoId && playlistId) url += `&list=${playlistId}`
+    if (!payload.mediaUrl && videoId && typeof payload.startTime === 'number' && payload.startTime > 0) {
+      url += `&t=${Math.floor(payload.startTime)}`
+    }
+
+    window.Android.openExternalPlayer(url)
+  } else if (process.env.IS_ELECTRON) {
+    window.ftElectron.openInExternalPlayer(payload)
+  }
+}
+
+/**
  * Opens native Android sharesheet or copies sharing behavior to external link fallback.
  * @param {string} text
  */

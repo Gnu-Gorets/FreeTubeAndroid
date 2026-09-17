@@ -3523,8 +3523,15 @@ export default defineComponent({
       return uiState
     }
 
+    function getExternalPlayerUrl() {
+      const currentSrc = video.value?.currentSrc
+      if (currentSrc?.startsWith('http')) return currentSrc
+      return props.manifestSrc?.startsWith('http') ? props.manifestSrc : null
+    }
+
     expose({
       hasLoaded,
+      getExternalPlayerUrl,
 
       isPaused,
       pause,
