@@ -245,6 +245,7 @@ class MainActivity : Activity() {
         webView.postDelayed({
             webView.evaluateJavascript("document.querySelector('video.player')?.ui?.getControls()?.show()", null)
         }, 100)
+        moveTaskToBack(true)
         return true
     }
 
