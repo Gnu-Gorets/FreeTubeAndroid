@@ -29,6 +29,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
+            android:supportsPictureInPicture="true"
             android:screenOrientation="unspecified">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
