@@ -1,8 +1,5 @@
 import shaka from 'shaka-player'
 
-import { KeyboardShortcuts } from '../../../../constants'
-import { addKeyboardShortcutToActionTitle } from '../../../helpers/utils'
-
 export class PictureInPictureButton extends shaka.ui.Element {
   /**
    * @param {EventTarget} events
@@ -26,9 +23,6 @@ export class PictureInPictureButton extends shaka.ui.Element {
   }
 
   updateLocalizedStrings_() {
-    this.button_.ariaLabel = addKeyboardShortcutToActionTitle(
-      this.localization.resolve('ENTER_PICTURE_IN_PICTURE'),
-      KeyboardShortcuts.VIDEO_PLAYER.GENERAL.PICTURE_IN_PICTURE
-    )
+    this.button_.ariaLabel = this.localization.resolve('ENTER_PICTURE_IN_PICTURE').replace(/\s+\([^)]+\)$/, '')
   }
 }
