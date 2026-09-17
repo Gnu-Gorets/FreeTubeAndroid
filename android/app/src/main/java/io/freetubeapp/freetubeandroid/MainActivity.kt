@@ -4,6 +4,14 @@ import android.app.Activity
 import android.graphics.Color
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.app.PictureInPictureParams
+import android.app.PendingIntent
+import android.app.RemoteAction
+import android.content.res.Configuration
+import android.graphics.Rect
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.util.Rational
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -28,6 +36,46 @@ class MainActivity : Activity() {
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
         const val DIRECTORY_REQUEST = 1003
+        const val ENTER_PIP_SCRIPT = """
+            (() => {
+              const player = document.querySelector('.ftVideoPlayer');
+              if (!player) return;
+              window.__ftPipStyles = [];
+              let node = player;
+              while (node && node !== document.body) {
+                for (const sibling of node.parentElement.children) {
+                  if (sibling !== node) {
+                    window.__ftPipStyles.push([sibling, sibling.getAttribute('style')]);
+                    sibling.style.display = 'none';
+                  }
+                }
+                window.__ftPipStyles.push([node, node.getAttribute('style')]);
+                node.style.display = node === player ? 'block' : 'contents';
+                node = node.parentElement;
+              }
+              window.__ftPipStyles.push([player, player.getAttribute('style')]);
+              player.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important;overflow:hidden!important;background:#000!important;';
+              const video = player.querySelector('video');
+              if (video) {
+                for (const sibling of player.children) {
+                  if (sibling !== video) {
+                    window.__ftPipStyles.push([sibling, sibling.getAttribute('style')]);
+                    sibling.style.display = 'none';
+                  }
+                }
+                window.__ftPipStyles.push([video, video.getAttribute('style')]);
+                video.style.cssText += ';position:fixed!important;inset:0!important;left:-12.5%!important;width:125%!important;height:100vh!important;object-fit:cover!important;';
+              }
+              window.__ftRestorePictureInPicture = () => {
+                for (const [element, style] of window.__ftPipStyles || []) {
+                  if (style === null) element.removeAttribute('style');
+                  else element.setAttribute('style', style);
+                }
+                window.__ftPipStyles = null;
+              };
+            })();
+        """
+        const val EXIT_PIP_SCRIPT = "window.__ftRestorePictureInPicture?.()"
     }
 
     private lateinit var webView: WebView
@@ -123,7 +171,9 @@ class MainActivity : Activity() {
         @Suppress("DEPRECATION")
         webView.settings.allowFileAccessFromFileURLs = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
-        androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup)
+        androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup) { enabled ->
+            swipeRefresh.isEnabled = enabled
+        }
         webView.addJavascriptInterface(androidBridge, "Android")
         webView.loadUrl("file:///android_asset/index.html")
     }
@@ -160,13 +210,78 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         Log.i("FreeTubeLifecycle", "onPause")
-        webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
+        if (!isInPictureInPictureMode) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
+        }
     }
 
     override fun onResume() {
         super.onResume()
         Log.i("FreeTubeLifecycle", "onResume")
-        webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
+        if (!isInPictureInPictureMode) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        swipeRefresh.isEnabled = !isInPictureInPictureMode
+        webView.evaluateJavascript(
+            if (isInPictureInPictureMode) ENTER_PIP_SCRIPT else EXIT_PIP_SCRIPT,
+            null
+        )
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('android-pip', { detail: { active: $isInPictureInPictureMode } }))",
+            null
+        )
+    }
+
+    fun enterPictureInPicture(isPlaying: Boolean): Boolean {
+        if (isInPictureInPictureMode) return false
+        updatePictureInPictureAction(isPlaying)
+        return enterPictureInPictureMode(pictureInPictureParams(isPlaying))
+    }
+
+    fun updatePictureInPictureAction(isPlaying: Boolean) {
+        if (isInPictureInPictureMode) {
+            setPictureInPictureParams(pictureInPictureParams(isPlaying))
+        }
+    }
+
+    private fun pictureInPictureParams(isPlaying: Boolean): PictureInPictureParams {
+        val sourceRect = Rect()
+        webView.getGlobalVisibleRect(sourceRect)
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setSourceRectHint(sourceRect)
+            .setActions(pictureInPictureActions(isPlaying))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
+    }
+
+    private fun pictureInPictureActions(isPlaying: Boolean): List<RemoteAction> {
+        val toggleIntent = PendingIntent.getBroadcast(
+            this,
+            3001,
+            Intent(this, MediaControlsReceiver::class.java).setAction("PIP_PLAY_PAUSE"),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return listOf(
+            RemoteAction(
+                Icon.createWithResource(
+                    this,
+                    if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+                ),
+                if (isPlaying) "Pause" else "Play",
+                if (isPlaying) "Pause video" else "Play video",
+                toggleIntent
+            )
+        )
     }
 
     override fun onDestroy() {
