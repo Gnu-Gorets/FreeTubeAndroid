@@ -603,13 +603,35 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun openExternalPlayer(url: String) {
+    fun getExternalPlayers(): String {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse("https://example.com/video.mp4"), "video/*")
+        }
+        val players = activity.packageManager.queryIntentActivities(intent, 0)
+            .distinctBy { it.activityInfo.packageName }
+            .sortedBy { it.loadLabel(activity.packageManager).toString() }
+        return JSONArray().apply {
+            players.forEach { info ->
+                put(JSONObject().apply {
+                    put("name", info.loadLabel(activity.packageManager).toString())
+                    put("packageName", info.activityInfo.packageName)
+                })
+            }
+        }.toString()
+    }
+
+    @JavascriptInterface
+    fun openExternalPlayer(url: String, packageName: String) {
         val uri = Uri.parse(url)
         if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return
 
         activity.runOnUiThread {
             try {
-                activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, uri), null))
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "video/*")
+                    if (packageName.isNotBlank()) setPackage(packageName)
+                }
+                activity.startActivity(intent)
             } catch (_: ActivityNotFoundException) {
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
             }

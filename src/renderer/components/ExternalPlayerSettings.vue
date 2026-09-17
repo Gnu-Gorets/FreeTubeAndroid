@@ -3,11 +3,14 @@
     :title="$t('Settings.External Player Settings.External Player Settings')"
   >
     <FtFlexBox v-if="USING_ANDROID">
-      <FtToggleSwitch
-        :label="$t('Settings.External Player Settings.External Player')"
-        :default-value="externalPlayer !== ''"
-        :compact="true"
-        @change="toggleAndroidExternalPlayer"
+      <FtSelect
+        :placeholder="$t('Settings.External Player Settings.External Player')"
+        :value="externalPlayer"
+        :select-names="androidExternalPlayerNames"
+        :select-values="androidExternalPlayerValues"
+        :tooltip="$t('Tooltips.External Player Settings.External Player')"
+        :icon="['fas', 'external-link-alt']"
+        @change="updateExternalPlayer"
       />
     </FtFlexBox>
     <template v-else>
@@ -88,7 +91,30 @@ const { t } = useI18n()
 const USING_ANDROID = !!process.env.IS_ANDROID
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => store.getters.getExternalPlayer)
+const externalPlayer = computed(() => store.getters.getExternalPlayer === 'android'
+  ? ''
+  : store.getters.getExternalPlayer)
+
+const androidExternalPlayers = computed(() => {
+  if (!USING_ANDROID || typeof window.Android?.getExternalPlayers !== 'function') return []
+
+  try {
+    return JSON.parse(window.Android.getExternalPlayers())
+  } catch (error) {
+    console.error('Failed to load Android external players', error)
+    return []
+  }
+})
+
+const androidExternalPlayerNames = computed(() => [
+  t('Settings.External Player Settings.Players.None.Name'),
+  ...androidExternalPlayers.value.map(player => player.name)
+])
+
+const androidExternalPlayerValues = computed(() => [
+  '',
+  ...androidExternalPlayers.value.map(player => player.packageName)
+])
 
 /** @type {import('vue').ComputedRef<string[]>} */
 const externalPlayerNames = computed(() => {
@@ -135,13 +161,6 @@ const externalPlayerCustomArgsTooltip = computed(() => {
  */
 function updateExternalPlayer(value) {
   store.dispatch('updateExternalPlayer', value)
-}
-
-/**
- * @param {boolean} enabled
- */
-function toggleAndroidExternalPlayer(enabled) {
-  store.dispatch('updateExternalPlayer', enabled ? 'android' : '')
 }
 
 /**

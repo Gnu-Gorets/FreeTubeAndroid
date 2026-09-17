@@ -275,6 +275,7 @@ const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
 function handleExternalPlayer() {
   openExternalPlayer({
     playlistId: playlistId,
+    externalPlayer: store.getters.getExternalPlayer,
     playbackRate: defaultPlayback.value,
   })
 }

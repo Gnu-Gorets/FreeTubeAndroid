@@ -273,7 +273,7 @@ export async function openExternalLink(url) {
 
 /**
  * Opens video or playlist in Android external player or Electron external player.
- * @param {{ videoId?: string | null, mediaUrl?: string | null, playlistId?: string | null, startTime?: number | null, playbackRate?: number | null, playlistIndex?: number | null, playlistReverse?: boolean | null, playlistShuffle?: boolean | null, playlistLoop?: boolean | null }} payload
+ * @param {{ videoId?: string | null, mediaUrl?: string | null, playlistId?: string | null, externalPlayer?: string | null, startTime?: number | null, playbackRate?: number | null, playlistIndex?: number | null, playlistReverse?: boolean | null, playlistShuffle?: boolean | null, playlistLoop?: boolean | null }} payload
  */
 export function openExternalPlayer(payload) {
   if (process.env.IS_ANDROID && typeof window.Android?.openExternalPlayer === 'function') {
@@ -293,7 +293,8 @@ export function openExternalPlayer(payload) {
       url += `&t=${Math.floor(payload.startTime)}`
     }
 
-    window.Android.openExternalPlayer(url)
+    const packageName = payload.externalPlayer === 'android' ? '' : payload.externalPlayer || ''
+    window.Android.openExternalPlayer(url, packageName)
   } else if (process.env.IS_ELECTRON) {
     window.ftElectron.openInExternalPlayer(payload)
   }

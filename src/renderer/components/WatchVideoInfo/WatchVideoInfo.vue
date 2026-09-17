@@ -353,6 +353,7 @@ function handleExternalPlayer() {
     payload = {
       videoId: props.id,
       mediaUrl: props.getMediaUrl(),
+      externalPlayer: store.getters.getExternalPlayer,
       startTime: props.getTimestamp(),
       playbackRate: defaultPlayback.value,
     }
@@ -362,6 +363,7 @@ function handleExternalPlayer() {
     payload = {
       videoId: props.id,
       mediaUrl: props.getMediaUrl(),
+      externalPlayer: store.getters.getExternalPlayer,
       playlistId: props.playlistId,
       startTime: props.getTimestamp(),
       playbackRate: defaultPlayback.value,

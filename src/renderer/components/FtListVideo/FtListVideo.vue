@@ -1007,6 +1007,7 @@ function handleExternalPlayer() {
 
   const payload = {
     videoId: id.value,
+    externalPlayer: store.getters.getExternalPlayer,
     playlistId: playlistIdFinal.value,
     startTime: watchProgress.value,
     playbackRate: defaultPlayback.value,
