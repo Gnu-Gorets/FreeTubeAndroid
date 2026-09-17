@@ -2618,7 +2618,7 @@ export default defineComponent({
           if (props.format !== 'audio') {
             const controls = ui.getControls()
             if (process.env.IS_ANDROID) {
-              window.Android?.enterPictureInPicture()
+              window.Android?.enterPictureInPicture(!video_.paused)
             } else if (controls.isPiPAllowed()) {
               controls.togglePiP()
             }

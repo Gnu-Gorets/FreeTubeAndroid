@@ -4,10 +4,12 @@ import android.app.Activity
 import android.graphics.Color
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.graphics.PixelFormat
-import android.net.Uri
-import android.provider.Settings
-import android.view.Gravity
+import android.app.PictureInPictureParams
+import android.app.PendingIntent
+import android.app.RemoteAction
+import android.content.res.Configuration
+import android.graphics.drawable.Icon
+import android.util.Rational
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -15,7 +17,6 @@ import android.webkit.WebChromeClient
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -33,7 +34,7 @@ class MainActivity : Activity() {
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
         const val DIRECTORY_REQUEST = 1003
-        const val PIP_OVERLAY_SCRIPT = """
+        const val ENTER_PIP_SCRIPT = """
             (() => {
               const player = document.querySelector('.ftVideoPlayer');
               if (!player) return;
@@ -51,17 +52,18 @@ class MainActivity : Activity() {
                 node = node.parentElement;
               }
               window.__ftPipStyles.push([player, player.getAttribute('style')]);
-              player.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important;overflow:hidden!important;';
+              player.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important;overflow:hidden!important;background:#000!important;';
               const video = player.querySelector('video');
               if (video) {
+                for (const sibling of player.children) {
+                  if (sibling !== video) {
+                    window.__ftPipStyles.push([sibling, sibling.getAttribute('style')]);
+                    sibling.style.display = 'none';
+                  }
+                }
                 window.__ftPipStyles.push([video, video.getAttribute('style')]);
-                video.style.cssText += ';position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;';
+                video.style.cssText += ';position:fixed!important;inset:0!important;left:-12.5%!important;width:125%!important;height:100vh!important;object-fit:cover!important;';
               }
-              for (const controls of player.querySelectorAll('.shaka-controls-container')) {
-                window.__ftPipStyles.push([controls, controls.getAttribute('style')]);
-                controls.style.cssText += ';opacity:1!important;visibility:visible!important;';
-              }
-              video?.ui?.getControls()?.show();
               window.__ftRestorePictureInPicture = () => {
                 for (const [element, style] of window.__ftPipStyles || []) {
                   if (style === null) element.removeAttribute('style');
@@ -71,6 +73,7 @@ class MainActivity : Activity() {
               };
             })();
         """
+        const val EXIT_PIP_SCRIPT = "window.__ftRestorePictureInPicture?.()"
     }
 
     private lateinit var webView: WebView
@@ -79,8 +82,6 @@ class MainActivity : Activity() {
     private var pendingDeepLink: Intent? = null
     private var reloadSmokePending = false
     private var webAppReady = false
-    private var pipOverlayActive = false
-    private var pipOverlayLayoutParams: ViewGroup.LayoutParams? = null
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -207,146 +208,75 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         Log.i("FreeTubeLifecycle", "onPause")
-        webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
+        if (!isInPictureInPictureMode) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (pipOverlayActive) exitPictureInPictureOverlay()
         Log.i("FreeTubeLifecycle", "onResume")
-        webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
+        if (!isInPictureInPictureMode) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
+        }
     }
 
-    fun enterPictureInPictureOverlay(): Boolean {
-        if (!Settings.canDrawOverlays(this)) {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            return false
-        }
-        if (pipOverlayActive) return false
-
-        webView.evaluateJavascript(PIP_OVERLAY_SCRIPT, null)
-        pipOverlayLayoutParams = webView.layoutParams
-        swipeRefresh.removeView(webView)
-        val metrics = resources.displayMetrics
-        val width = (metrics.widthPixels * 0.806f).toInt()
-        val height = width * 9 / 16
-        val params = WindowManager.LayoutParams(
-            width,
-            height,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = (metrics.widthPixels - width) / 2
-            y = (metrics.heightPixels * 0.125f).toInt()
-        }
-        getSystemService(WindowManager::class.java).addView(webView, params)
-        webView.postDelayed({
-            webView.evaluateJavascript(
-                "(() => { const player = document.querySelector('.ftVideoPlayer'); const video = player?.querySelector('video'); if (player && video) { player.style.setProperty('width', '${width}px', 'important'); player.style.setProperty('height', '${height}px', 'important'); player.style.setProperty('transform', 'scaleX(1.25)', 'important'); player.style.setProperty('transform-origin', 'center', 'important'); video.style.setProperty('position', 'absolute', 'important'); video.style.setProperty('top', '0', 'important'); video.style.setProperty('left', '-12.5%', 'important'); video.style.setProperty('width', '125%', 'important'); video.style.setProperty('height', '100%', 'important'); video.style.setProperty('object-fit', 'cover', 'important'); } })()",
-                null
-            )
-        }, 100)
-        var overlayAspectRatio = width.toFloat() / height
-        var dragging = false
-        var pinching = false
-        var downRawX = 0f
-        var downRawY = 0f
-        var initialSpan = 0f
-        var initialWidth = width
-        var initialCenterX = params.x + width / 2
-        var initialCenterY = params.y + height / 2
-        val downX = params.x
-        val downY = params.y
-        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
-        fun pointerSpan(event: MotionEvent): Float {
-            return kotlin.math.hypot(
-                event.getX(0) - event.getX(1),
-                event.getY(0) - event.getY(1)
-            )
-        }
-        webView.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    dragging = false
-                    pinching = false
-                    downRawX = event.rawX
-                    downRawY = event.rawY
-                    false
-                }
-                MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (event.pointerCount >= 2) {
-                        pinching = true
-                        initialSpan = pointerSpan(event)
-                        initialWidth = params.width
-                        initialCenterX = params.x + params.width / 2
-                        initialCenterY = params.y + params.height / 2
-                    }
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (pinching && event.pointerCount >= 2) {
-                        val scale = pointerSpan(event) / initialSpan
-                        val targetWidth = (initialWidth * scale).toInt()
-                            .coerceIn(280, metrics.widthPixels)
-                        val newWidth = if (kotlin.math.abs(targetWidth - params.width) <= 1) {
-                            targetWidth
-                        } else {
-                            params.width + ((targetWidth - params.width) * 0.45f).toInt()
-                        }
-                        val newHeight = (newWidth / overlayAspectRatio).toInt()
-                        params.width = newWidth
-                        params.height = newHeight
-                        params.x = (initialCenterX - newWidth / 2).coerceIn(0, metrics.widthPixels - newWidth)
-                        params.y = (initialCenterY - newHeight / 2).coerceIn(0, metrics.heightPixels - newHeight)
-                        getSystemService(WindowManager::class.java).updateViewLayout(webView, params)
-                        true
-                    } else {
-                        if (!dragging &&
-                            (kotlin.math.abs(event.rawX - downRawX) > touchSlop ||
-                                kotlin.math.abs(event.rawY - downRawY) > touchSlop)
-                        ) dragging = true
-                        if (dragging) {
-                            params.x = (downX + (event.rawX - downRawX).toInt())
-                                .coerceIn(0, metrics.widthPixels - params.width)
-                            params.y = (downY + (event.rawY - downRawY).toInt())
-                                .coerceIn(0, metrics.heightPixels - params.height)
-                            getSystemService(WindowManager::class.java).updateViewLayout(webView, params)
-                        }
-                        dragging
-                    }
-                }
-                MotionEvent.ACTION_POINTER_UP -> {
-                    pinching = false
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    pinching = false
-                    dragging
-                }
-                else -> false
-            }
-        }
-        pipOverlayActive = true
-        webView.postDelayed({
-            webView.evaluateJavascript("document.querySelector('video.player')?.ui?.getControls()?.show()", null)
-        }, 100)
-        moveTaskToBack(true)
-        return true
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        swipeRefresh.isEnabled = !isInPictureInPictureMode
+        webView.evaluateJavascript(
+            if (isInPictureInPictureMode) ENTER_PIP_SCRIPT else EXIT_PIP_SCRIPT,
+            null
+        )
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('android-pip', { detail: { active: $isInPictureInPictureMode } }))",
+            null
+        )
     }
 
-    private fun exitPictureInPictureOverlay() {
-        if (!pipOverlayActive) return
-        val windowManager = getSystemService(WindowManager::class.java)
-        windowManager.removeViewImmediate(webView)
-        webView.setOnTouchListener(null)
-        swipeRefresh.addView(webView, pipOverlayLayoutParams)
-        pipOverlayLayoutParams = null
-        pipOverlayActive = false
-        webView.evaluateJavascript("window.__ftRestorePictureInPicture?.()", null)
+    fun enterPictureInPicture(isPlaying: Boolean): Boolean {
+        if (isInPictureInPictureMode) return false
+        updatePictureInPictureAction(isPlaying)
+        return enterPictureInPictureMode(
+            PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .setActions(pictureInPictureActions(isPlaying))
+                .build()
+        )
+    }
+
+    fun updatePictureInPictureAction(isPlaying: Boolean) {
+        if (isInPictureInPictureMode) {
+            setPictureInPictureParams(
+                PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .setActions(pictureInPictureActions(isPlaying))
+                    .build()
+            )
+        }
+    }
+
+    private fun pictureInPictureActions(isPlaying: Boolean): List<RemoteAction> {
+        val toggleIntent = PendingIntent.getBroadcast(
+            this,
+            3001,
+            Intent(this, MediaControlsReceiver::class.java).setAction("PIP_PLAY_PAUSE"),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return listOf(
+            RemoteAction(
+                Icon.createWithResource(
+                    this,
+                    if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+                ),
+                if (isPlaying) "Pause" else "Play",
+                if (isPlaying) "Pause video" else "Play video",
+                toggleIntent
+            )
+        )
     }
 
     override fun onDestroy() {

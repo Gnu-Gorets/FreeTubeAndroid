@@ -387,7 +387,15 @@ class AndroidBridge(
     }
 
     init {
-        MediaControlsReceiver.onAction = { dispatchMediaEvent(it) }
+        MediaControlsReceiver.onAction = {
+            if (it == "PIP_PLAY_PAUSE") {
+                val isPlaying = mediaSession.controller.playbackState?.state == PlaybackState.STATE_PLAYING
+                (activity as? MainActivity)?.updatePictureInPictureAction(!isPlaying)
+                dispatchMediaEvent(if (isPlaying) "pause" else "play")
+            } else {
+                dispatchMediaEvent(it)
+            }
+        }
         @Suppress("DEPRECATION")
         mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
         mediaSession.setCallback(object : MediaSession.Callback() {
@@ -542,9 +550,9 @@ class AndroidBridge(
     fun disableKeepScreenOn() { activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
 
     @JavascriptInterface
-    fun enterPictureInPicture(): Boolean {
+    fun enterPictureInPicture(isPlaying: Boolean): Boolean {
         val mainActivity = activity as? MainActivity ?: return false
-        activity.runOnUiThread { mainActivity.enterPictureInPictureOverlay() }
+        activity.runOnUiThread { mainActivity.enterPictureInPicture(isPlaying) }
         return true
     }
 
@@ -613,6 +621,7 @@ class AndroidBridge(
             .setState(state, position, if (state == PlaybackState.STATE_PLAYING) 1f else 0f)
             .setActions(PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
             .build())
+        (activity as? MainActivity)?.updatePictureInPictureAction(state == PlaybackState.STATE_PLAYING)
         val notification = Notification.Builder(activity, "media_controls")
             .setSmallIcon(R.drawable.ic_media_notification_icon)
             .setContentTitle(mediaTitle).setContentText(mediaArtist)

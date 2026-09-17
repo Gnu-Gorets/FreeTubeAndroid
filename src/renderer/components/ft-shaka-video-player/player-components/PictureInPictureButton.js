@@ -19,7 +19,7 @@ export class PictureInPictureButton extends shaka.ui.Element {
     this.parent.appendChild(this.button_)
 
     this.eventManager.listen(this.button_, 'click', () => {
-      if (this.controls.isOpaque()) window.Android?.enterPictureInPicture()
+      if (this.controls.isOpaque()) window.Android?.enterPictureInPicture(!document.querySelector('video.player')?.paused)
     })
     this.eventManager.listen(events, 'localeChanged', () => this.updateLocalizedStrings_())
     this.updateLocalizedStrings_()
