@@ -4,6 +4,10 @@ import android.app.Activity
 import android.graphics.Color
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.graphics.PixelFormat
+import android.net.Uri
+import android.provider.Settings
+import android.view.Gravity
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -28,6 +32,44 @@ class MainActivity : Activity() {
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
         const val DIRECTORY_REQUEST = 1003
+        const val PIP_OVERLAY_SCRIPT = """
+            (() => {
+              const player = document.querySelector('.ftVideoPlayer');
+              if (!player) return;
+              window.__ftPipStyles = [];
+              let node = player;
+              while (node && node !== document.body) {
+                for (const sibling of node.parentElement.children) {
+                  if (sibling !== node) {
+                    window.__ftPipStyles.push([sibling, sibling.getAttribute('style')]);
+                    sibling.style.display = 'none';
+                  }
+                }
+                window.__ftPipStyles.push([node, node.getAttribute('style')]);
+                node.style.display = node === player ? 'block' : 'contents';
+                node = node.parentElement;
+              }
+              window.__ftPipStyles.push([player, player.getAttribute('style')]);
+              player.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important;';
+              const video = player.querySelector('video');
+              if (video) {
+                window.__ftPipStyles.push([video, video.getAttribute('style')]);
+                video.style.cssText += ';width:100%!important;height:100%!important;object-fit:fill!important;';
+              }
+              for (const controls of player.querySelectorAll('.shaka-controls-container')) {
+                window.__ftPipStyles.push([controls, controls.getAttribute('style')]);
+                controls.style.cssText += ';opacity:1!important;visibility:visible!important;';
+              }
+              video?.ui?.getControls()?.show();
+              window.__ftRestorePictureInPicture = () => {
+                for (const [element, style] of window.__ftPipStyles || []) {
+                  if (style === null) element.removeAttribute('style');
+                  else element.setAttribute('style', style);
+                }
+                window.__ftPipStyles = null;
+              };
+            })();
+        """
     }
 
     private lateinit var webView: WebView
@@ -36,6 +78,8 @@ class MainActivity : Activity() {
     private var pendingDeepLink: Intent? = null
     private var reloadSmokePending = false
     private var webAppReady = false
+    private var pipOverlayActive = false
+    private var pipOverlayLayoutParams: ViewGroup.LayoutParams? = null
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -167,8 +211,51 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (pipOverlayActive) exitPictureInPictureOverlay()
         Log.i("FreeTubeLifecycle", "onResume")
         webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
+    }
+
+    fun enterPictureInPictureOverlay(): Boolean {
+        if (!Settings.canDrawOverlays(this)) {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            return false
+        }
+        if (pipOverlayActive) return false
+
+        webView.evaluateJavascript(PIP_OVERLAY_SCRIPT, null)
+        pipOverlayLayoutParams = webView.layoutParams
+        swipeRefresh.removeView(webView)
+        val metrics = resources.displayMetrics
+        val width = (metrics.widthPixels * 0.806f).toInt()
+        val height = width * 9 / 16
+        val params = WindowManager.LayoutParams(
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (metrics.widthPixels - width) / 2
+            y = (metrics.heightPixels * 0.125f).toInt()
+        }
+        getSystemService(WindowManager::class.java).addView(webView, params)
+        pipOverlayActive = true
+        webView.postDelayed({
+            webView.evaluateJavascript("document.querySelector('video.player')?.ui?.getControls()?.show()", null)
+        }, 100)
+        return true
+    }
+
+    private fun exitPictureInPictureOverlay() {
+        if (!pipOverlayActive) return
+        val windowManager = getSystemService(WindowManager::class.java)
+        windowManager.removeViewImmediate(webView)
+        swipeRefresh.addView(webView, pipOverlayLayoutParams)
+        pipOverlayLayoutParams = null
+        pipOverlayActive = false
+        webView.evaluateJavascript("window.__ftRestorePictureInPicture?.()", null)
     }
 
     override fun onDestroy() {
