@@ -51,11 +51,11 @@ class MainActivity : Activity() {
                 node = node.parentElement;
               }
               window.__ftPipStyles.push([player, player.getAttribute('style')]);
-              player.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important;';
+              player.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important;overflow:hidden!important;';
               const video = player.querySelector('video');
               if (video) {
                 window.__ftPipStyles.push([video, video.getAttribute('style')]);
-                video.style.cssText += ';width:100%!important;height:100%!important;object-fit:fill!important;';
+                video.style.cssText += ';position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;';
               }
               for (const controls of player.querySelectorAll('.shaka-controls-container')) {
                 window.__ftPipStyles.push([controls, controls.getAttribute('style')]);
@@ -244,6 +244,13 @@ class MainActivity : Activity() {
             y = (metrics.heightPixels * 0.125f).toInt()
         }
         getSystemService(WindowManager::class.java).addView(webView, params)
+        webView.postDelayed({
+            webView.evaluateJavascript(
+                "(() => { const player = document.querySelector('.ftVideoPlayer'); const video = player?.querySelector('video'); if (player && video) { player.style.setProperty('width', '${width}px', 'important'); player.style.setProperty('height', '${height}px', 'important'); player.style.setProperty('transform', 'scaleX(1.25)', 'important'); player.style.setProperty('transform-origin', 'center', 'important'); video.style.setProperty('position', 'absolute', 'important'); video.style.setProperty('top', '0', 'important'); video.style.setProperty('left', '-12.5%', 'important'); video.style.setProperty('width', '125%', 'important'); video.style.setProperty('height', '100%', 'important'); video.style.setProperty('object-fit', 'cover', 'important'); } })()",
+                null
+            )
+        }, 100)
+        var overlayAspectRatio = width.toFloat() / height
         var dragging = false
         var pinching = false
         var downRawX = 0f
@@ -290,7 +297,7 @@ class MainActivity : Activity() {
                         } else {
                             params.width + ((targetWidth - params.width) * 0.45f).toInt()
                         }
-                        val newHeight = newWidth * 9 / 16
+                        val newHeight = (newWidth / overlayAspectRatio).toInt()
                         params.width = newWidth
                         params.height = newHeight
                         params.x = (initialCenterX - newWidth / 2).coerceIn(0, metrics.widthPixels - newWidth)
