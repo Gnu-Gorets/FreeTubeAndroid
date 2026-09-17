@@ -607,6 +607,13 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun enterPictureInPicture(isPlaying: Boolean): Boolean {
+        val mainActivity = activity as? MainActivity ?: return false
+        activity.runOnUiThread { mainActivity.enterPictureInPicture(isPlaying) }
+        return true
+    }
+
+    @JavascriptInterface
     fun restart() { activity.runOnUiThread { activity.recreate() } }
 
     @JavascriptInterface
