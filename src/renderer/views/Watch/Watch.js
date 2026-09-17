@@ -792,7 +792,7 @@ export default defineComponent({
               result.streaming_data.adaptive_formats[0]?.cipher
             ) {
               try {
-                this.manifestSrc = await this.createLocalDashManifest(result, true)
+                this.manifestSrc = await this.createLocalDashManifest(result, true, poToken)
                 this.manifestMimeType = MANIFEST_TYPE_DASH
                 useRemoteManifest = false
               } catch (error) {
@@ -969,7 +969,6 @@ export default defineComponent({
             })
 
             if (
-              !hasDirectAdaptiveFormats &&
               videoInfo.info.streaming_data?.server_abr_streaming_url &&
               videoInfo.info.player_config.media_common_config.media_ustreamer_request_config
             ) {
@@ -996,7 +995,7 @@ export default defineComponent({
               result.streaming_data.adaptive_formats[0]?.cipher
             ) {
               console.warn('[Local playback] selecting DASH')
-              this.manifestSrc = await this.createLocalDashManifest(result)
+              this.manifestSrc = await this.createLocalDashManifest(result, false, poToken)
               this.manifestMimeType = MANIFEST_TYPE_DASH
             } else {
               this.manifestSrc = null
@@ -1726,8 +1725,12 @@ export default defineComponent({
      * @param {import('youtubei.js').YT.VideoInfo} videoInfo
      * @param {boolean} includeThumbnails
      */
-    createLocalDashManifest: async function (videoInfo, includeThumbnails = false) {
+    createLocalDashManifest: async function (videoInfo, includeThumbnails = false, poToken) {
       const xmlData = await videoInfo.toDash({
+        url_transformer: (url) => {
+          if (poToken) url.searchParams.set('pot', poToken)
+          return url
+        },
         manifest_options: {
           include_thumbnails: includeThumbnails,
         },
