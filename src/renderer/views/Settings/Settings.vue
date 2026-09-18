@@ -120,7 +120,7 @@ const settingsComponentsData = computed(() => {
       icon: ['fas', 'circle-play'],
       component: PlayerSettings
     },
-    ...(process.env.IS_ELECTRON || process.env.IS_ANDROID
+    ...(process.env.IS_ELECTRON
       ? [{
           type: 'external-player',
           title: t('Settings.External Player Settings.External Player Settings'),

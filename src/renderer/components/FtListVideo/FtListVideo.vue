@@ -769,7 +769,7 @@ const hideVideoViews = computed(() => store.getters.getHideVideoViews)
 const addWatchedStyle = computed(() => historyEntryExists.value && !inHistory.value)
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => process.env.IS_ANDROID && store.getters.getExternalPlayer !== ''
+const externalPlayer = computed(() => process.env.IS_ANDROID
   ? t('Settings.External Player Settings.External Player')
   : store.getters.getExternalPlayer)
 
@@ -1007,7 +1007,6 @@ function handleExternalPlayer() {
 
   const payload = {
     videoId: id.value,
-    externalPlayer: store.getters.getExternalPlayer,
     playlistId: playlistIdFinal.value,
     startTime: watchProgress.value,
     playbackRate: defaultPlayback.value,

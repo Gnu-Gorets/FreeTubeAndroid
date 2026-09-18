@@ -263,7 +263,7 @@ async function enableQuickBookmarkForThisPlaylist() {
 }
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => process.env.IS_ANDROID && store.getters.getExternalPlayer !== ''
+const externalPlayer = computed(() => process.env.IS_ANDROID
   ? t('Settings.External Player Settings.External Player')
   : store.getters.getExternalPlayer)
 
@@ -275,7 +275,6 @@ const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
 function handleExternalPlayer() {
   openExternalPlayer({
     playlistId: playlistId,
-    externalPlayer: store.getters.getExternalPlayer,
     playbackRate: defaultPlayback.value,
   })
 }

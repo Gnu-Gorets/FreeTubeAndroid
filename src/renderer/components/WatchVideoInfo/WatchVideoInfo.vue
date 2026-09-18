@@ -336,7 +336,7 @@ const rememberHistory = computed(() => store.getters.getRememberHistory)
 const historyEntryExists = computed(() => store.getters.getHistoryCacheById[props.id] !== undefined)
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => process.env.IS_ANDROID && store.getters.getExternalPlayer !== ''
+const externalPlayer = computed(() => process.env.IS_ANDROID
   ? t('Settings.External Player Settings.External Player')
   : store.getters.getExternalPlayer)
 
@@ -353,7 +353,6 @@ function handleExternalPlayer() {
     payload = {
       videoId: props.id,
       mediaUrl: props.getMediaUrl(),
-      externalPlayer: store.getters.getExternalPlayer,
       startTime: props.getTimestamp(),
       playbackRate: defaultPlayback.value,
     }
@@ -363,7 +362,6 @@ function handleExternalPlayer() {
     payload = {
       videoId: props.id,
       mediaUrl: props.getMediaUrl(),
-      externalPlayer: store.getters.getExternalPlayer,
       playlistId: props.playlistId,
       startTime: props.getTimestamp(),
       playbackRate: defaultPlayback.value,

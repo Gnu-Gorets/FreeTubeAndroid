@@ -2,74 +2,61 @@
   <FtSettingsSection
     :title="$t('Settings.External Player Settings.External Player Settings')"
   >
-    <FtFlexBox v-if="USING_ANDROID">
+    <FtFlexBox>
       <FtSelect
         :placeholder="$t('Settings.External Player Settings.External Player')"
         :value="externalPlayer"
-        :select-names="androidExternalPlayerNames"
-        :select-values="androidExternalPlayerValues"
+        :select-names="externalPlayerNames"
+        :select-values="externalPlayerValues"
         :tooltip="$t('Tooltips.External Player Settings.External Player')"
         :icon="['fas', 'external-link-alt']"
         @change="updateExternalPlayer"
       />
     </FtFlexBox>
-    <template v-else>
-      <FtFlexBox>
-        <FtSelect
-          :placeholder="$t('Settings.External Player Settings.External Player')"
-          :value="externalPlayer"
-          :select-names="externalPlayerNames"
-          :select-values="externalPlayerValues"
-          :tooltip="$t('Tooltips.External Player Settings.External Player')"
-          :icon="['fas', 'external-link-alt']"
-          @change="updateExternalPlayer"
-        />
-      </FtFlexBox>
-      <FtFlexBox>
-        <FtToggleSwitch
-          :label="$t('Settings.External Player Settings.Ignore Unsupported Action Warnings')"
-          :default-value="externalPlayerIgnoreWarnings"
-          :disabled="externalPlayer === ''"
-          :compact="true"
-          :tooltip="$t('Tooltips.External Player Settings.Ignore Warnings')"
-          @change="updateExternalPlayerIgnoreWarnings"
-        />
-        <FtToggleSwitch
-          :label="$t('Settings.External Player Settings.Ignore Default Arguments')"
-          :default-value="externalPlayerIgnoreDefaultArgs"
-          :disabled="externalPlayer === ''"
-          :compact="true"
-          :tooltip="$t('Tooltips.External Player Settings.Ignore Default Arguments')"
-          @change="updateExternalPlayerIgnoreDefaultArgs"
-        />
-      </FtFlexBox>
-      <template
-        v-if="externalPlayer !== ''"
+    <FtFlexBox>
+      <FtToggleSwitch
+        :label="$t('Settings.External Player Settings.Ignore Unsupported Action Warnings')"
+        :default-value="externalPlayerIgnoreWarnings"
+        :disabled="externalPlayer === ''"
+        :compact="true"
+        :tooltip="$t('Tooltips.External Player Settings.Ignore Warnings')"
+        @change="updateExternalPlayerIgnoreWarnings"
+      />
+      <FtToggleSwitch
+        :label="$t('Settings.External Player Settings.Ignore Default Arguments')"
+        :default-value="externalPlayerIgnoreDefaultArgs"
+        :disabled="externalPlayer === ''"
+        :compact="true"
+        :tooltip="$t('Tooltips.External Player Settings.Ignore Default Arguments')"
+        @change="updateExternalPlayerIgnoreDefaultArgs"
+      />
+    </FtFlexBox>
+    <template
+      v-if="externalPlayer !== ''"
+    >
+      <FtFlexBox
+        class="settingsFlexStart460px"
       >
-        <FtFlexBox
-          class="settingsFlexStart460px"
-        >
-          <FtInput
-            :placeholder="$t('Settings.External Player Settings.Custom External Player Executable')"
-            :show-action-button="false"
-            :show-label="true"
-            :value="externalPlayerExecutable"
-            :tooltip="$t('Tooltips.External Player Settings.Custom External Player Executable')"
-            @input="updateExternalPlayerExecutable"
-          />
-        </FtFlexBox>
-        <FtFlexBox>
-          <FtInputTags
-            :label="$t('Settings.External Player Settings.Custom External Player Arguments')"
-            :tag-name-placeholder="$t('Settings.External Player Settings.Custom External Player Arguments')"
-            :tag-list="externalPlayerCustomArgs"
-            :tooltip="externalPlayerCustomArgsTooltip"
-            :show-tags="showAddedExternalPlayerCustomArgs"
-            @change="handleExternalPlayerCustomArgs"
-            @toggle-show-tags="handleAddedExternalPayerCustomArgs"
-          />
-        </FtFlexBox>
-      </template>
+        <FtInput
+          :placeholder="$t('Settings.External Player Settings.Custom External Player Executable')"
+          :show-action-button="false"
+          :show-label="true"
+          :value="externalPlayerExecutable"
+          :tooltip="$t('Tooltips.External Player Settings.Custom External Player Executable')"
+          @input="updateExternalPlayerExecutable"
+        />
+      </FtFlexBox>
+      <FtFlexBox>
+        <FtInputTags
+          :label="$t('Settings.External Player Settings.Custom External Player Arguments')"
+          :tag-name-placeholder="$t('Settings.External Player Settings.Custom External Player Arguments')"
+          :tag-list="externalPlayerCustomArgs"
+          :tooltip="externalPlayerCustomArgsTooltip"
+          :show-tags="showAddedExternalPlayerCustomArgs"
+          @change="handleExternalPlayerCustomArgs"
+          @toggle-show-tags="handleAddedExternalPayerCustomArgs"
+        />
+      </FtFlexBox>
     </template>
   </FtSettingsSection>
 </template>
@@ -88,33 +75,9 @@ import FtInputTags from './FtInputTags/FtInputTags.vue'
 import store from '../store/index'
 
 const { t } = useI18n()
-const USING_ANDROID = !!process.env.IS_ANDROID
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => store.getters.getExternalPlayer === 'android'
-  ? ''
-  : store.getters.getExternalPlayer)
-
-const androidExternalPlayers = computed(() => {
-  if (!USING_ANDROID || typeof window.Android?.getExternalPlayers !== 'function') return []
-
-  try {
-    return JSON.parse(window.Android.getExternalPlayers())
-  } catch (error) {
-    console.error('Failed to load Android external players', error)
-    return []
-  }
-})
-
-const androidExternalPlayerNames = computed(() => [
-  t('Settings.External Player Settings.Players.None.Name'),
-  ...androidExternalPlayers.value.map(player => player.name)
-])
-
-const androidExternalPlayerValues = computed(() => [
-  '',
-  ...androidExternalPlayers.value.map(player => player.packageName)
-])
+const externalPlayer = computed(() => store.getters.getExternalPlayer)
 
 /** @type {import('vue').ComputedRef<string[]>} */
 const externalPlayerNames = computed(() => {
