@@ -621,8 +621,15 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
+        val requestId = UUID.randomUUID().toString().take(8)
+        val startedAt = System.nanoTime()
+        fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
         val uri = Uri.parse(url)
-        if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return
+        Log.d("FreeTubeExternal", "[$requestId] bridge-start host=${uri.host} hasManifest=${manifestUrl != null} hasStreams=${streamsJson != null}")
+        if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
+            Log.w("FreeTubeExternal", "[$requestId] rejected invalid URL")
+            return
+        }
 
         val headers = try {
             val json = headersJson?.let(::JSONObject)
@@ -632,25 +639,24 @@ class AndroidBridge(
         }
         val manifestUri = manifestUrl?.let(Uri::parse)
         val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
-        val directUrl = streamsJson == null && !useManifest && uri.host in setOf("youtube.com", "www.youtube.com")
-        val playerUrl = if (directUrl) {
-            url
-        } else {
-            streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
-                ?: registerExternalStream(
-                    if (useManifest) manifestUrl!! else url,
-                    headers,
-                    useManifest,
-                    maxQuality
-                )
-        }
+        val relayUrl = streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
+            ?: registerExternalStream(
+                if (useManifest) manifestUrl!! else url,
+                headers,
+                useManifest,
+                maxQuality
+            )
+        Log.d("FreeTubeExternal", "[$requestId] relay-registered elapsedMs=${elapsedMs()} useManifest=$useManifest")
         activity.runOnUiThread {
+            Log.d("FreeTubeExternal", "[$requestId] chooser-start elapsedMs=${elapsedMs()}")
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(Uri.parse(playerUrl), if (useManifest) "application/dash+xml" else "video/*")
+                    setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
                 }
                 activity.startActivity(Intent.createChooser(intent, null))
-            } catch (_: ActivityNotFoundException) {
+                Log.d("FreeTubeExternal", "[$requestId] chooser-dispatched elapsedMs=${elapsedMs()}")
+            } catch (error: ActivityNotFoundException) {
+                Log.w("FreeTubeExternal", "[$requestId] chooser-no-handler elapsedMs=${elapsedMs()}", error)
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
             }
         }
@@ -665,6 +671,7 @@ class AndroidBridge(
     ): String {
         val token = UUID.randomUUID().toString()
         externalStreams[token] = ExternalStream(url, headers, isManifest, maxHeight, manifestBody)
+        Log.d("FreeTubeExternal", "relay-register token=${token.take(8)} isManifest=$isManifest hasBody=${manifestBody != null}")
 
         synchronized(externalStreams) {
             if (externalRelayServer == null) {
@@ -763,6 +770,7 @@ class AndroidBridge(
     }
 
     private fun relayExternalStream(socket: Socket) {
+        val startedAt = System.nanoTime()
         socket.use { client ->
             client.soTimeout = 30_000
             val reader = client.getInputStream().bufferedReader()
@@ -778,7 +786,11 @@ class AndroidBridge(
             }
 
             val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/') ?: return
-            val stream = externalStreams[token] ?: return
+            val stream = externalStreams[token] ?: run {
+                Log.w("FreeTubeExternal", "relay-missing-token token=${token.take(8)}")
+                return
+            }
+            Log.d("FreeTubeExternal", "relay-request token=${token.take(8)} request=${requestLine.substringBefore(' ')} range=${requestHeaders["range"]}")
             if (stream.manifestBody != null) {
                 val body = stream.manifestBody
                 val response = "HTTP/1.1 200 OK\r\nContent-Type: application/dash+xml\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.UTF_8)
@@ -786,6 +798,7 @@ class AndroidBridge(
                     output.write(response)
                     output.write(body)
                 }
+                Log.d("FreeTubeExternal", "relay-manifest-response token=${token.take(8)} bytes=${body.size}")
                 return
             }
             val upstreamUrl = stream.url
@@ -830,6 +843,7 @@ class AndroidBridge(
                 val output = client.getOutputStream().bufferedWriter()
                 val upstreamStatus = connection.responseCode
                 val rangeStart = range?.substringAfter("bytes=")?.substringBefore('-')?.toLongOrNull()
+                Log.d("FreeTubeExternal", "relay-upstream token=${token.take(8)} status=$upstreamStatus contentType=${connection.contentType} length=${connection.contentLengthLong} elapsedMs=${(System.nanoTime() - startedAt) / 1_000_000}")
                 val contentLength = connection.contentLengthLong
                 val isPartialResponse = useYouTubeSegmentRequest && upstreamStatus < 400 && rangeStart != null && contentLength >= 0
                 val status = if (isPartialResponse) 206 else upstreamStatus
@@ -861,7 +875,8 @@ class AndroidBridge(
                         } else {
                             connection.inputStream.use { input -> input.copyTo(client.getOutputStream(), 64 * 1024) }
                         }
-                    } catch (_: java.io.IOException) {
+                    } catch (error: java.io.IOException) {
+                        Log.d("FreeTubeExternal", "relay-client-closed token=${token.take(8)} message=${error.message}")
                         // VLC may close a range request after receiving enough data.
                     }
                 }
