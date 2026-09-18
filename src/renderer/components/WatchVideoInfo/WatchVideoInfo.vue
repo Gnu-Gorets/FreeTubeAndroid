@@ -352,6 +352,7 @@ function handleExternalPlayer() {
   if (props.inUserPlaylist) {
     payload = {
       videoId: props.id,
+      title: props.title,
       mediaUrl: props.getMediaUrl(),
       startTime: props.getTimestamp(),
       playbackRate: defaultPlayback.value,
@@ -361,6 +362,7 @@ function handleExternalPlayer() {
 
     payload = {
       videoId: props.id,
+      title: props.title,
       mediaUrl: props.getMediaUrl(),
       playlistId: props.playlistId,
       startTime: props.getTimestamp(),

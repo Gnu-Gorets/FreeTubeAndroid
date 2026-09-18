@@ -620,7 +620,7 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
+    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?, title: String?) {
         val requestId = UUID.randomUUID().toString().take(8)
         val startedAt = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
@@ -652,6 +652,7 @@ class AndroidBridge(
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
+                    if (!title.isNullOrBlank()) putExtra("title", title)
                 }
                 activity.startActivity(Intent.createChooser(intent, null))
                 Log.d("FreeTubeExternal", "[$requestId] chooser-dispatched elapsedMs=${elapsedMs()}")

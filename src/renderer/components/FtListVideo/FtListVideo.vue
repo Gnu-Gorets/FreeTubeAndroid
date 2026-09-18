@@ -1088,6 +1088,7 @@ async function handleExternalPlayer() {
 
     openExternalPlayer({
       videoId: id.value,
+      title: displayTitle.value,
       mediaUrl,
       manifestUrl,
       externalStreams,
