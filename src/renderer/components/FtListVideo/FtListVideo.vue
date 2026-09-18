@@ -1008,7 +1008,7 @@ function toggleDeArrow() {
 async function handleExternalPlayer() {
   const requestId = crypto.randomUUID().slice(0, 8)
   const startedAt = performance.now()
-  const log = (message, data = '') => console.warn(`[ExternalPlayer:${requestId}] ${message}`, data)
+  const log = (message, data = '') => console.warn(`[ExternalPlayer:${requestId}] ${message}`, typeof data === 'string' ? data : JSON.stringify(data))
 
   log('tap', id.value)
   emit('pause-player')

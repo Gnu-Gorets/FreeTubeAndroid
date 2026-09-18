@@ -583,7 +583,27 @@ export function getOriginalVideoLanguage(info) {
   return originalFormat?.language ?? formats.find(format => format.language)?.language
 }
 
+const localVideoInfoCache = new Map()
+const LOCAL_VIDEO_INFO_CACHE_TTL_MS = 5 * 60 * 1000
+
 export async function getLocalVideoInfo(id) {
+  const now = Date.now()
+  const cached = localVideoInfoCache.get(id)
+  if (cached && now - cached.createdAt < LOCAL_VIDEO_INFO_CACHE_TTL_MS) {
+    return await cached.promise
+  }
+
+  const promise = getLocalVideoInfoUncached(id)
+  localVideoInfoCache.set(id, { createdAt: now, promise })
+  try {
+    return await promise
+  } catch (error) {
+    if (localVideoInfoCache.get(id)?.promise === promise) localVideoInfoCache.delete(id)
+    throw error
+  }
+}
+
+async function getLocalVideoInfoUncached(id) {
   let responseTime
   let totalAdTimeMilliseconds = 0
 
