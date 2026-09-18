@@ -11,7 +11,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import SubscriptionsTabUi from './SubscriptionsTabUi/SubscriptionsTabUi.vue'
@@ -38,8 +38,6 @@ const attemptedFetch = ref(false)
 const lastRemoteRefreshSuccessTimestamp = ref(null)
 
 let alreadyLoadedRemotely = false
-const feedStartedAt = performance.now()
-const feedLog = (stage, data = {}) => console.warn(`[SubscriptionsFeed] ${stage}`, JSON.stringify(data))
 
 /** @type {import('vue').ComputedRef<'local' | 'invidious'>} */
 const backendPreference = computed(() => store.getters.getBackendPreference)
@@ -119,11 +117,6 @@ watch(activeSubscriptionList, () => {
 
 if (!subscriptionCacheReady.value) {
   watch(subscriptionCacheReady, (ready) => {
-    feedLog('cache-ready', {
-      ready,
-      elapsedMs: Math.round(performance.now() - feedStartedAt),
-      alreadyLoadedRemotely
-    })
     if (ready && videoCacheForAllActiveProfileChannelsPresent.value) {
       loadVideosFromCacheForAllActiveProfileChannels()
     } else if (!alreadyLoadedRemotely) {
@@ -133,18 +126,10 @@ if (!subscriptionCacheReady.value) {
 }
 
 onMounted(() => {
-  feedLog('mounted', { elapsedMs: Math.round(performance.now() - feedStartedAt) })
   loadVideosFromRemoteFirstPerWindowSometimes()
 })
 
 function loadVideosFromRemoteFirstPerWindowSometimes() {
-  feedLog('load-start', {
-    cacheReady: subscriptionCacheReady.value,
-    cacheComplete: videoCacheForAllActiveProfileChannelsPresent.value,
-    subscriptions: activeSubscriptionList.value.length,
-    autoFetch: fetchSubscriptionsAutomatically.value,
-    firstAutoFetchRun: store.getters.getSubscriptionForVideosFirstAutoFetchRun
-  })
   if (
     !fetchSubscriptionsAutomatically.value ||
     // Only auto fetch once per window
@@ -161,10 +146,7 @@ function loadVideosFromRemoteFirstPerWindowSometimes() {
 
 function loadVideosFromCacheSometimes() {
   // Can only load reliably when cache ready
-  if (!subscriptionCacheReady.value) {
-    feedLog('cache-wait', { elapsedMs: Math.round(performance.now() - feedStartedAt) })
-    return
-  }
+  if (!subscriptionCacheReady.value) { return }
 
   // This method is called on view visible
   if (videoCacheForAllActiveProfileChannelsPresent.value) {
@@ -184,27 +166,17 @@ function loadVideosFromCacheSometimes() {
   isLoading.value = false
 }
 
-async function loadVideosFromCacheForAllActiveProfileChannels() {
-  const startedAt = performance.now()
+function loadVideosFromCacheForAllActiveProfileChannels() {
   const videoList_ = cacheEntriesForAllActiveProfileChannels.value.flatMap((cacheEntry) => {
     return cacheEntry.videos
   })
 
   videoList.value = updateVideoListAfterProcessing(videoList_)
   isLoading.value = false
-  await nextTick()
-  feedLog('cache-rendered', {
-    elapsedMs: Math.round(performance.now() - startedAt),
-    totalElapsedMs: Math.round(performance.now() - feedStartedAt),
-    channels: cacheEntriesForAllActiveProfileChannels.value.length,
-    videos: videoList_.length
-  })
 }
 
 async function loadVideosForSubscriptionsFromRemote() {
-  const startedAt = performance.now()
   if (activeSubscriptionList.value.length === 0) {
-    feedLog('remote-empty', { elapsedMs: Math.round(performance.now() - startedAt) })
     isLoading.value = false
     videoList.value = []
     return
@@ -215,12 +187,6 @@ async function loadVideosForSubscriptionsFromRemote() {
   isLoading.value = true
 
   const useRss = useRssFeeds.value
-  feedLog('remote-start', {
-    channels: channelsToLoadFromRemote.length,
-    backend: backendPreference.value,
-    rss: useRss,
-    elapsedMs: Math.round(performance.now() - startedAt)
-  })
 
   store.commit('setShowProgressBar', true)
   store.commit('setProgressBarPercentage', 0)
@@ -248,12 +214,6 @@ async function loadVideosForSubscriptionsFromRemote() {
     }
 
     channelCount++
-    feedLog('channel-done', {
-      completed: channelCount,
-      total: channelsToLoadFromRemote.length,
-      videos: videos?.length ?? 0,
-      elapsedMs: Math.round(performance.now() - startedAt)
-    })
     const percentageComplete = (channelCount / channelsToLoadFromRemote.length) * 100
     store.commit('setProgressBarPercentage', percentageComplete)
 
@@ -295,12 +255,6 @@ async function loadVideosForSubscriptionsFromRemote() {
 
   videoList.value = updateVideoListAfterProcessing(videoListFromRemote)
   isLoading.value = false
-  await nextTick()
-  feedLog('remote-rendered', {
-    elapsedMs: Math.round(performance.now() - startedAt),
-    totalElapsedMs: Math.round(performance.now() - feedStartedAt),
-    videos: videoListFromRemote.length
-  })
   store.commit('setShowProgressBar', false)
   lastRemoteRefreshSuccessTimestamp.value = Date.now()
 
