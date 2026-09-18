@@ -277,6 +277,12 @@ export async function openExternalLink(url) {
  */
 export function openExternalPlayer(payload) {
   if (process.env.IS_ANDROID && typeof window.Android?.openExternalPlayer === 'function') {
+    console.warn('[ExternalPlayer] bridge-entry', JSON.stringify({
+      hasVideoId: typeof payload.videoId === 'string',
+      hasMediaUrl: typeof payload.mediaUrl === 'string',
+      hasManifestUrl: typeof payload.manifestUrl === 'string',
+      hasExternalStreams: Boolean(payload.externalStreams)
+    }))
     const videoId = typeof payload.videoId === 'string' ? encodeURIComponent(payload.videoId) : null
     const playlistId = typeof payload.playlistId === 'string' ? encodeURIComponent(payload.playlistId) : null
 

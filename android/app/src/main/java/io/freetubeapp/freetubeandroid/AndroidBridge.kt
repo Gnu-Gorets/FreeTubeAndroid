@@ -625,7 +625,7 @@ class AndroidBridge(
         val startedAt = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
         val uri = Uri.parse(url)
-        Log.d("FreeTubeExternal", "[$requestId] bridge-start host=${uri.host} hasManifest=${manifestUrl != null} hasStreams=${streamsJson != null}")
+        Log.d("FreeTubeExternal", "[$requestId] bridge-start thread=${Thread.currentThread().name} host=${uri.host} hasManifest=${manifestUrl != null} hasStreams=${streamsJson != null} streamsBytes=${streamsJson?.length ?: 0}")
         if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
             Log.w("FreeTubeExternal", "[$requestId] rejected invalid URL")
             return
@@ -637,8 +637,10 @@ class AndroidBridge(
         } catch (_: Exception) {
             emptyMap()
         }
+        Log.d("FreeTubeExternal", "[$requestId] headers-parsed elapsedMs=${elapsedMs()} count=${headers.size}")
         val manifestUri = manifestUrl?.let(Uri::parse)
         val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
+        Log.d("FreeTubeExternal", "[$requestId] relay-registration-start elapsedMs=${elapsedMs()} useManifest=$useManifest")
         val relayUrl = streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
             ?: registerExternalStream(
                 if (useManifest) manifestUrl!! else url,
@@ -654,6 +656,7 @@ class AndroidBridge(
                     setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
                     if (!title.isNullOrBlank()) putExtra("title", title)
                 }
+                Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
                 activity.startActivity(Intent.createChooser(intent, null))
                 Log.d("FreeTubeExternal", "[$requestId] chooser-dispatched elapsedMs=${elapsedMs()}")
             } catch (error: ActivityNotFoundException) {
