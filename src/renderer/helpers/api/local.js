@@ -785,7 +785,10 @@ export async function getLocalVideoInfo(id) {
   }
 
   if (info.streaming_data) {
-    await decipherFormats(info.streaming_data.formats, player)
+    await decipherFormats([
+      ...info.streaming_data.formats,
+      ...(info.streaming_data.adaptive_formats ?? [])
+    ], player)
 
     if (info.streaming_data.server_abr_streaming_url) {
       try {

@@ -320,6 +320,8 @@ import {
 } from '../../helpers/utils.js'
 import { deArrowData, deArrowThumbnail } from '../../helpers/sponsorblock.js'
 import { getLocalVideoInfo } from '../../helpers/api/local'
+import { getNetworkType } from '../../helpers/android/network'
+import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
 import { getOriginalVideoTitle } from '../../helpers/api/original-video-title.mjs'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
 
@@ -1015,8 +1017,23 @@ async function handleExternalPlayer() {
         ...(info.streaming_data?.formats ?? []),
         ...(info.streaming_data?.adaptive_formats ?? [])
       ]
-      mediaUrl = formats.find(format => typeof format.freeTubeUrl === 'string')?.freeTubeUrl ??
-        formats.find(format => typeof format.url === 'string')?.url ?? null
+      const targetQuality = getDefaultQualityForNetwork(
+        getNetworkType(),
+        parseInt(store.getters.getWifiDefaultQuality),
+        parseInt(store.getters.getMobileDefaultQuality),
+        720
+      )
+      const availableFormats = formats.filter(format => {
+        return typeof format.freeTubeUrl === 'string' || typeof format.url === 'string'
+      })
+      const suitableFormats = availableFormats.filter(format => (format.height ?? 0) <= targetQuality)
+      const selectedFormat = [...(suitableFormats.length ? suitableFormats : availableFormats)]
+        .sort((a, b) => {
+          const qualityDifference = (b.height ?? 0) - (a.height ?? 0)
+          if (qualityDifference !== 0) return qualityDifference
+          return formats.indexOf(a) - formats.indexOf(b)
+        })[0]
+      mediaUrl = selectedFormat?.freeTubeUrl ?? selectedFormat?.url ?? null
       if (clientInfo) {
         externalHeaders = {
           'X-Goog-Visitor-Id': clientInfo.visitorData,
