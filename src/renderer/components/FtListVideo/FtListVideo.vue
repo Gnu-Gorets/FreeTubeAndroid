@@ -1013,10 +1013,7 @@ async function handleExternalPlayer() {
     let externalHeaders = null
     try {
       const { info, clientInfo } = await getLocalVideoInfo(id.value)
-      const formats = [
-        ...(info.streaming_data?.formats ?? []),
-        ...(info.streaming_data?.adaptive_formats ?? [])
-      ]
+      const formats = info.streaming_data?.formats ?? []
       const targetQuality = getDefaultQualityForNetwork(
         getNetworkType(),
         parseInt(store.getters.getWifiDefaultQuality),
