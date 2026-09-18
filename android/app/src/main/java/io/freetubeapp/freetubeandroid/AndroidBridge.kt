@@ -632,17 +632,22 @@ class AndroidBridge(
         }
         val manifestUri = manifestUrl?.let(Uri::parse)
         val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
-        val relayUrl = streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
-            ?: registerExternalStream(
-                if (useManifest) manifestUrl!! else url,
-                headers,
-                useManifest,
-                maxQuality
-            )
+        val directUrl = streamsJson == null && !useManifest && uri.host in setOf("youtube.com", "www.youtube.com")
+        val playerUrl = if (directUrl) {
+            url
+        } else {
+            streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
+                ?: registerExternalStream(
+                    if (useManifest) manifestUrl!! else url,
+                    headers,
+                    useManifest,
+                    maxQuality
+                )
+        }
         activity.runOnUiThread {
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
+                    setDataAndType(Uri.parse(playerUrl), if (useManifest) "application/dash+xml" else "video/*")
                 }
                 activity.startActivity(Intent.createChooser(intent, null))
             } catch (_: ActivityNotFoundException) {
