@@ -1010,16 +1010,43 @@ async function handleExternalPlayer() {
 
   if (process.env.IS_ANDROID) {
     let mediaUrl = null
+    let manifestUrl = null
+    let externalStreams = null
+    let targetQuality = 720
     let externalHeaders = null
     try {
       const { info, clientInfo } = await getLocalVideoInfo(id.value)
       const formats = info.streaming_data?.formats ?? []
-      const targetQuality = getDefaultQualityForNetwork(
+      manifestUrl = info.streaming_data?.dash_manifest_url ?? null
+      targetQuality = getDefaultQualityForNetwork(
         getNetworkType(),
         parseInt(store.getters.getWifiDefaultQuality),
         parseInt(store.getters.getMobileDefaultQuality),
         720
       )
+      const adaptiveFormats = info.streaming_data?.adaptive_formats ?? []
+      const selectedVideo = adaptiveFormats
+        .filter(format => format.has_video && !format.has_audio && typeof format.freeTubeUrl === 'string' && (format.height ?? 0) <= targetQuality)
+        .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
+      const selectedAudio = adaptiveFormats
+        .filter(format => format.has_audio && !format.has_video && typeof format.freeTubeUrl === 'string')
+        .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]
+      if (selectedVideo && selectedAudio) {
+        externalStreams = {
+          videoUrl: selectedVideo.freeTubeUrl,
+          audioUrl: selectedAudio.freeTubeUrl,
+          videoWidth: selectedVideo.width,
+          videoHeight: selectedVideo.height,
+          videoBandwidth: selectedVideo.bitrate,
+          videoInitRange: selectedVideo.init_range,
+          videoIndexRange: selectedVideo.index_range,
+          audioBandwidth: selectedAudio.bitrate,
+          audioInitRange: selectedAudio.init_range,
+          audioIndexRange: selectedAudio.index_range,
+          audioSampleRate: selectedAudio.audio_sample_rate,
+          audioChannels: selectedAudio.audio_channels
+        }
+      }
       const availableFormats = formats.filter(format => {
         return typeof format.freeTubeUrl === 'string' || typeof format.url === 'string'
       })
@@ -1042,7 +1069,14 @@ async function handleExternalPlayer() {
       console.warn('Failed to resolve external player URL', error)
     }
 
-    openExternalPlayer({ videoId: id.value, mediaUrl, externalHeaders })
+    openExternalPlayer({
+      videoId: id.value,
+      mediaUrl,
+      manifestUrl,
+      externalStreams,
+      maxQuality: targetQuality,
+      externalHeaders
+    })
     return
   }
 

@@ -273,7 +273,7 @@ export async function openExternalLink(url) {
 
 /**
  * Opens video or playlist in Android external player or Electron external player.
- * @param {{ videoId?: string | null, mediaUrl?: string | null, externalHeaders?: Record<string, string> | null, playlistId?: string | null, startTime?: number | null, playbackRate?: number | null, playlistIndex?: number | null, playlistReverse?: boolean | null, playlistShuffle?: boolean | null, playlistLoop?: boolean | null }} payload
+ * @param {{ videoId?: string | null, mediaUrl?: string | null, manifestUrl?: string | null, externalHeaders?: Record<string, string> | null, externalStreams?: object | null, maxQuality?: number | null, playlistId?: string | null, startTime?: number | null, playbackRate?: number | null, playlistIndex?: number | null, playlistReverse?: boolean | null, playlistShuffle?: boolean | null, playlistLoop?: boolean | null }} payload
  */
 export function openExternalPlayer(payload) {
   if (process.env.IS_ANDROID && typeof window.Android?.openExternalPlayer === 'function') {
@@ -293,7 +293,13 @@ export function openExternalPlayer(payload) {
       url += `&t=${Math.floor(payload.startTime)}`
     }
 
-    window.Android.openExternalPlayer(url, payload.externalHeaders ? JSON.stringify(payload.externalHeaders) : null)
+    window.Android.openExternalPlayer(
+      url,
+      payload.externalHeaders ? JSON.stringify(payload.externalHeaders) : null,
+      payload.manifestUrl ?? null,
+      payload.maxQuality ?? null,
+      payload.externalStreams ? JSON.stringify(payload.externalStreams) : null
+    )
   } else if (process.env.IS_ELECTRON) {
     window.ftElectron.openInExternalPlayer(payload)
   }

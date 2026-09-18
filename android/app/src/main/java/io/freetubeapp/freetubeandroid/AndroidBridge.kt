@@ -54,7 +54,13 @@ class AndroidBridge(
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()
     private val externalRelayExecutor = Executors.newFixedThreadPool(4)
-    private data class ExternalStream(val url: String, val headers: Map<String, String>)
+    private data class ExternalStream(
+        val url: String,
+        val headers: Map<String, String>,
+        val isManifest: Boolean = false,
+        val maxHeight: Int? = null,
+        val manifestBody: ByteArray? = null
+    )
     private val externalStreams = ConcurrentHashMap<String, ExternalStream>()
     private var externalRelayServer: ServerSocket? = null
     private var pendingDirectoryRequest: String? = null
@@ -614,7 +620,7 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun openExternalPlayer(url: String, headersJson: String?) {
+    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
         val uri = Uri.parse(url)
         if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return
 
@@ -624,11 +630,19 @@ class AndroidBridge(
         } catch (_: Exception) {
             emptyMap()
         }
-        val relayUrl = registerExternalStream(url, headers)
+        val manifestUri = manifestUrl?.let(Uri::parse)
+        val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
+        val relayUrl = streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
+            ?: registerExternalStream(
+                if (useManifest) manifestUrl!! else url,
+                headers,
+                useManifest,
+                maxQuality
+            )
         activity.runOnUiThread {
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(Uri.parse(relayUrl), "video/*")
+                    setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
                 }
                 activity.startActivity(Intent.createChooser(intent, null))
             } catch (_: ActivityNotFoundException) {
@@ -637,9 +651,15 @@ class AndroidBridge(
         }
     }
 
-    private fun registerExternalStream(url: String, headers: Map<String, String>): String {
+    private fun registerExternalStream(
+        url: String,
+        headers: Map<String, String>,
+        isManifest: Boolean = false,
+        maxHeight: Int? = null,
+        manifestBody: ByteArray? = null
+    ): String {
         val token = UUID.randomUUID().toString()
-        externalStreams[token] = ExternalStream(url, headers)
+        externalStreams[token] = ExternalStream(url, headers, isManifest, maxHeight, manifestBody)
 
         synchronized(externalStreams) {
             if (externalRelayServer == null) {
@@ -661,6 +681,82 @@ class AndroidBridge(
         return "http://127.0.0.1:${externalRelayServer?.localPort}/$token"
     }
 
+    private fun registerExternalStreamsManifest(jsonText: String, headers: Map<String, String>, maxHeight: Int?): String {
+        val json = try { JSONObject(jsonText) } catch (_: Exception) { return registerExternalStream("", headers) }
+        val videoUrl = json.optString("videoUrl")
+        val audioUrl = json.optString("audioUrl")
+        if (!videoUrl.startsWith("http") || !audioUrl.startsWith("http")) return registerExternalStream("", headers)
+        val videoRelay = registerExternalStream(videoUrl, headers)
+        val audioRelay = registerExternalStream(audioUrl, headers)
+        val videoWidth = json.optInt("videoWidth")
+        val videoHeight = json.optInt("videoHeight")
+        fun readRange(name: String): Pair<Long, Long>? {
+            val range = json.optJSONObject(name) ?: return null
+            return range.optLong("start") to range.optLong("end")
+        }
+        fun rangeValue(range: Pair<Long, Long>?): String? = range?.let { "${it.first}-${it.second}" }
+        val videoBandwidth = json.optLong("videoBandwidth")
+        val videoInitRange = rangeValue(readRange("videoInitRange"))
+        val videoIndexRange = rangeValue(readRange("videoIndexRange"))
+        val audioBandwidth = json.optLong("audioBandwidth")
+        val audioInitRange = rangeValue(readRange("audioInitRange"))
+        val audioIndexRange = rangeValue(readRange("audioIndexRange"))
+        val sampleRate = json.optInt("audioSampleRate")
+        val channels = json.optInt("audioChannels")
+        val manifest = """<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT0S" minBufferTime="PT1.5S">
+  <Period>
+    <AdaptationSet mimeType="video/mp4" contentType="video" maxWidth="$videoWidth" maxHeight="${maxHeight ?: videoHeight}">
+      <Representation id="video" bandwidth="$videoBandwidth" width="$videoWidth" height="$videoHeight">
+        <BaseURL>$videoRelay</BaseURL>
+        <SegmentBase${videoIndexRange?.let { " indexRange=\"$it\"" } ?: ""}>
+          ${videoInitRange?.let { "<Initialization range=\"$it\"/>" } ?: ""}
+        </SegmentBase>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4" contentType="audio" audioSamplingRate="$sampleRate">
+      <Representation id="audio" bandwidth="$audioBandwidth" audioSamplingRate="$sampleRate">
+        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="$channels"/>
+        <BaseURL>$audioRelay</BaseURL>
+        <SegmentBase${audioIndexRange?.let { " indexRange=\"$it\"" } ?: ""}>
+          ${audioInitRange?.let { "<Initialization range=\"$it\"/>" } ?: ""}
+        </SegmentBase>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>""".toByteArray(Charsets.UTF_8)
+        return registerExternalStream("", headers, true, maxHeight, manifest)
+    }
+
+    private fun rewriteDashManifest(body: ByteArray, stream: ExternalStream): ByteArray {
+        var manifest = body.toString(Charsets.UTF_8)
+        stream.maxHeight?.let { maxHeight ->
+            val representation = Regex(
+                """<Representation\b[^>]*height="(\d+)"[^>]*>.*?</Representation>""",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+            )
+            manifest = representation.replace(manifest) { match ->
+                if (match.groupValues[1].toInt() > maxHeight) "" else match.value
+            }
+            val selfClosingRepresentation = Regex(
+                """<Representation\b[^>]*height="(\d+)"[^>]*/>""",
+                RegexOption.IGNORE_CASE
+            )
+            manifest = selfClosingRepresentation.replace(manifest) { match ->
+                if (match.groupValues[1].toInt() > maxHeight) "" else match.value
+            }
+        }
+
+        val mediaUrl = Regex("""https://[^<>"']+\.googlevideo\.com[^<>"']+""")
+        manifest = mediaUrl.replace(manifest) { match ->
+            registerExternalStream(
+                match.value.replace("&amp;", "&"),
+                stream.headers
+            )
+        }
+        return manifest.toByteArray(Charsets.UTF_8)
+    }
+
     private fun relayExternalStream(socket: Socket) {
         socket.use { client ->
             client.soTimeout = 30_000
@@ -678,6 +774,15 @@ class AndroidBridge(
 
             val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/') ?: return
             val stream = externalStreams[token] ?: return
+            if (stream.manifestBody != null) {
+                val body = stream.manifestBody
+                val response = "HTTP/1.1 200 OK\r\nContent-Type: application/dash+xml\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.UTF_8)
+                client.getOutputStream().use { output ->
+                    output.write(response)
+                    output.write(body)
+                }
+                return
+            }
             val upstreamUrl = stream.url
             val range = requestHeaders["range"]
             val isGoogleVideo = Uri.parse(upstreamUrl).host?.endsWith(".googlevideo.com") == true
@@ -724,10 +829,18 @@ class AndroidBridge(
                 val isPartialResponse = useYouTubeSegmentRequest && upstreamStatus < 400 && rangeStart != null && contentLength >= 0
                 val status = if (isPartialResponse) 206 else upstreamStatus
                 val totalLength = if (isPartialResponse) rangeStart!! + contentLength else null
-                Log.i("FreeTubeExternalRelay", "upstream status=$upstreamStatus response=$status method=${connection.requestMethod} host=${Uri.parse(upstreamUrl).host} headers=${stream.headers.keys}")
                 output.write("HTTP/1.1 $status ${if (status == 206) "Partial Content" else connection.responseMessage ?: "OK"}\r\n")
-                output.write("Content-Type: ${connection.contentType ?: "video/mp4"}\r\n")
-                connection.getHeaderField("Content-Length")?.let { length -> output.write("Content-Length: $length\r\n") }
+                val manifestBody = if (stream.isManifest && upstreamStatus < 400) {
+                    rewriteDashManifest(connection.inputStream.use { it.readBytes() }, stream)
+                } else {
+                    null
+                }
+                output.write("Content-Type: ${if (stream.isManifest) "application/dash+xml" else connection.contentType ?: "video/mp4"}\r\n")
+                if (manifestBody != null) {
+                    output.write("Content-Length: ${manifestBody.size}\r\n")
+                } else {
+                    connection.getHeaderField("Content-Length")?.let { length -> output.write("Content-Length: $length\r\n") }
+                }
                 if (isPartialResponse) {
                     output.write("Content-Range: bytes $rangeStart-${totalLength!! - 1}/$totalLength\r\n")
                 } else {
@@ -738,7 +851,11 @@ class AndroidBridge(
 
                 if (!requestLine.startsWith("HEAD ") && upstreamStatus < 400) {
                     try {
-                        connection.inputStream.use { input -> input.copyTo(client.getOutputStream(), 64 * 1024) }
+                        if (manifestBody != null) {
+                            client.getOutputStream().write(manifestBody)
+                        } else {
+                            connection.inputStream.use { input -> input.copyTo(client.getOutputStream(), 64 * 1024) }
+                        }
                     } catch (_: java.io.IOException) {
                         // VLC may close a range request after receiving enough data.
                     }
