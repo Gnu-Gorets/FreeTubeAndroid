@@ -13,6 +13,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -84,6 +85,7 @@ class MainActivity : Activity() {
     private var pendingDeepLink: Intent? = null
     private var reloadSmokePending = false
     private var webAppReady = false
+    private val activityStartedAt = SystemClock.elapsedRealtime()
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,6 +113,7 @@ class MainActivity : Activity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
+                Log.d("FreeTubeWebView", "page-started elapsedMs=${SystemClock.elapsedRealtime() - activityStartedAt}")
                 webAppReady = false
                 if (reloadSmokePending) {
                     reloadSmokePending = false
@@ -120,6 +123,7 @@ class MainActivity : Activity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                Log.d("FreeTubeWebView", "page-finished elapsedMs=${SystemClock.elapsedRealtime() - activityStartedAt}")
                 swipeRefresh.isRefreshing = false
             }
         }
@@ -179,6 +183,7 @@ class MainActivity : Activity() {
     }
 
     fun onWebAppReady() {
+        Log.d("FreeTubeWebView", "app-ready elapsedMs=${SystemClock.elapsedRealtime() - activityStartedAt}")
         runOnUiThread {
             webAppReady = true
             pendingDeepLink?.let {
