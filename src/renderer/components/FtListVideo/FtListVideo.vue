@@ -319,6 +319,7 @@ import {
   debounce
 } from '../../helpers/utils.js'
 import { deArrowData, deArrowThumbnail } from '../../helpers/sponsorblock.js'
+import { getLocalVideoInfo } from '../../helpers/api/local'
 import { getOriginalVideoTitle } from '../../helpers/api/original-video-title.mjs'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
 
@@ -1002,8 +1003,34 @@ function toggleDeArrow() {
   }
 }
 
-function handleExternalPlayer() {
+async function handleExternalPlayer() {
   emit('pause-player')
+
+  if (process.env.IS_ANDROID) {
+    let mediaUrl = null
+    let externalHeaders = null
+    try {
+      const { info, clientInfo } = await getLocalVideoInfo(id.value)
+      const formats = [
+        ...(info.streaming_data?.formats ?? []),
+        ...(info.streaming_data?.adaptive_formats ?? [])
+      ]
+      mediaUrl = formats.find(format => typeof format.freeTubeUrl === 'string')?.freeTubeUrl ??
+        formats.find(format => typeof format.url === 'string')?.url ?? null
+      if (clientInfo) {
+        externalHeaders = {
+          'X-Goog-Visitor-Id': clientInfo.visitorData,
+          'X-YouTube-Client-Name': String(clientInfo.clientName),
+          'X-YouTube-Client-Version': clientInfo.clientVersion
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to resolve external player URL', error)
+    }
+
+    openExternalPlayer({ videoId: id.value, mediaUrl, externalHeaders })
+    return
+  }
 
   const payload = {
     videoId: id.value,

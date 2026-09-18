@@ -29,12 +29,18 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.CookieManager
 import android.util.Log
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -47,12 +53,17 @@ class AndroidBridge(
 ) {
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()
+    private val externalRelayExecutor = Executors.newFixedThreadPool(4)
+    private data class ExternalStream(val url: String, val headers: Map<String, String>)
+    private val externalStreams = ConcurrentHashMap<String, ExternalStream>()
+    private var externalRelayServer: ServerSocket? = null
     private var pendingDirectoryRequest: String? = null
     private val dataDirectory: java.io.File
         get() = java.io.File(activity.filesDir, "data").also { it.mkdirs() }
     private val scripts = ConcurrentHashMap<String, String>()
     private var sigWebView: WebView? = null
     private var sigReady = false
+    private val externalUserAgent = mainWebView.settings.userAgentString
     private val notificationManager = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val mediaSession = MediaSession(activity, "FreeTubeAndroid")
     private var mediaTitle = "FreeTube Android"
@@ -603,18 +614,137 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun openExternalPlayer(url: String) {
+    fun openExternalPlayer(url: String, headersJson: String?) {
         val uri = Uri.parse(url)
         if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return
 
+        val headers = try {
+            val json = headersJson?.let(::JSONObject)
+            json?.keys()?.asSequence()?.associateWith { json.getString(it) } ?: emptyMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+        val relayUrl = registerExternalStream(url, headers)
         activity.runOnUiThread {
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "video/*")
+                    setDataAndType(Uri.parse(relayUrl), "video/*")
                 }
                 activity.startActivity(Intent.createChooser(intent, null))
             } catch (_: ActivityNotFoundException) {
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun registerExternalStream(url: String, headers: Map<String, String>): String {
+        val token = UUID.randomUUID().toString()
+        externalStreams[token] = ExternalStream(url, headers)
+
+        synchronized(externalStreams) {
+            if (externalRelayServer == null) {
+                externalRelayServer = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+                val server = externalRelayServer ?: error("Unable to start external player relay")
+                externalRelayExecutor.execute {
+                    while (!server.isClosed) {
+                        try {
+                            val client = server.accept()
+                            externalRelayExecutor.execute { relayExternalStream(client) }
+                        } catch (_: Exception) {
+                            if (!server.isClosed) Log.w("FreeTubeWebView", "External player relay stopped")
+                        }
+                    }
+                }
+            }
+        }
+
+        return "http://127.0.0.1:${externalRelayServer?.localPort}/$token"
+    }
+
+    private fun relayExternalStream(socket: Socket) {
+        socket.use { client ->
+            client.soTimeout = 30_000
+            val reader = client.getInputStream().bufferedReader()
+            val requestLine = reader.readLine() ?: return
+            val requestHeaders = mutableMapOf<String, String>()
+            while (true) {
+                val line = reader.readLine()
+                if (line.isNullOrEmpty()) break
+                val separator = line.indexOf(':')
+                if (separator > 0) {
+                    requestHeaders[line.substring(0, separator).lowercase()] = line.substring(separator + 1).trim()
+                }
+            }
+
+            val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/') ?: return
+            val stream = externalStreams[token] ?: return
+            val upstreamUrl = stream.url
+            val range = requestHeaders["range"]
+            val isGoogleVideo = Uri.parse(upstreamUrl).host?.endsWith(".googlevideo.com") == true
+            val useYouTubeSegmentRequest = isGoogleVideo && range != null
+            val upstreamRequestUrl = if (useYouTubeSegmentRequest) {
+                Uri.parse(upstreamUrl).buildUpon()
+                    .appendQueryParameter("range", range?.substringAfter('=') ?: "")
+                    .appendQueryParameter("alr", "yes")
+                    .build()
+                    .toString()
+            } else {
+                upstreamUrl
+            }
+            val connection = (URL(upstreamRequestUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", externalUserAgent)
+                setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                setRequestProperty("Referer", "https://www.youtube.com/")
+                setRequestProperty("Origin", "https://www.youtube.com")
+                stream.headers.forEach { (name, value) -> setRequestProperty(name, value) }
+                CookieManager.getInstance().getCookie(upstreamUrl)?.let { setRequestProperty("Cookie", it) }
+                setRequestProperty("Accept-Encoding", "identity")
+                if (useYouTubeSegmentRequest) {
+                    requestMethod = "POST"
+                    doOutput = true
+                    setFixedLengthStreamingMode(2)
+                } else {
+                    range?.let { setRequestProperty("Range", it) }
+                }
+            }
+            if (useYouTubeSegmentRequest) {
+                connection.outputStream.use { it.write(byteArrayOf(0x78, 0x00)) }
+            } else {
+                connection.connect()
+            }
+
+            try {
+                val output = client.getOutputStream().bufferedWriter()
+                val upstreamStatus = connection.responseCode
+                val rangeStart = range?.substringAfter("bytes=")?.substringBefore('-')?.toLongOrNull()
+                val contentLength = connection.contentLengthLong
+                val isPartialResponse = useYouTubeSegmentRequest && upstreamStatus < 400 && rangeStart != null && contentLength >= 0
+                val status = if (isPartialResponse) 206 else upstreamStatus
+                val totalLength = if (isPartialResponse) rangeStart!! + contentLength else null
+                Log.i("FreeTubeExternalRelay", "upstream status=$upstreamStatus response=$status method=${connection.requestMethod} host=${Uri.parse(upstreamUrl).host} headers=${stream.headers.keys}")
+                output.write("HTTP/1.1 $status ${if (status == 206) "Partial Content" else connection.responseMessage ?: "OK"}\r\n")
+                output.write("Content-Type: ${connection.contentType ?: "video/mp4"}\r\n")
+                connection.getHeaderField("Content-Length")?.let { length -> output.write("Content-Length: $length\r\n") }
+                if (isPartialResponse) {
+                    output.write("Content-Range: bytes $rangeStart-${totalLength!! - 1}/$totalLength\r\n")
+                } else {
+                    connection.getHeaderField("Content-Range")?.let { upstreamRange -> output.write("Content-Range: $upstreamRange\r\n") }
+                }
+                output.write("Accept-Ranges: bytes\r\nConnection: close\r\n\r\n")
+                output.flush()
+
+                if (!requestLine.startsWith("HEAD ") && upstreamStatus < 400) {
+                    try {
+                        connection.inputStream.use { input -> input.copyTo(client.getOutputStream(), 64 * 1024) }
+                    } catch (_: java.io.IOException) {
+                        // VLC may close a range request after receiving enough data.
+                    }
+                }
+            } finally {
+                connection.disconnect()
             }
         }
     }

@@ -759,6 +759,7 @@ export async function getLocalVideoInfo(id) {
   const clientInfo = {
     clientName: Constants.CLIENT_NAME_IDS[clientName],
     clientVersion,
+    visitorData: context.client.visitorData,
     osName,
     osVersion
   }
