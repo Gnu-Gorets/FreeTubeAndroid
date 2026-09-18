@@ -770,7 +770,7 @@ const addWatchedStyle = computed(() => historyEntryExists.value && !inHistory.va
 
 /** @type {import('vue').ComputedRef<string>} */
 const externalPlayer = computed(() => process.env.IS_ANDROID
-  ? t('Settings.External Player Settings.External Player')
+  ? store.getters.getExternalPlayer !== '' ? t('Settings.External Player Settings.External Player') : ''
   : store.getters.getExternalPlayer)
 
 /** @type {import('vue').ComputedRef<boolean>} */
