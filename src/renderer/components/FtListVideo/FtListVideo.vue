@@ -1051,7 +1051,8 @@ async function handleExternalPlayer() {
           audioInitRange: selectedAudio.init_range,
           audioIndexRange: selectedAudio.index_range,
           audioSampleRate: selectedAudio.audio_sample_rate,
-          audioChannels: selectedAudio.audio_channels
+          audioChannels: selectedAudio.audio_channels,
+          durationSeconds: info.basic_info?.duration ?? props.data.lengthSeconds
         }
       }
       const availableFormats = formats.filter(format => {
@@ -1077,7 +1078,8 @@ async function handleExternalPlayer() {
         hasMediaUrl: Boolean(mediaUrl),
         hasManifestUrl: Boolean(manifestUrl),
         hasExternalStreams: Boolean(externalStreams),
-        targetQuality
+        targetQuality,
+        durationSeconds: externalStreams?.durationSeconds
       })
     } catch (error) {
       log('resolve-error', { elapsedMs: Math.round(performance.now() - startedAt), error: String(error) })

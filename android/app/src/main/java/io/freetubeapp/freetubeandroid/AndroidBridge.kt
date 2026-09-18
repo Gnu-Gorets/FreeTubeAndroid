@@ -715,8 +715,11 @@ class AndroidBridge(
         val audioIndexRange = rangeValue(readRange("audioIndexRange"))
         val sampleRate = json.optInt("audioSampleRate")
         val channels = json.optInt("audioChannels")
+        val durationSeconds = json.optDouble("durationSeconds", 0.0)
+        val duration = if (durationSeconds > 0) "PT${durationSeconds.toLong()}S" else "PT0S"
+        Log.d("FreeTubeExternal", "relay-manifest-duration seconds=$durationSeconds value=$duration")
         val manifest = """<?xml version="1.0" encoding="UTF-8"?>
-<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT0S" minBufferTime="PT1.5S">
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="$duration" minBufferTime="PT1.5S">
   <Period>
     <AdaptationSet mimeType="video/mp4" contentType="video" maxWidth="$videoWidth" maxHeight="${maxHeight ?: videoHeight}">
       <Representation id="video" bandwidth="$videoBandwidth" width="$videoWidth" height="$videoHeight">
