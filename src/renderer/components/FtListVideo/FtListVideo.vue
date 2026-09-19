@@ -1063,7 +1063,9 @@ async function handleExternalPlayer() {
           const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
           return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
         })[0]
-      if (!selectedFormat && selectedAdaptiveVideo && selectedAdaptiveAudio) {
+      const useAdaptiveStreams = selectedAdaptiveVideo && selectedAdaptiveAudio &&
+        (!selectedFormat || (selectedAdaptiveVideo.height ?? 0) > (selectedFormat.height ?? 0))
+      if (useAdaptiveStreams) {
         externalStreams = {
           videoUrl: formatUrl(selectedAdaptiveVideo),
           audioUrl: formatUrl(selectedAdaptiveAudio),
@@ -1082,7 +1084,7 @@ async function handleExternalPlayer() {
           durationSeconds: Number(info.basic_info?.duration ?? 0)
         }
       }
-      if (selectedFormat) {
+      if (selectedFormat && !useAdaptiveStreams) {
         mediaUrl = formatUrl(selectedFormat)
         mediaMimeType = selectedFormat.mime_type?.split(';')[0] ?? null
       }
@@ -1097,7 +1099,9 @@ async function handleExternalPlayer() {
         elapsedMs: Math.round(performance.now() - startedAt),
         hasMediaUrl: Boolean(mediaUrl),
         hasExternalStreams: Boolean(externalStreams),
-        selectedHeight: selectedAdaptiveVideo?.height ?? selectedFormat?.height ?? null,
+        selectedFormatHeight: selectedFormat?.height ?? null,
+        selectedFormatItag: selectedFormat?.itag ?? null,
+        selectedAdaptiveHeight: selectedAdaptiveVideo?.height ?? null,
         selectedAudioLanguage: selectedAdaptiveAudio?.language ?? null,
         selectedAudioOriginal: selectedAdaptiveAudio?.is_original === true,
         targetQuality
