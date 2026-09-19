@@ -51,6 +51,8 @@
     "checkforbadtemplates": "node _scripts/findMissingTemplates.mjs",
     "test:long-press": "node _scripts/test-long-press-playback.mjs",
     "test:network-default-resolution": "node _scripts/test-network-default-resolution.mjs",
+    "test:external-player": "node _scripts/test-external-player.mjs",
+    "test:external-player-range-regression": "node _scripts/test-external-player-range-regression.mjs",
     "test:player-menu": "node _scripts/test-player-menu.mjs",
     "ci": "pnpm install --frozen-lockfile"
   },
@@ -78,11 +80,6 @@
     "youtubei.js": "^18.0.0"
   },
   "packageManager": "pnpm@12.3.4",
-  "pnpm": {
-    "patchedDependencies": {
-      "@seald-io/nedb@4.1.2": "patches/@seald-io__nedb@4.1.2.patch"
-    }
-  },
   "devDependencies": {
     "@double-great/stylelint-a11y": "^3.5.4",
     "@eslint/js": "^10.0.1",
