@@ -1,10 +1,12 @@
 package io.freetubeapp.freetubeandroid
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.Notification
 import android.graphics.drawable.Icon
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
@@ -61,7 +63,10 @@ class AndroidBridge(
         val maxHeight: Int? = null,
         val manifestBody: ByteArray? = null
     )
-    private data class PendingExternalLaunch(val title: String?)
+    private data class PendingExternalLaunch(
+        val title: String?,
+        val componentName: ComponentName? = null
+    )
     private val externalStreams = ConcurrentHashMap<String, ExternalStream>()
     private val pendingExternalLaunches = ConcurrentHashMap<String, PendingExternalLaunch>()
     private var externalRelayServer: ServerSocket? = null
@@ -665,6 +670,7 @@ class AndroidBridge(
         val relayToken = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return relayUrl
         if (pending) {
             pendingExternalLaunches[relayToken] = PendingExternalLaunch(title)
+            showExternalPlayerPicker(relayUrl, requestId)
         } else {
             launchExternalPlayer(
                 relayUrl,
@@ -682,21 +688,79 @@ class AndroidBridge(
         return relayUrl
     }
 
-    private fun launchExternalPlayer(relayUrl: String, title: String?, mimeType: String, extension: String, requestId: String? = null) {
+    private fun showExternalPlayerPicker(relayUrl: String, requestId: String) {
         activity.runOnUiThread {
-            Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}chooser-start")
+            Log.d("FreeTubeExternal", "[$requestId] picker-start")
+            val pickerIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse("$relayUrl.mp4"), "video/mp4")
+            }
+            val activities = activity.packageManager.queryIntentActivities(pickerIntent, 0)
+                .distinctBy { it.activityInfo.packageName }
+            if (activities.isEmpty()) {
+                pendingExternalLaunches.remove(Uri.parse(relayUrl).path?.substringAfterLast('/'))
+                Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
+                return@runOnUiThread
+            }
+            val labels = activities.map { it.loadLabel(activity.packageManager).toString() }.toTypedArray()
+            AlertDialog.Builder(activity)
+                .setTitle("Open with")
+                .setItems(labels) { _, index ->
+                    val info = activities[index].activityInfo
+                    val token = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return@setItems
+                    pendingExternalLaunches[token]?.let { pending ->
+                        pendingExternalLaunches[token] = pending.copy(
+                            componentName = ComponentName(info.packageName, info.name)
+                        )
+                    }
+                    tryLaunchPendingExternalPlayer(relayUrl)
+                }
+                .setOnCancelListener {
+                    pendingExternalLaunches.remove(Uri.parse(relayUrl).path?.substringAfterLast('/'))
+                }
+                .show()
+        }
+    }
+
+    private fun tryLaunchPendingExternalPlayer(relayUrl: String) {
+        val token = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return
+        val pending = pendingExternalLaunches[token] ?: return
+        val stream = externalStreams[token] ?: return
+        if (stream.url.isBlank() && stream.manifestBody == null) return
+        val isManifest = stream.isManifest || stream.manifestBody != null
+        val componentName = pending.componentName ?: return
+        pendingExternalLaunches.remove(token)
+        launchExternalPlayer(
+            relayUrl,
+            pending.title,
+            if (isManifest) "video/*" else "video/mp4",
+            if (isManifest) ".mpd" else ".mp4",
+            componentName = componentName
+        )
+    }
+
+    private fun launchExternalPlayer(
+        relayUrl: String,
+        title: String?,
+        mimeType: String,
+        extension: String,
+        requestId: String? = null,
+        componentName: ComponentName? = null
+    ) {
+        activity.runOnUiThread {
+            Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}player-start")
             try {
                 val intentUrl = "$relayUrl$extension"
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     setDataAndType(Uri.parse(intentUrl), mimeType)
+                    componentName?.let(::setComponent)
                     if (!title.isNullOrBlank()) putExtra("title", title)
                 }
-                Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}chooser-intent-ready type=${intent.type} urlSuffix=$extension")
+                Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}player-intent-ready type=${intent.type} urlSuffix=$extension package=${componentName?.packageName}")
                 activity.startActivity(intent)
-                Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}resolver-dispatched")
+                Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}player-dispatched")
             } catch (error: ActivityNotFoundException) {
-                Log.w("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}chooser-no-handler", error)
+                Log.w("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}player-no-handler", error)
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
             }
         }
@@ -718,9 +782,7 @@ class AndroidBridge(
             if (manifestStream != null) {
                 externalStreams[token] = manifestStream
                 Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=true hasStreams=true")
-                pendingExternalLaunches.remove(token)?.let { pending ->
-                    launchExternalPlayer(relayUrl, pending.title, "video/*", ".mpd")
-                }
+                tryLaunchPendingExternalPlayer(relayUrl)
             }
             return
         }
@@ -730,14 +792,7 @@ class AndroidBridge(
         val isManifest = mediaUrl == null && manifestUrl != null
         externalStreams[token] = ExternalStream(streamUrl, headers, isManifest, maxQuality)
         Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=$isManifest")
-        pendingExternalLaunches.remove(token)?.let { pending ->
-            launchExternalPlayer(
-                relayUrl,
-                pending.title,
-                if (isManifest) "video/*" else "video/mp4",
-                if (isManifest) ".mpd" else ".mp4"
-            )
-        }
+        tryLaunchPendingExternalPlayer(relayUrl)
     }
 
     private fun registerExternalStream(
