@@ -25,7 +25,11 @@ class ExternalPlayerRefinementActivity : Activity() {
             return
         }
 
-        ExternalPlayerRefinement.register(token, sourceIntent, resultReceiver)
+        ExternalPlayerRefinement.register(token, sourceIntent, resultReceiver) {
+            runOnUiThread {
+                if (!isFinishing) finish()
+            }
+        }
     }
 
     private inline fun <reified T : android.os.Parcelable> parcelable(key: String): T? {
