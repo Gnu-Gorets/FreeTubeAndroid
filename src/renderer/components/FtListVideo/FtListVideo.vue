@@ -319,7 +319,7 @@ import {
   debounce
 } from '../../helpers/utils.js'
 import { deArrowData, deArrowThumbnail } from '../../helpers/sponsorblock.js'
-import { getLocalVideoInfo } from '../../helpers/api/local'
+import { getLocalVideoInfo, getOriginalVideoLanguage } from '../../helpers/api/local'
 import { getNetworkType } from '../../helpers/android/network'
 import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
 import { getOriginalVideoTitle } from '../../helpers/api/original-video-title.mjs'
@@ -1063,7 +1063,11 @@ async function handleExternalPlayer() {
       const suitableAdaptiveVideoFormats = adaptiveVideoFormats.filter(format => (format.height ?? 0) <= targetQuality)
       const selectedAdaptiveVideo = [...(suitableAdaptiveVideoFormats.length ? suitableAdaptiveVideoFormats : adaptiveVideoFormats)]
         .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
-      const selectedAdaptiveAudio = [...adaptiveAudioFormats]
+      const originalAudioLanguage = getOriginalVideoLanguage(info)
+      const originalAudioFormats = adaptiveAudioFormats.filter(format => {
+        return format.is_original === true || format.language === originalAudioLanguage
+      })
+      const selectedAdaptiveAudio = [...(originalAudioFormats.length ? originalAudioFormats : adaptiveAudioFormats)]
         .sort((a, b) => {
           const aIsMp4 = a.mime_type?.startsWith('audio/mp4') ? 1 : 0
           const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
@@ -1101,6 +1105,8 @@ async function handleExternalPlayer() {
         hasMediaUrl: Boolean(mediaUrl),
         hasExternalStreams: Boolean(externalStreams),
         selectedHeight: selectedAdaptiveVideo?.height ?? selectedFormat?.height ?? null,
+        selectedAudioLanguage: selectedAdaptiveAudio?.language ?? null,
+        selectedAudioOriginal: selectedAdaptiveAudio?.is_original === true,
         targetQuality
       })
     } catch (error) {
