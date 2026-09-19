@@ -61,7 +61,9 @@ class AndroidBridge(
         val maxHeight: Int? = null,
         val manifestBody: ByteArray? = null
     )
+    private data class PendingExternalLaunch(val title: String?)
     private val externalStreams = ConcurrentHashMap<String, ExternalStream>()
+    private val pendingExternalLaunches = ConcurrentHashMap<String, PendingExternalLaunch>()
     private var externalRelayServer: ServerSocket? = null
     private var pendingDirectoryRequest: String? = null
     private val dataDirectory: java.io.File
@@ -660,35 +662,48 @@ class AndroidBridge(
                 )
         }
         Log.d("FreeTubeExternal", "[$requestId] relay-registered elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl")
-        activity.runOnUiThread {
-            Log.d("FreeTubeExternal", "[$requestId] chooser-start elapsedMs=${elapsedMs()}")
-            try {
-                val mimeType = if (useDirectUrl) {
-                    mediaMimeType?.substringBefore(';')?.takeIf { it.contains('/') } ?: "video/*"
-                } else if (useManifest) {
-                    "application/dash+xml"
-                } else {
-                    "video/*"
-                }
-                val intentUrl = if (streamsJson != null) "$relayUrl.mpd" else relayUrl
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(Uri.parse(intentUrl), mimeType)
-                    if (!title.isNullOrBlank()) putExtra("title", title)
-                }
-                Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
-                activity.startActivity(intent)
-                Log.d("FreeTubeExternal", "[$requestId] resolver-dispatched elapsedMs=${elapsedMs()}")
-            } catch (error: ActivityNotFoundException) {
-                Log.w("FreeTubeExternal", "[$requestId] chooser-no-handler elapsedMs=${elapsedMs()}", error)
-                Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
-            }
+        val relayToken = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return relayUrl
+        if (pending) {
+            pendingExternalLaunches[relayToken] = PendingExternalLaunch(title)
+        } else {
+            launchExternalPlayer(
+                relayUrl,
+                title,
+                if (useDirectUrl) mediaMimeType?.substringBefore(';')?.takeIf { it.contains('/') } ?: "video/*"
+                else if (useManifest) "application/dash+xml" else "video/mp4",
+                when {
+                    useDirectUrl -> ""
+                    useManifest || streamsJson != null -> ".mpd"
+                    else -> ".mp4"
+                },
+                requestId
+            )
         }
         return relayUrl
     }
 
+    private fun launchExternalPlayer(relayUrl: String, title: String?, mimeType: String, extension: String, requestId: String? = null) {
+        activity.runOnUiThread {
+            Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}chooser-start")
+            try {
+                val intentUrl = "$relayUrl$extension"
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(Uri.parse(intentUrl), mimeType)
+                    if (!title.isNullOrBlank()) putExtra("title", title)
+                }
+                Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}chooser-intent-ready type=${intent.type} urlSuffix=$extension")
+                activity.startActivity(intent)
+                Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}resolver-dispatched")
+            } catch (error: ActivityNotFoundException) {
+                Log.w("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}chooser-no-handler", error)
+                Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     @JavascriptInterface
     fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
-        val token = Uri.parse(relayUrl).path?.substringAfterLast('/')?.removeSuffix(".mpd") ?: return
+        val token = Uri.parse(relayUrl).path?.substringAfterLast('/')?.removeSuffix(".mpd")?.removeSuffix(".mp4") ?: return
         val headers = try {
             val json = headersJson?.let(::JSONObject)
             json?.keys()?.asSequence()?.associateWith { json.getString(it) } ?: emptyMap()
@@ -702,6 +717,9 @@ class AndroidBridge(
             if (manifestStream != null) {
                 externalStreams[token] = manifestStream
                 Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=true hasStreams=true")
+                pendingExternalLaunches.remove(token)?.let { pending ->
+                    launchExternalPlayer(relayUrl, pending.title, "application/dash+xml", ".mpd")
+                }
             }
             return
         }
@@ -711,6 +729,14 @@ class AndroidBridge(
         val isManifest = mediaUrl == null && manifestUrl != null
         externalStreams[token] = ExternalStream(streamUrl, headers, isManifest, maxQuality)
         Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=$isManifest")
+        pendingExternalLaunches.remove(token)?.let { pending ->
+            launchExternalPlayer(
+                relayUrl,
+                pending.title,
+                if (isManifest) "application/dash+xml" else "video/mp4",
+                if (isManifest) ".mpd" else ".mp4"
+            )
+        }
     }
 
     private fun registerExternalStream(
@@ -851,7 +877,7 @@ class AndroidBridge(
                 }
             }
 
-            val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/')?.removeSuffix(".mpd") ?: return
+            val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/')?.removeSuffix(".mpd")?.removeSuffix(".mp4") ?: return
             var stream = externalStreams[token] ?: run {
                 Log.w("FreeTubeExternal", "relay-missing-token token=${token.take(8)}")
                 return
