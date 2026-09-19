@@ -28,6 +28,8 @@ PROXY_PORT=19050
 PROXY_LOG=""
 QUALITY=""
 QUALITY_VIDEO_ID="mXIAYbU3nQI"
+EXTERNAL_PLAYER_WIFI_STATE=""
+EXTERNAL_PLAYER_MOBILE_STATE=""
 
 usage() {
   cat <<'EOF'
@@ -42,7 +44,9 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality,
+                        external_player, external_player_wifi_vlc, external_player_wifi_mpv,
+                        external_player_mobile_vlc, external_player_mobile_mpv
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -394,10 +398,11 @@ fullscreen_fit_screen() {
 }
 
 run_web_smoke_action() {
-  local action="$1" query="${2:-}" result="" marker
+  local action="$1" query="${2:-}" result="" marker shell_query
   marker="SMOKE_${action^^}_TEST:"
+  printf -v shell_query '%q' "$query"
   adb_shell am start -a io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION \
-    --es action "$action" --es query "$query" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+    --es action "$action" --es query "$shell_query" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   [[ "$action" == "fullscreen" ]] && adb_shell input keyevent KEYCODE_F
   for _ in $(seq 1 "$TIMEOUT"); do
     result=$(adb_cmd logcat -d -v brief | grep "$marker" | tail -1 || true)
@@ -555,6 +560,152 @@ check_video_quality() {
   done
   progress "video quality check timed out"
   return 1
+}
+
+save_external_network_state() {
+  EXTERNAL_PLAYER_WIFI_STATE=$(adb_shell settings get global wifi_on 2>/dev/null || true)
+  EXTERNAL_PLAYER_MOBILE_STATE=$(adb_shell settings get global mobile_data 2>/dev/null || true)
+}
+
+network_is_only() {
+  local expected="$1" dump wifi mobile
+  dump=$(adb_shell dumpsys connectivity 2>/dev/null) || return 1
+  wifi=$(grep -c 'ni{WIFI CONNECTED' <<<"$dump")
+  mobile=$(grep 'ni{MOBILE.*CONNECTED' <<<"$dump" | grep -c 'Capabilities:.*INTERNET')
+  if [[ "$expected" == "wifi" ]]; then
+    [[ "$wifi" -gt 0 && "$mobile" -eq 0 ]]
+  else
+    [[ "$wifi" -eq 0 && "$mobile" -gt 0 ]]
+  fi
+}
+
+set_external_network() {
+  local expected="$1"
+  if [[ "$expected" == "wifi" ]]; then
+    adb_shell svc wifi enable
+    adb_shell svc data disable
+  else
+    adb_shell svc wifi disable
+    adb_shell svc data enable
+  fi
+  for _ in $(seq 1 30); do
+    if network_is_only "$expected"; then
+      progress "network ready: $expected only"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Network setup failed: expected $expected only" >&2
+  adb_shell dumpsys connectivity >&2
+  return 1
+}
+
+restore_external_network_state() {
+  case "$EXTERNAL_PLAYER_WIFI_STATE" in
+    1) adb_shell svc wifi enable >/dev/null 2>&1 || true ;;
+    0) adb_shell svc wifi disable >/dev/null 2>&1 || true ;;
+  esac
+  case "$EXTERNAL_PLAYER_MOBILE_STATE" in
+    1) adb_shell svc data enable >/dev/null 2>&1 || true ;;
+    0) adb_shell svc data disable >/dev/null 2>&1 || true ;;
+  esac
+}
+
+wait_for_external_playback() {
+  local player_package="$1"
+  for _ in $(seq 1 "$TIMEOUT"); do
+    if adb_shell dumpsys media_session 2>/dev/null \
+      | grep -A20 -m1 "$player_package" \
+      | grep -q 'state=PlaybackState {state=PLAYING'; then
+      progress "external playback active: $player_package"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "External playback did not reach PLAYING: $player_package" >&2
+  return 1
+}
+
+wait_for_external_audio() {
+  local player_package="$1"
+  for _ in $(seq 1 "$TIMEOUT"); do
+    if adb_shell dumpsys audio 2>/dev/null \
+      | grep -q "requestAudioFocus.*callingPack=$player_package"; then
+      progress "external audio focus acquired: $player_package"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "External audio focus was not acquired: $player_package" >&2
+  return 1
+}
+
+wait_for_external_quality() {
+  local network="$1" expected="$2" state target adaptive
+  for _ in $(seq 1 "$TIMEOUT"); do
+    state=$(adb_cmd logcat -d -v brief \
+      | grep 'stream-selected' \
+      | grep "\"networkType\":\"$network\"" \
+      | tail -1 || true)
+    target=$(sed -n 's/.*"targetQuality":\([0-9]*\).*/\1/p' <<<"$state")
+    adaptive=$(sed -n 's/.*"selectedAdaptiveHeight":\([0-9]*\).*/\1/p' <<<"$state")
+    if [[ "$target" == "$expected" && "$adaptive" == "$expected" ]]; then
+      progress "external quality matched: network=$network expected=${expected}p actual=${adaptive}p"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "External quality mismatch: network=$network expected=${expected}p state=${state:-missing}" >&2
+  return 1
+}
+
+external_player_case() {
+  local player_package="$1" network="$2" first_index="$3" second_index="$4"
+  set_external_network "$network" || return 1
+  adb_shell am force-stop --user 0 "$player_package" >/dev/null 2>&1 || true
+  start_app || return 1
+  run_web_smoke_action external_player "$first_index|$player_package" || return 1
+  wait_for "$player_package" || return 1
+  sleep 5
+  adb_shell input keyevent KEYCODE_MEDIA_PAUSE
+  adb_shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb_shell am start --user 0 -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+  wait_for "$PACKAGE" || return 1
+  run_web_smoke_action external_player "$second_index|$player_package" || return 1
+  wait_for "$player_package" || return 1
+  progress "check 1/3: video playback in $player_package"
+  wait_for_external_playback "$player_package" || return 1
+  progress "check 2/3: audio focus in $player_package"
+  wait_for_external_audio "$player_package" || return 1
+  progress "check 3/3: default quality for $network"
+  wait_for_external_quality "$network" "$([[ "$network" == "wifi" ]] && echo 1080 || echo 480)" || return 1
+  sleep 5
+}
+
+external_player_single() {
+  local player_package="$1" network="$2" first_index="$3" second_index="$4" status=0
+  adb_shell am force-stop --user 0 "$PACKAGE" >/dev/null 2>&1 || true
+  clean_logs
+  save_external_network_state
+  external_player_case "$player_package" "$network" "$first_index" "$second_index" || status=1
+  restore_external_network_state
+  no_runtime_errors || status=1
+  return "$status"
+}
+
+external_player_wifi_vlc() { external_player_single org.videolan.vlc wifi 0 1; }
+external_player_wifi_mpv() { external_player_single is.xyz.mpv wifi 0 1; }
+external_player_mobile_vlc() { external_player_single org.videolan.vlc mobile 0 1; }
+external_player_mobile_mpv() { external_player_single is.xyz.mpv mobile 0 1; }
+
+external_player() {
+  local status=0
+  external_player_wifi_vlc || status=1
+  external_player_wifi_mpv || status=1
+  external_player_mobile_vlc || status=1
+  external_player_mobile_mpv || status=1
+  return "$status"
 }
 
 network_quality() {
@@ -799,6 +950,7 @@ run_unlocked_suite() {
   run_test controls controls
   run_test audio-focus audio_focus
   run_test persistence persistence
+  run_test external_player external_player
   run_test export export_data
   run_test data-directory-cancel data_directory_cancel
   run_test data-directory-move-reset data_directory_move_reset
@@ -848,6 +1000,11 @@ case "$TEST" in
   reload) run_test reload reload ;;
   playback) run_test playback playback ;;
   network-quality) run_test network-quality network_quality ;;
+  external_player) run_test external_player external_player ;;
+  external_player_wifi_vlc) run_test external_player_wifi_vlc external_player_wifi_vlc ;;
+  external_player_wifi_mpv) run_test external_player_wifi_mpv external_player_wifi_mpv ;;
+  external_player_mobile_vlc) run_test external_player_mobile_vlc external_player_mobile_vlc ;;
+  external_player_mobile_mpv) run_test external_player_mobile_mpv external_player_mobile_mpv ;;
   long-press) run_test long-press long_press ;;
   controls) run_test controls controls ;;
   fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;
