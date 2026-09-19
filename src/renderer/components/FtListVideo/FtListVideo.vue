@@ -1064,7 +1064,11 @@ async function handleExternalPlayer() {
       const selectedAdaptiveVideo = [...(suitableAdaptiveVideoFormats.length ? suitableAdaptiveVideoFormats : adaptiveVideoFormats)]
         .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
       const selectedAdaptiveAudio = [...adaptiveAudioFormats]
-        .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]
+        .sort((a, b) => {
+          const aIsMp4 = a.mime_type?.startsWith('audio/mp4') ? 1 : 0
+          const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
+          return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
+        })[0]
       if (selectedAdaptiveVideo && selectedAdaptiveAudio) {
         const formatUrl = format => format.freeTubeUrl ?? format.url
         externalStreams = {
