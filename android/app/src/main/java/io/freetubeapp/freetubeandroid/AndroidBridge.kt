@@ -670,7 +670,7 @@ class AndroidBridge(
                 relayUrl,
                 title,
                 if (useDirectUrl) mediaMimeType?.substringBefore(';')?.takeIf { it.contains('/') } ?: "video/*"
-                else if (useManifest) "application/dash+xml" else "video/mp4",
+                else if (useManifest) "video/*" else "video/mp4",
                 when {
                     useDirectUrl -> ""
                     useManifest || streamsJson != null -> ".mpd"
@@ -718,7 +718,7 @@ class AndroidBridge(
                 externalStreams[token] = manifestStream
                 Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=true hasStreams=true")
                 pendingExternalLaunches.remove(token)?.let { pending ->
-                    launchExternalPlayer(relayUrl, pending.title, "application/dash+xml", ".mpd")
+                    launchExternalPlayer(relayUrl, pending.title, "video/*", ".mpd")
                 }
             }
             return
@@ -733,7 +733,7 @@ class AndroidBridge(
             launchExternalPlayer(
                 relayUrl,
                 pending.title,
-                if (isManifest) "application/dash+xml" else "video/mp4",
+                if (isManifest) "video/*" else "video/mp4",
                 if (isManifest) ".mpd" else ".mp4"
             )
         }
