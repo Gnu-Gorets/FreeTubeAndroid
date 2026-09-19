@@ -687,21 +687,9 @@ class AndroidBridge(
                 setDataAndType(Uri.parse("$relayUrl.mpd"), "video/*")
                 if (!title.isNullOrBlank()) putExtra("title", title)
             }
-            val refinementIntent = Intent(activity, ExternalPlayerRefinementActivity::class.java)
-            val pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-            val refinementSender = PendingIntent.getActivity(
-                activity,
-                requestId.hashCode(),
-                refinementIntent,
-                pendingIntentFlags
-            ).intentSender
-            val chooser = Intent.createChooser(target, null).apply {
-                putExtra(Intent.EXTRA_CHOOSER_REFINEMENT_INTENT_SENDER, refinementSender)
-            }
             try {
-                activity.startActivity(chooser)
-                Log.d("FreeTubeExternal", "[$requestId] picker-dispatched")
+                activity.startActivity(target)
+                Log.d("FreeTubeExternal", "[$requestId] resolver-dispatched")
             } catch (error: ActivityNotFoundException) {
                 Log.w("FreeTubeExternal", "[$requestId] picker-no-handler", error)
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
@@ -751,7 +739,6 @@ class AndroidBridge(
             if (manifestStream != null) {
                 externalStreams[token] = manifestStream
                 Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=true hasStreams=true")
-                ExternalPlayerRefinement.markReady(token)
             }
             return
         }
@@ -761,7 +748,6 @@ class AndroidBridge(
         val isManifest = mediaUrl == null && manifestUrl != null
         externalStreams[token] = ExternalStream(streamUrl, headers, isManifest, maxQuality)
         Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=$isManifest")
-        ExternalPlayerRefinement.markReady(token)
     }
 
     private fun registerExternalStream(
