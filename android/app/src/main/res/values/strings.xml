@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">FreeTube</string>
+    <string name="external_player_unavailable">No app can open this video</string>
 </resources>
