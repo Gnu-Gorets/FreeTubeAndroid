@@ -105,7 +105,7 @@
         </span>
         <span class="videoOptionsMobileRow">
           <FtIconButton
-            v-if="(USING_ELECTRON || USING_ANDROID) && externalPlayer !== ''"
+            v-if="(USING_ELECTRON || process.env.IS_ANDROID) && externalPlayer !== ''"
             :title="t('Video.External Player.OpenInTemplate', { externalPlayer })"
             :icon="['fas', 'external-link-alt']"
             theme="secondary"
@@ -144,9 +144,6 @@ import FtSubscribeButton from '../FtSubscribeButton/FtSubscribeButton.vue'
 import store from '../../store'
 
 import { formatNumber, openExternalPlayer, showToast, getLocalesWithFallback } from '../../helpers/utils'
-import { getLocalVideoInfo } from '../../helpers/api/local'
-import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
-import { getNetworkType } from '../../helpers/android/network'
 
 const props = defineProps({
   id: {
@@ -251,7 +248,6 @@ const emit = defineEmits([
 ])
 
 const USING_ELECTRON = process.env.IS_ELECTRON
-const USING_ANDROID = process.env.IS_ANDROID
 
 const { locale, t } = useI18n()
 
@@ -347,7 +343,7 @@ const externalPlayer = computed(() => process.env.IS_ANDROID
 /** @type {import('vue').ComputedRef<number>} */
 const defaultPlayback = computed(() => store.getters.getDefaultPlayback)
 
-async function handleExternalPlayer() {
+function handleExternalPlayer() {
   emit('pause-player')
 
   let payload
@@ -378,29 +374,7 @@ async function handleExternalPlayer() {
     }
   }
 
-  if (USING_ANDROID && !payload.mediaUrl) {
-    try {
-      const { info } = await getLocalVideoInfo(props.id)
-      const targetQuality = getDefaultQualityForNetwork(
-        getNetworkType(),
-        parseInt(store.getters.getWifiDefaultQuality),
-        parseInt(store.getters.getMobileDefaultQuality),
-        720
-      )
-      const formats = (info.streaming_data?.formats ?? [])
-        .filter(format => typeof format.url === 'string' || typeof format.freeTubeUrl === 'string')
-      const suitableFormats = formats.filter(format => (format.height ?? 0) <= targetQuality)
-      const format = [...(suitableFormats.length ? suitableFormats : formats)]
-        .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
-      const mediaUrl = format?.freeTubeUrl ?? format?.url ?? null
-      const manifestUrl = mediaUrl ? null : info.streaming_data?.dash_manifest_url ?? null
-      if (mediaUrl || manifestUrl) openExternalPlayer({ ...payload, mediaUrl, manifestUrl })
-    } catch (error) {
-      console.warn('Failed to resolve external player URL', error)
-    }
-  } else {
-    openExternalPlayer(payload)
-  }
+  openExternalPlayer(payload)
 
   if (rememberHistory.value) {
     // Marking as watched
