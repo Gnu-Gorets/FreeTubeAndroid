@@ -25,6 +25,7 @@ assert.match(bridge, /@JavascriptInterface\s+fun hasHttpProxy\(\): Boolean/)
 assert.match(bridge, /@JavascriptInterface\s+fun updateExternalPlayer\(/)
 assert.match(bridge, /Intent\.ACTION_VIEW/)
 assert.match(bridge, /Intent\.createChooser\(intent, null\)/)
+assert.match(bridge, /Intent\.FLAG_ACTIVITY_NEW_DOCUMENT or Intent\.FLAG_ACTIVITY_MULTIPLE_TASK/)
 assert.match(bridge, /ActivityNotFoundException/)
 assert.match(bridge, /external_player_unavailable/)
 assert.match(bridge, /ServerSocket\(0, 16, InetAddress\.getByName\("127\.0\.0\.1"\)\)/)
@@ -53,6 +54,8 @@ assert.match(video, /relayUrl && typeof window\.Android\?\.updateExternalPlayer 
 
 assert.match(watchInfo, /const USING_ANDROID = process\.env\.IS_ANDROID/)
 assert.match(watchInfo, /USING_ELECTRON \|\| USING_ANDROID/)
+assert.match(watchInfo, /pending: true/)
+assert.match(watchInfo, /updateExternalPlayer\(/)
 assert.doesNotMatch(watchInfo.split('<script')[0], /process\.env\.IS_ANDROID/)
 
 for (const component of [video, playlist, watchInfo]) {

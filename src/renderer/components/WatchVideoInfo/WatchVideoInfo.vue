@@ -144,6 +144,9 @@ import FtSubscribeButton from '../FtSubscribeButton/FtSubscribeButton.vue'
 import store from '../../store'
 
 import { formatNumber, openExternalPlayer, showToast, getLocalesWithFallback } from '../../helpers/utils'
+import { getLocalVideoInfo } from '../../helpers/api/local'
+import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
+import { getNetworkType } from '../../helpers/android/network'
 
 const props = defineProps({
   id: {
@@ -344,7 +347,7 @@ const externalPlayer = computed(() => process.env.IS_ANDROID
 /** @type {import('vue').ComputedRef<number>} */
 const defaultPlayback = computed(() => store.getters.getDefaultPlayback)
 
-function handleExternalPlayer() {
+async function handleExternalPlayer() {
   emit('pause-player')
 
   let payload
@@ -375,7 +378,52 @@ function handleExternalPlayer() {
     }
   }
 
-  openExternalPlayer(payload)
+  if (USING_ANDROID && !payload.mediaUrl) {
+    const relayUrl = openExternalPlayer({
+      videoId: props.id,
+      title: props.title,
+      pending: true
+    })
+
+    try {
+      const { info, clientInfo } = await getLocalVideoInfo(props.id)
+      const targetQuality = getDefaultQualityForNetwork(
+        getNetworkType(),
+        parseInt(store.getters.getWifiDefaultQuality),
+        parseInt(store.getters.getMobileDefaultQuality),
+        720
+      )
+      const formats = (info.streaming_data?.formats ?? [])
+        .filter(format => typeof format.url === 'string' || typeof format.freeTubeUrl === 'string')
+      const suitableFormats = formats.filter(format => (format.height ?? 0) <= targetQuality)
+      const format = [...(suitableFormats.length ? suitableFormats : formats)]
+        .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
+      const mediaUrl = format?.freeTubeUrl ?? format?.url ?? null
+      const manifestUrl = mediaUrl ? null : info.streaming_data?.dash_manifest_url ?? null
+      const externalHeaders = clientInfo
+        ? {
+            'X-Goog-Visitor-Id': clientInfo.visitorData,
+            'X-YouTube-Client-Name': String(clientInfo.clientName),
+            'X-YouTube-Client-Version': clientInfo.clientVersion
+          }
+        : null
+
+      if (relayUrl && typeof window.Android?.updateExternalPlayer === 'function') {
+        window.Android.updateExternalPlayer(
+          relayUrl,
+          mediaUrl,
+          externalHeaders ? JSON.stringify(externalHeaders) : null,
+          manifestUrl,
+          targetQuality,
+          null
+        )
+      }
+    } catch (error) {
+      console.warn('Failed to resolve external player URL', error)
+    }
+  } else {
+    openExternalPlayer(payload)
+  }
 
   if (rememberHistory.value) {
     // Marking as watched

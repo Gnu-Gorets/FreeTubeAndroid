@@ -677,6 +677,7 @@ class AndroidBridge(
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
                     if (!title.isNullOrBlank()) putExtra("title", title)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                     if (Uri.parse(relayUrl).scheme == "content") addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
