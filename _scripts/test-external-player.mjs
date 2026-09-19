@@ -32,6 +32,8 @@ assert.match(bridge, /ServerSocket\(0, 16, InetAddress\.getByName\("127\.0\.0\.1
 assert.match(bridge, /return "http:\/\/127\.0\.0\.1:\$\{externalRelayServer\?\.localPort\}\/\$token"/)
 assert.match(bridge, /setRequestProperty\("Range", it\)/)
 assert.match(bridge, /setRequestProperty\("Cookie", it\)/)
+assert.match(bridge, /setRequestProperty\("Connection", "close"\)/)
+assert.match(bridge, /useCaches = false/)
 assert.match(bridge, /rewriteDashManifest\(/)
 assert.match(bridge, /maxHeight\?\.let/)
 assert.match(bridge, /registerExternalStreamsManifest\(/)

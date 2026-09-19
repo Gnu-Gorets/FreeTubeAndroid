@@ -907,6 +907,8 @@ class AndroidBridge(
                 stream.headers.forEach { (name, value) -> setRequestProperty(name, value) }
                 CookieManager.getInstance().getCookie(upstreamUrl)?.let { setRequestProperty("Cookie", it) }
                 setRequestProperty("Accept-Encoding", "identity")
+                setRequestProperty("Connection", "close")
+                useCaches = false
                 if (useYouTubeSegmentRequest) {
                     requestMethod = "POST"
                     doOutput = true
