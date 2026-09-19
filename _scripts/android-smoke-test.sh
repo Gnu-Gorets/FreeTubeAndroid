@@ -631,6 +631,7 @@ external_player_case() {
 
 external_player_single() {
   local player_package="$1" network="$2" first_index="$3" second_index="$4" status=0
+  adb_shell am force-stop --user 0 "$PACKAGE" >/dev/null 2>&1 || true
   clean_logs
   save_external_network_state
   external_player_case "$player_package" "$network" "$first_index" "$second_index" || status=1
