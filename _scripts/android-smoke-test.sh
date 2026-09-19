@@ -28,6 +28,10 @@ PROXY_PORT=19050
 PROXY_LOG=""
 QUALITY=""
 QUALITY_VIDEO_ID="mXIAYbU3nQI"
+EXTERNAL_PLAYER_URL_ONE="https://youtu.be/ofcdHlKJ9W0?si=21-SJLZKS1ncPHzk"
+EXTERNAL_PLAYER_URL_TWO="https://youtu.be/vYosAN7UShU?si=l2zba0lXuuAiaUnH"
+EXTERNAL_PLAYER_WIFI_STATE=""
+EXTERNAL_PLAYER_MOBILE_STATE=""
 
 usage() {
   cat <<'EOF'
@@ -42,7 +46,7 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality, external_player
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -557,6 +561,62 @@ check_video_quality() {
   return 1
 }
 
+save_external_network_state() {
+  EXTERNAL_PLAYER_WIFI_STATE=$(adb_shell settings get global wifi_on 2>/dev/null || true)
+  EXTERNAL_PLAYER_MOBILE_STATE=$(adb_shell settings get global mobile_data 2>/dev/null || true)
+}
+
+set_external_network() {
+  if [[ "$1" == "wifi" ]]; then
+    adb_shell svc wifi enable
+    adb_shell svc data disable
+  else
+    adb_shell svc wifi disable
+    adb_shell svc data enable
+  fi
+  sleep 3
+}
+
+restore_external_network_state() {
+  case "$EXTERNAL_PLAYER_WIFI_STATE" in
+    1) adb_shell svc wifi enable >/dev/null 2>&1 || true ;;
+    0) adb_shell svc wifi disable >/dev/null 2>&1 || true ;;
+  esac
+  case "$EXTERNAL_PLAYER_MOBILE_STATE" in
+    1) adb_shell svc data enable >/dev/null 2>&1 || true ;;
+    0) adb_shell svc data disable >/dev/null 2>&1 || true ;;
+  esac
+}
+
+external_player_case() {
+  local player_package="$1" network="$2" first_url="$3" second_url="$4"
+  set_external_network "$network" || return 1
+  start_app || return 1
+  adb_shell am start --user 0 -a android.intent.action.VIEW -d "$first_url" -t 'video/*' -p "$player_package" >/dev/null 2>&1 || return 1
+  wait_for "$player_package" || return 1
+  sleep 5
+  adb_shell input keyevent KEYCODE_MEDIA_PAUSE
+  adb_shell input keyevent KEYCODE_HOME
+  sleep 2
+  start_app || return 1
+  adb_shell am start --user 0 -a android.intent.action.VIEW -d "$second_url" -t 'video/*' -p "$player_package" >/dev/null 2>&1 || return 1
+  wait_for "$player_package" || return 1
+  sleep 5
+}
+
+external_player() {
+  clean_logs
+  save_external_network_state
+  local status=0
+  external_player_case org.videolan.vlc wifi "$EXTERNAL_PLAYER_URL_ONE" "$EXTERNAL_PLAYER_URL_TWO" || status=1
+  external_player_case is.xyz.mpv wifi "$EXTERNAL_PLAYER_URL_TWO" "$EXTERNAL_PLAYER_URL_TWO" || status=1
+  external_player_case org.videolan.vlc mobile "$EXTERNAL_PLAYER_URL_ONE" "$EXTERNAL_PLAYER_URL_TWO" || status=1
+  external_player_case is.xyz.mpv mobile "$EXTERNAL_PLAYER_URL_TWO" "$EXTERNAL_PLAYER_URL_TWO" || status=1
+  restore_external_network_state
+  no_runtime_errors || status=1
+  return "$status"
+}
+
 network_quality() {
   [[ "$QUALITY" =~ ^(480|1080)$ ]] || { echo "--quality must be 480 or 1080" >&2; return 2; }
   clean_logs
@@ -799,6 +859,7 @@ run_unlocked_suite() {
   run_test controls controls
   run_test audio-focus audio_focus
   run_test persistence persistence
+  run_test external_player external_player
   run_test export export_data
   run_test data-directory-cancel data_directory_cancel
   run_test data-directory-move-reset data_directory_move_reset
@@ -848,6 +909,7 @@ case "$TEST" in
   reload) run_test reload reload ;;
   playback) run_test playback playback ;;
   network-quality) run_test network-quality network_quality ;;
+  external_player) run_test external_player external_player ;;
   long-press) run_test long-press long_press ;;
   controls) run_test controls controls ;;
   fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;
