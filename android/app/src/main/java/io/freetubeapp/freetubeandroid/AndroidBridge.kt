@@ -745,7 +745,7 @@ class AndroidBridge(
             }
         }
 
-        return "http://localhost:${externalRelayServer?.localPort}/$token"
+        return "http://127.0.0.1:${externalRelayServer?.localPort}/$token"
     }
 
     private fun registerExternalStreamsManifest(jsonText: String, headers: Map<String, String>, maxHeight: Int?): String {
