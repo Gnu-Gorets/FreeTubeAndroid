@@ -116,8 +116,10 @@ watch(activeSubscriptionList, () => {
 }, { deep: true })
 
 if (!subscriptionCacheReady.value) {
-  watch(subscriptionCacheReady, () => {
-    if (!alreadyLoadedRemotely) {
+  watch(subscriptionCacheReady, (ready) => {
+    if (ready && videoCacheForAllActiveProfileChannelsPresent.value) {
+      loadVideosFromCacheForAllActiveProfileChannels()
+    } else if (!alreadyLoadedRemotely) {
       loadVideosFromCacheSometimes()
     }
   })
