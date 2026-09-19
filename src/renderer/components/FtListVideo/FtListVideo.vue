@@ -1065,8 +1065,7 @@ async function handleExternalPlayer() {
           return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
         })[0]
       const useDirectAdaptiveVideo = networkType === 'mobile' && Boolean(selectedAdaptiveVideo)
-      const useAdaptiveStreams = networkType !== 'mobile' && selectedAdaptiveVideo && selectedAdaptiveAudio &&
-        (!selectedFormat || (selectedAdaptiveVideo.height ?? 0) > (selectedFormat.height ?? 0))
+      const useAdaptiveStreams = Boolean(selectedAdaptiveVideo && selectedAdaptiveAudio)
       if (useAdaptiveStreams) {
         externalStreams = {
           videoUrl: formatUrl(selectedAdaptiveVideo),
@@ -1086,7 +1085,7 @@ async function handleExternalPlayer() {
           durationSeconds: Number(info.basic_info?.duration ?? 0)
         }
       }
-      if (useDirectAdaptiveVideo) {
+      if (useDirectAdaptiveVideo && !useAdaptiveStreams) {
         mediaUrl = formatUrl(selectedAdaptiveVideo)
         mediaMimeType = selectedAdaptiveVideo.mime_type?.split(';')[0] ?? null
       } else if (selectedFormat && !useAdaptiveStreams) {

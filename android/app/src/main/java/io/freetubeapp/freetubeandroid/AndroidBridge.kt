@@ -781,7 +781,7 @@ class AndroidBridge(
         val duration = if (durationSeconds > 0) "PT${durationSeconds.toLong()}S" else "PT0S"
         Log.d("FreeTubeExternal", "relay-manifest-duration seconds=$durationSeconds value=$duration")
         val manifest = """<?xml version="1.0" encoding="UTF-8"?>
-<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="$duration" minBufferTime="PT1.5S">
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" mediaPresentationDuration="$duration" minBufferTime="PT1.5S">
   <Period>
     <AdaptationSet mimeType="$videoMimeType" contentType="video"${videoCodecs?.let { " codecs=\"$it\"" } ?: ""} maxWidth="$videoWidth" maxHeight="${maxHeight ?: videoHeight}">
       <Representation id="video" bandwidth="$videoBandwidth" width="$videoWidth" height="$videoHeight"${videoCodecs?.let { " codecs=\"$it\"" } ?: ""}>
@@ -879,18 +879,8 @@ class AndroidBridge(
             }
             val upstreamUrl = stream.url
             val range = requestHeaders["range"]
-            val isGoogleVideo = Uri.parse(upstreamUrl).host?.endsWith(".googlevideo.com") == true
-            val useYouTubeSegmentRequest = isGoogleVideo && range != null
-            val upstreamRequestUrl = if (useYouTubeSegmentRequest) {
-                Uri.parse(upstreamUrl).buildUpon()
-                    .appendQueryParameter("range", range?.substringAfter('=') ?: "")
-                    .appendQueryParameter("alr", "yes")
-                    .build()
-                    .toString()
-            } else {
-                upstreamUrl
-            }
-            val connection = (URL(upstreamRequestUrl).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(upstreamUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
                 connectTimeout = 15_000
                 readTimeout = 30_000
                 instanceFollowRedirects = true
@@ -901,19 +891,9 @@ class AndroidBridge(
                 stream.headers.forEach { (name, value) -> setRequestProperty(name, value) }
                 CookieManager.getInstance().getCookie(upstreamUrl)?.let { setRequestProperty("Cookie", it) }
                 setRequestProperty("Accept-Encoding", "identity")
-                if (useYouTubeSegmentRequest) {
-                    requestMethod = "POST"
-                    doOutput = true
-                    setFixedLengthStreamingMode(2)
-                } else {
-                    range?.let { setRequestProperty("Range", it) }
-                }
+                range?.let { setRequestProperty("Range", it) }
             }
-            if (useYouTubeSegmentRequest) {
-                connection.outputStream.use { it.write(byteArrayOf(0x78, 0x00)) }
-            } else {
-                connection.connect()
-            }
+            connection.connect()
 
             try {
                 val output = client.getOutputStream().bufferedWriter()
@@ -921,7 +901,7 @@ class AndroidBridge(
                 val rangeStart = range?.substringAfter("bytes=")?.substringBefore('-')?.toLongOrNull()
                 Log.d("FreeTubeExternal", "relay-upstream token=${token.take(8)} status=$upstreamStatus contentType=${connection.contentType} length=${connection.contentLengthLong} elapsedMs=${(System.nanoTime() - startedAt) / 1_000_000}")
                 val contentLength = connection.contentLengthLong
-                val isPartialResponse = useYouTubeSegmentRequest && upstreamStatus < 400 && rangeStart != null && contentLength >= 0
+                val isPartialResponse = upstreamStatus == 206 && rangeStart != null && contentLength >= 0
                 val status = if (isPartialResponse) 206 else upstreamStatus
                 val totalLength = if (isPartialResponse) rangeStart!! + contentLength else null
                 output.write("HTTP/1.1 $status ${if (status == 206) "Partial Content" else connection.responseMessage ?: "OK"}\r\n")
