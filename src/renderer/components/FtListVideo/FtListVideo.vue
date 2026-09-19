@@ -1014,27 +1014,95 @@ async function handleExternalPlayer() {
   emit('pause-player')
 
   if (process.env.IS_ANDROID) {
+    const directProxyFallback = window.Android?.hasHttpProxy?.() === true
+    const relayUrl = directProxyFallback
+      ? null
+      : openExternalPlayer({
+          videoId: id.value,
+          title: displayTitle.value,
+          playlistId: playlistIdFinal.value,
+          startTime: watchProgress.value,
+          pending: true
+        })
+    log(directProxyFallback ? 'resolve-before-chooser' : 'bridge-called', { elapsedMs: Math.round(performance.now() - startedAt) })
+
     let mediaUrl = null
     let manifestUrl = null
+    let externalStreams = null
     let targetQuality = 720
+    let externalHeaders = null
     try {
       log('resolve-start')
-      const { info } = await getLocalVideoInfo(id.value)
+      const { info, clientInfo } = await getLocalVideoInfo(id.value)
       log('resolve-done', { elapsedMs: Math.round(performance.now() - startedAt) })
-      const formats = (info.streaming_data?.formats ?? []).filter(format => {
-        return typeof format.freeTubeUrl === 'string' || typeof format.url === 'string'
-      })
+      const formats = info.streaming_data?.formats ?? []
+      const adaptiveFormats = info.streaming_data?.adaptive_formats ?? []
+      manifestUrl = info.streaming_data?.dash_manifest_url ?? null
       targetQuality = getDefaultQualityForNetwork(
         getNetworkType(),
         parseInt(store.getters.getWifiDefaultQuality),
         parseInt(store.getters.getMobileDefaultQuality),
         720
       )
-      const suitableFormats = formats.filter(format => (format.height ?? 0) <= targetQuality)
-      const selectedFormat = [...(suitableFormats.length ? suitableFormats : formats)]
+      const availableFormats = formats.filter(format => {
+        return typeof format.freeTubeUrl === 'string' || typeof format.url === 'string'
+      })
+      const suitableFormats = availableFormats.filter(format => (format.height ?? 0) <= targetQuality)
+      const selectedFormat = [...(suitableFormats.length ? suitableFormats : availableFormats)]
+        .sort((a, b) => {
+          const qualityDifference = (b.height ?? 0) - (a.height ?? 0)
+          if (qualityDifference !== 0) return qualityDifference
+          return formats.indexOf(a) - formats.indexOf(b)
+        })[0]
+      const adaptiveVideoFormats = adaptiveFormats.filter(format => {
+        return (format.has_video || (format.width ?? 0) > 0) &&
+          (typeof format.freeTubeUrl === 'string' || typeof format.url === 'string')
+      })
+      const adaptiveAudioFormats = adaptiveFormats.filter(format => {
+        return (format.has_audio || format.mime_type?.startsWith('audio/')) &&
+          !(format.has_video || (format.width ?? 0) > 0) &&
+          (typeof format.freeTubeUrl === 'string' || typeof format.url === 'string')
+      })
+      const suitableAdaptiveVideoFormats = adaptiveVideoFormats.filter(format => (format.height ?? 0) <= targetQuality)
+      const selectedAdaptiveVideo = [...(suitableAdaptiveVideoFormats.length ? suitableAdaptiveVideoFormats : adaptiveVideoFormats)]
         .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
-      mediaUrl = selectedFormat?.freeTubeUrl ?? selectedFormat?.url ?? null
-      manifestUrl = mediaUrl ? null : info.streaming_data?.dash_manifest_url ?? null
+      const selectedAdaptiveAudio = [...adaptiveAudioFormats]
+        .sort((a, b) => {
+          const aIsMp4 = a.mime_type?.startsWith('audio/mp4') ? 1 : 0
+          const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
+          return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
+        })[0]
+      if (!directProxyFallback && selectedAdaptiveVideo && selectedAdaptiveAudio) {
+        const formatUrl = format => format.freeTubeUrl ?? format.url
+        externalStreams = {
+          videoUrl: formatUrl(selectedAdaptiveVideo),
+          audioUrl: formatUrl(selectedAdaptiveAudio),
+          videoWidth: selectedAdaptiveVideo.width,
+          videoHeight: selectedAdaptiveVideo.height,
+          videoMimeType: selectedAdaptiveVideo.mime_type,
+          videoBandwidth: selectedAdaptiveVideo.bitrate,
+          videoInitRange: selectedAdaptiveVideo.init_range,
+          videoIndexRange: selectedAdaptiveVideo.index_range,
+          audioMimeType: selectedAdaptiveAudio.mime_type,
+          audioBandwidth: selectedAdaptiveAudio.bitrate,
+          audioInitRange: selectedAdaptiveAudio.init_range,
+          audioIndexRange: selectedAdaptiveAudio.index_range,
+          audioSampleRate: selectedAdaptiveAudio.audio_sample_rate,
+          audioChannels: selectedAdaptiveAudio.audio_channels,
+          durationSeconds: Number(info.basic_info?.duration ?? 0)
+        }
+        manifestUrl = null
+      }
+      mediaUrl = externalStreams || manifestUrl
+        ? null
+        : selectedFormat?.freeTubeUrl ?? selectedFormat?.url ?? null
+      if (clientInfo) {
+        externalHeaders = {
+          'X-Goog-Visitor-Id': clientInfo.visitorData,
+          'X-YouTube-Client-Name': String(clientInfo.clientName),
+          'X-YouTube-Client-Version': clientInfo.clientVersion
+        }
+      }
       log('stream-selected', {
         elapsedMs: Math.round(performance.now() - startedAt),
         hasMediaUrl: Boolean(mediaUrl),
@@ -1046,14 +1114,26 @@ async function handleExternalPlayer() {
       console.warn('Failed to resolve external player URL', error)
     }
 
-    if (mediaUrl || manifestUrl) {
+    if (directProxyFallback && (externalStreams || mediaUrl)) {
       openExternalPlayer({
         videoId: id.value,
-        mediaUrl,
-        manifestUrl,
-        title: displayTitle.value
+        mediaUrl: externalStreams ? null : mediaUrl,
+        externalStreams,
+        title: displayTitle.value,
+        externalHeaders,
+        maxQuality: targetQuality
       })
-      log('direct-opened', { elapsedMs: Math.round(performance.now() - startedAt), targetQuality })
+      log('direct-proxy-opened', { elapsedMs: Math.round(performance.now() - startedAt), targetQuality, adaptive: Boolean(externalStreams) })
+    } else if (relayUrl && typeof window.Android?.updateExternalPlayer === 'function') {
+      window.Android.updateExternalPlayer(
+        relayUrl,
+        mediaUrl,
+        externalHeaders ? JSON.stringify(externalHeaders) : null,
+        manifestUrl,
+        targetQuality,
+        externalStreams ? JSON.stringify(externalStreams) : null
+      )
+      log('relay-updated', { elapsedMs: Math.round(performance.now() - startedAt) })
     }
     return
   }

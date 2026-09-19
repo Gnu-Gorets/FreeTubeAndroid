@@ -379,8 +379,14 @@ async function handleExternalPlayer() {
   }
 
   if (USING_ANDROID && !payload.mediaUrl) {
+    const relayUrl = openExternalPlayer({
+      videoId: props.id,
+      title: props.title,
+      pending: true
+    })
+
     try {
-      const { info } = await getLocalVideoInfo(props.id)
+      const { info, clientInfo } = await getLocalVideoInfo(props.id)
       const targetQuality = getDefaultQualityForNetwork(
         getNetworkType(),
         parseInt(store.getters.getWifiDefaultQuality),
@@ -394,7 +400,24 @@ async function handleExternalPlayer() {
         .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
       const mediaUrl = format?.freeTubeUrl ?? format?.url ?? null
       const manifestUrl = mediaUrl ? null : info.streaming_data?.dash_manifest_url ?? null
-      if (mediaUrl || manifestUrl) openExternalPlayer({ ...payload, mediaUrl, manifestUrl })
+      const externalHeaders = clientInfo
+        ? {
+            'X-Goog-Visitor-Id': clientInfo.visitorData,
+            'X-YouTube-Client-Name': String(clientInfo.clientName),
+            'X-YouTube-Client-Version': clientInfo.clientVersion
+          }
+        : null
+
+      if (relayUrl && typeof window.Android?.updateExternalPlayer === 'function') {
+        window.Android.updateExternalPlayer(
+          relayUrl,
+          mediaUrl,
+          externalHeaders ? JSON.stringify(externalHeaders) : null,
+          manifestUrl,
+          targetQuality,
+          null
+        )
+      }
     } catch (error) {
       console.warn('Failed to resolve external player URL', error)
     }
