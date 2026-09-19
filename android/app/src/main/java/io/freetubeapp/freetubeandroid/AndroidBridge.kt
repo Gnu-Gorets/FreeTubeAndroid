@@ -620,7 +620,7 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?, title: String?, pending: Boolean): String {
+    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?, mediaMimeType: String?, title: String?, pending: Boolean): String {
         val requestId = UUID.randomUUID().toString().take(8)
         val startedAt = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
@@ -640,9 +640,9 @@ class AndroidBridge(
         Log.d("FreeTubeExternal", "[$requestId] headers-parsed elapsedMs=${elapsedMs()} count=${headers.size}")
         val manifestUri = manifestUrl?.let(Uri::parse)
         val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
+        val isYoutubeWatchUrl = uri.host == "www.youtube.com" && uri.path in setOf("/watch", "/playlist")
         val usePendingRelay = pending && streamsJson == null && !useManifest
-        val useDirectUrl = streamsJson == null && !useManifest && !usePendingRelay &&
-            uri.host == "www.youtube.com" && uri.path in setOf("/watch", "/playlist")
+        val useDirectUrl = !pending && streamsJson == null && !useManifest && !isYoutubeWatchUrl
         Log.d("FreeTubeExternal", "[$requestId] relay-registration-start elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl pending=$pending")
         val relayUrl = if (useDirectUrl) {
             url
@@ -663,9 +663,16 @@ class AndroidBridge(
         activity.runOnUiThread {
             Log.d("FreeTubeExternal", "[$requestId] chooser-start elapsedMs=${elapsedMs()}")
             try {
+                val mimeType = if (useDirectUrl) {
+                    mediaMimeType?.substringBefore(';')?.takeIf { it.contains('/') } ?: "video/*"
+                } else if (useManifest) {
+                    "application/dash+xml"
+                } else {
+                    "video/*"
+                }
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
-                    if (!title.isNullOrBlank()) putExtra("title", title)
+                    setDataAndType(Uri.parse(relayUrl), mimeType)
+                    if (!title.isNullOrBlank()) putExtra(Intent.EXTRA_TITLE, title)
                 }
                 Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
                 activity.startActivity(Intent.createChooser(intent, null))
