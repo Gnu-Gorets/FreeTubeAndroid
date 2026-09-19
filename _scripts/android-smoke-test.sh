@@ -611,6 +611,54 @@ restore_external_network_state() {
   esac
 }
 
+wait_for_external_playback() {
+  local player_package="$1"
+  for _ in $(seq 1 "$TIMEOUT"); do
+    if adb_shell dumpsys media_session 2>/dev/null \
+      | grep -A20 -m1 "$player_package" \
+      | grep -q 'state=PlaybackState {state=PLAYING'; then
+      progress "external playback active: $player_package"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "External playback did not reach PLAYING: $player_package" >&2
+  return 1
+}
+
+wait_for_external_audio() {
+  local player_package="$1"
+  for _ in $(seq 1 "$TIMEOUT"); do
+    if adb_shell dumpsys audio 2>/dev/null \
+      | grep -q "requestAudioFocus.*callingPack=$player_package"; then
+      progress "external audio focus acquired: $player_package"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "External audio focus was not acquired: $player_package" >&2
+  return 1
+}
+
+wait_for_external_quality() {
+  local network="$1" expected="$2" state target adaptive
+  for _ in $(seq 1 "$TIMEOUT"); do
+    state=$(adb_cmd logcat -d -v brief \
+      | grep 'stream-selected' \
+      | grep "\"networkType\":\"$network\"" \
+      | tail -1 || true)
+    target=$(sed -n 's/.*"targetQuality":\([0-9]*\).*/\1/p' <<<"$state")
+    adaptive=$(sed -n 's/.*"selectedAdaptiveHeight":\([0-9]*\).*/\1/p' <<<"$state")
+    if [[ "$target" == "$expected" && "$adaptive" == "$expected" ]]; then
+      progress "external quality matched: network=$network expected=${expected}p actual=${adaptive}p"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "External quality mismatch: network=$network expected=${expected}p state=${state:-missing}" >&2
+  return 1
+}
+
 external_player_case() {
   local player_package="$1" network="$2" first_index="$3" second_index="$4"
   set_external_network "$network" || return 1
@@ -626,6 +674,12 @@ external_player_case() {
   wait_for "$PACKAGE" || return 1
   run_web_smoke_action external_player "$second_index|$player_package" || return 1
   wait_for "$player_package" || return 1
+  progress "check 1/3: video playback in $player_package"
+  wait_for_external_playback "$player_package" || return 1
+  progress "check 2/3: audio focus in $player_package"
+  wait_for_external_audio "$player_package" || return 1
+  progress "check 3/3: default quality for $network"
+  wait_for_external_quality "$network" "$([[ "$network" == "wifi" ]] && echo 1080 || echo 480)" || return 1
   sleep 5
 }
 
