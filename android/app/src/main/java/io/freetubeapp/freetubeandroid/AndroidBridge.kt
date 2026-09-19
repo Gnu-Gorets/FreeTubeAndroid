@@ -673,7 +673,7 @@ class AndroidBridge(
                 val intentUrl = if (streamsJson != null) "$relayUrl.mpd" else relayUrl
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(Uri.parse(intentUrl), mimeType)
-                    if (!title.isNullOrBlank()) putExtra(Intent.EXTRA_TITLE, title)
+                    if (!title.isNullOrBlank()) putExtra("title", title)
                 }
                 Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
                 activity.startActivity(intent)
