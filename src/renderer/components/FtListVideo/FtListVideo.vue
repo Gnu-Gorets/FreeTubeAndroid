@@ -1064,6 +1064,7 @@ async function handleExternalPlayer() {
           const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
           return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
         })[0]
+      const useDirectAdaptiveVideo = networkType === 'mobile' && Boolean(selectedAdaptiveVideo)
       const useAdaptiveStreams = networkType !== 'mobile' && selectedAdaptiveVideo && selectedAdaptiveAudio &&
         (!selectedFormat || (selectedAdaptiveVideo.height ?? 0) > (selectedFormat.height ?? 0))
       if (useAdaptiveStreams) {
@@ -1085,7 +1086,10 @@ async function handleExternalPlayer() {
           durationSeconds: Number(info.basic_info?.duration ?? 0)
         }
       }
-      if (selectedFormat && !useAdaptiveStreams) {
+      if (useDirectAdaptiveVideo) {
+        mediaUrl = formatUrl(selectedAdaptiveVideo)
+        mediaMimeType = selectedAdaptiveVideo.mime_type?.split(';')[0] ?? null
+      } else if (selectedFormat && !useAdaptiveStreams) {
         mediaUrl = formatUrl(selectedFormat)
         mediaMimeType = selectedFormat.mime_type?.split(';')[0] ?? null
       }
@@ -1103,6 +1107,7 @@ async function handleExternalPlayer() {
         selectedFormatHeight: selectedFormat?.height ?? null,
         selectedFormatItag: selectedFormat?.itag ?? null,
         selectedAdaptiveHeight: selectedAdaptiveVideo?.height ?? null,
+        selectedDirectAdaptiveVideo: useDirectAdaptiveVideo,
         networkType,
         selectedAudioLanguage: selectedAdaptiveAudio?.language ?? null,
         selectedAudioOriginal: selectedAdaptiveAudio?.is_original === true,

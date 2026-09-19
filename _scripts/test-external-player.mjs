@@ -42,6 +42,7 @@ assert.match(bridge, /usePendingRelay -> ""/)
 assert.match(video, /await getLocalVideoInfo\(id\.value\)/)
 assert.match(video, /mediaMimeType = selectedFormat\.mime_type/)
 assert.match(video, /hasAudio = format =>/)
+assert.match(video, /const useDirectAdaptiveVideo = networkType === 'mobile' && Boolean\(selectedAdaptiveVideo\)/)
 assert.match(video, /const useAdaptiveStreams = networkType !== 'mobile' && selectedAdaptiveVideo && selectedAdaptiveAudio/)
 assert.match(video, /pending: !mediaUrl && !externalStreams/)
 
