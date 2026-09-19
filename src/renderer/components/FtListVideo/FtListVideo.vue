@@ -1025,6 +1025,7 @@ async function handleExternalPlayer() {
 
     let mediaUrl = null
     let manifestUrl = null
+    let externalStreams = null
     let targetQuality = 720
     let externalHeaders = null
     try {
@@ -1032,6 +1033,7 @@ async function handleExternalPlayer() {
       const { info, clientInfo } = await getLocalVideoInfo(id.value)
       log('resolve-done', { elapsedMs: Math.round(performance.now() - startedAt) })
       const formats = info.streaming_data?.formats ?? []
+      const adaptiveFormats = info.streaming_data?.adaptive_formats ?? []
       manifestUrl = info.streaming_data?.dash_manifest_url ?? null
       targetQuality = getDefaultQualityForNetwork(
         getNetworkType(),
@@ -1049,7 +1051,42 @@ async function handleExternalPlayer() {
           if (qualityDifference !== 0) return qualityDifference
           return formats.indexOf(a) - formats.indexOf(b)
         })[0]
-      mediaUrl = selectedFormat?.freeTubeUrl ?? selectedFormat?.url ?? null
+      const adaptiveVideoFormats = adaptiveFormats.filter(format => {
+        return (format.has_video || (format.width ?? 0) > 0) &&
+          (typeof format.freeTubeUrl === 'string' || typeof format.url === 'string')
+      })
+      const adaptiveAudioFormats = adaptiveFormats.filter(format => {
+        return (format.has_audio || format.mime_type?.startsWith('audio/')) &&
+          !(format.has_video || (format.width ?? 0) > 0) &&
+          (typeof format.freeTubeUrl === 'string' || typeof format.url === 'string')
+      })
+      const suitableAdaptiveVideoFormats = adaptiveVideoFormats.filter(format => (format.height ?? 0) <= targetQuality)
+      const selectedAdaptiveVideo = [...(suitableAdaptiveVideoFormats.length ? suitableAdaptiveVideoFormats : adaptiveVideoFormats)]
+        .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
+      const selectedAdaptiveAudio = [...adaptiveAudioFormats]
+        .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]
+      if (selectedAdaptiveVideo && selectedAdaptiveAudio) {
+        const formatUrl = format => format.freeTubeUrl ?? format.url
+        externalStreams = {
+          videoUrl: formatUrl(selectedAdaptiveVideo),
+          audioUrl: formatUrl(selectedAdaptiveAudio),
+          videoWidth: selectedAdaptiveVideo.width,
+          videoHeight: selectedAdaptiveVideo.height,
+          videoMimeType: selectedAdaptiveVideo.mime_type,
+          videoBandwidth: selectedAdaptiveVideo.bitrate,
+          videoInitRange: selectedAdaptiveVideo.init_range,
+          videoIndexRange: selectedAdaptiveVideo.index_range,
+          audioMimeType: selectedAdaptiveAudio.mime_type,
+          audioBandwidth: selectedAdaptiveAudio.bitrate,
+          audioInitRange: selectedAdaptiveAudio.init_range,
+          audioIndexRange: selectedAdaptiveAudio.index_range,
+          audioSampleRate: selectedAdaptiveAudio.audio_sample_rate,
+          audioChannels: selectedAdaptiveAudio.audio_channels,
+          durationSeconds: Number(info.basic_info?.duration ?? 0)
+        }
+        manifestUrl = null
+      }
+      mediaUrl = externalStreams || manifestUrl ? null : selectedFormat?.freeTubeUrl ?? selectedFormat?.url ?? null
       if (clientInfo) {
         externalHeaders = {
           'X-Goog-Visitor-Id': clientInfo.visitorData,
@@ -1074,7 +1111,8 @@ async function handleExternalPlayer() {
         mediaUrl,
         externalHeaders ? JSON.stringify(externalHeaders) : null,
         manifestUrl,
-        targetQuality
+        targetQuality,
+        externalStreams ? JSON.stringify(externalStreams) : null
       )
       log('relay-updated', { elapsedMs: Math.round(performance.now() - startedAt) })
     }

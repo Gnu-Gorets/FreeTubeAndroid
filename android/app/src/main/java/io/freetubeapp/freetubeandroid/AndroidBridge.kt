@@ -96,12 +96,16 @@ class AndroidBridge(
     @JavascriptInterface
     fun getNetworkType(): String {
         val connectivity = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        val network = connectivity.activeNetwork ?: return "unknown"
-        val capabilities = connectivity.getNetworkCapabilities(network) ?: return "unknown"
-        val wifi = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
-        val mobile = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
-        return if (wifi.xor(mobile)) {
-            if (wifi) "wifi" else "mobile"
+        val networks = connectivity.allNetworks
+        val capabilities = networks.mapNotNull(connectivity::getNetworkCapabilities)
+        if (capabilities.any { it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) }) {
+            return "wifi"
+        }
+        return if (capabilities.any {
+            it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                it.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }) {
+            "mobile"
         } else {
             "unknown"
         }
@@ -679,13 +683,23 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?) {
+    fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
         val token = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return
         val headers = try {
             val json = headersJson?.let(::JSONObject)
             json?.keys()?.asSequence()?.associateWith { json.getString(it) } ?: emptyMap()
         } catch (_: Exception) {
             emptyMap()
+        }
+        streamsJson?.let { jsonText ->
+            val manifestRelayUrl = registerExternalStreamsManifest(jsonText, headers, maxQuality)
+            val manifestToken = Uri.parse(manifestRelayUrl).path?.substringAfterLast('/')
+            val manifestStream = manifestToken?.let(externalStreams::get)
+            if (manifestStream != null) {
+                externalStreams[token] = manifestStream
+                Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=true hasStreams=true")
+            }
+            return
         }
         val streamUrl = mediaUrl?.takeIf { it.startsWith("http") }
             ?: manifestUrl?.takeIf { it.startsWith("http") }
