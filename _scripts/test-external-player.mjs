@@ -51,6 +51,10 @@ assert.match(video, /adaptive: Boolean\(externalStreams\)/)
 assert.match(video, /window\.Android\.updateExternalPlayer\(/)
 assert.match(video, /relayUrl && typeof window\.Android\?\.updateExternalPlayer === 'function'/)
 
+assert.match(watchInfo, /const USING_ANDROID = process\.env\.IS_ANDROID/)
+assert.match(watchInfo, /USING_ELECTRON \|\| USING_ANDROID/)
+assert.doesNotMatch(watchInfo.split('<script')[0], /process\.env\.IS_ANDROID/)
+
 for (const component of [video, playlist, watchInfo]) {
   assert.match(component, /openExternalPlayer\(/)
 }

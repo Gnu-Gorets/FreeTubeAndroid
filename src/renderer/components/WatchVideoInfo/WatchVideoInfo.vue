@@ -105,7 +105,7 @@
         </span>
         <span class="videoOptionsMobileRow">
           <FtIconButton
-            v-if="(USING_ELECTRON || process.env.IS_ANDROID) && externalPlayer !== ''"
+            v-if="(USING_ELECTRON || USING_ANDROID) && externalPlayer !== ''"
             :title="t('Video.External Player.OpenInTemplate', { externalPlayer })"
             :icon="['fas', 'external-link-alt']"
             theme="secondary"
@@ -248,6 +248,7 @@ const emit = defineEmits([
 ])
 
 const USING_ELECTRON = process.env.IS_ELECTRON
+const USING_ANDROID = process.env.IS_ANDROID
 
 const { locale, t } = useI18n()
 
