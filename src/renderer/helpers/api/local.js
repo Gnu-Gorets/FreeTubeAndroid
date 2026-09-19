@@ -583,7 +583,27 @@ export function getOriginalVideoLanguage(info) {
   return originalFormat?.language ?? formats.find(format => format.language)?.language
 }
 
+const localVideoInfoCache = new Map()
+const LOCAL_VIDEO_INFO_CACHE_TTL_MS = 5 * 60 * 1000
+
 export async function getLocalVideoInfo(id) {
+  const now = Date.now()
+  const cached = localVideoInfoCache.get(id)
+  if (cached && now - cached.createdAt < LOCAL_VIDEO_INFO_CACHE_TTL_MS) {
+    return await cached.promise
+  }
+
+  const promise = getLocalVideoInfoUncached(id)
+  localVideoInfoCache.set(id, { createdAt: now, promise })
+  try {
+    return await promise
+  } catch (error) {
+    if (localVideoInfoCache.get(id)?.promise === promise) localVideoInfoCache.delete(id)
+    throw error
+  }
+}
+
+async function getLocalVideoInfoUncached(id) {
   let responseTime
   let totalAdTimeMilliseconds = 0
 
@@ -759,6 +779,7 @@ export async function getLocalVideoInfo(id) {
   const clientInfo = {
     clientName: Constants.CLIENT_NAME_IDS[clientName],
     clientVersion,
+    visitorData: context.client.visitorData,
     osName,
     osVersion
   }
@@ -784,7 +805,10 @@ export async function getLocalVideoInfo(id) {
   }
 
   if (info.streaming_data) {
-    await decipherFormats(info.streaming_data.formats, player)
+    await decipherFormats([
+      ...info.streaming_data.formats,
+      ...(info.streaming_data.adaptive_formats ?? [])
+    ], player)
 
     if (info.streaming_data.server_abr_streaming_url) {
       try {
