@@ -2,61 +2,71 @@
   <FtSettingsSection
     :title="$t('Settings.External Player Settings.External Player Settings')"
   >
-    <FtFlexBox>
-      <FtSelect
-        :placeholder="$t('Settings.External Player Settings.External Player')"
-        :value="externalPlayer"
-        :select-names="externalPlayerNames"
-        :select-values="externalPlayerValues"
-        :tooltip="$t('Tooltips.External Player Settings.External Player')"
-        :icon="['fas', 'external-link-alt']"
-        @change="updateExternalPlayer"
+    <FtFlexBox v-if="USING_ANDROID">
+      <FtToggleSwitch
+        :label="$t('Settings.External Player Settings.External Player')"
+        :default-value="externalPlayer !== ''"
+        :compact="true"
+        @change="toggleAndroidExternalPlayer"
       />
     </FtFlexBox>
-    <FtFlexBox>
-      <FtToggleSwitch
-        :label="$t('Settings.External Player Settings.Ignore Unsupported Action Warnings')"
-        :default-value="externalPlayerIgnoreWarnings"
-        :disabled="externalPlayer === ''"
-        :compact="true"
-        :tooltip="$t('Tooltips.External Player Settings.Ignore Warnings')"
-        @change="updateExternalPlayerIgnoreWarnings"
-      />
-      <FtToggleSwitch
-        :label="$t('Settings.External Player Settings.Ignore Default Arguments')"
-        :default-value="externalPlayerIgnoreDefaultArgs"
-        :disabled="externalPlayer === ''"
-        :compact="true"
-        :tooltip="$t('Tooltips.External Player Settings.Ignore Default Arguments')"
-        @change="updateExternalPlayerIgnoreDefaultArgs"
-      />
-    </FtFlexBox>
-    <template
-      v-if="externalPlayer !== ''"
-    >
-      <FtFlexBox
-        class="settingsFlexStart460px"
-      >
-        <FtInput
-          :placeholder="$t('Settings.External Player Settings.Custom External Player Executable')"
-          :show-action-button="false"
-          :show-label="true"
-          :value="externalPlayerExecutable"
-          :tooltip="$t('Tooltips.External Player Settings.Custom External Player Executable')"
-          @input="updateExternalPlayerExecutable"
+    <template v-else>
+      <FtFlexBox>
+        <FtSelect
+          :placeholder="$t('Settings.External Player Settings.External Player')"
+          :value="externalPlayer"
+          :select-names="externalPlayerNames"
+          :select-values="externalPlayerValues"
+          :tooltip="$t('Tooltips.External Player Settings.External Player')"
+          :icon="['fas', 'external-link-alt']"
+          @change="updateExternalPlayer"
         />
       </FtFlexBox>
       <FtFlexBox>
-        <FtInputTags
-          :label="$t('Settings.External Player Settings.Custom External Player Arguments')"
-          :tag-name-placeholder="$t('Settings.External Player Settings.Custom External Player Arguments')"
-          :tag-list="externalPlayerCustomArgs"
-          :tooltip="externalPlayerCustomArgsTooltip"
-          :show-tags="showAddedExternalPlayerCustomArgs"
-          @change="handleExternalPlayerCustomArgs"
-          @toggle-show-tags="handleAddedExternalPayerCustomArgs"
+        <FtToggleSwitch
+          :label="$t('Settings.External Player Settings.Ignore Unsupported Action Warnings')"
+          :default-value="externalPlayerIgnoreWarnings"
+          :disabled="externalPlayer === ''"
+          :compact="true"
+          :tooltip="$t('Tooltips.External Player Settings.Ignore Warnings')"
+          @change="updateExternalPlayerIgnoreWarnings"
+        />
+        <FtToggleSwitch
+          :label="$t('Settings.External Player Settings.Ignore Default Arguments')"
+          :default-value="externalPlayerIgnoreDefaultArgs"
+          :disabled="externalPlayer === ''"
+          :compact="true"
+          :tooltip="$t('Tooltips.External Player Settings.Ignore Default Arguments')"
+          @change="updateExternalPlayerIgnoreDefaultArgs"
         />
       </FtFlexBox>
+      <template
+        v-if="externalPlayer !== ''"
+      >
+        <FtFlexBox
+          class="settingsFlexStart460px"
+        >
+          <FtInput
+            :placeholder="$t('Settings.External Player Settings.Custom External Player Executable')"
+            :show-action-button="false"
+            :show-label="true"
+            :value="externalPlayerExecutable"
+            :tooltip="$t('Tooltips.External Player Settings.Custom External Player Executable')"
+            @input="updateExternalPlayerExecutable"
+          />
+        </FtFlexBox>
+        <FtFlexBox>
+          <FtInputTags
+            :label="$t('Settings.External Player Settings.Custom External Player Arguments')"
+            :tag-name-placeholder="$t('Settings.External Player Settings.Custom External Player Arguments')"
+            :tag-list="externalPlayerCustomArgs"
+            :tooltip="externalPlayerCustomArgsTooltip"
+            :show-tags="showAddedExternalPlayerCustomArgs"
+            @change="handleExternalPlayerCustomArgs"
+            @toggle-show-tags="handleAddedExternalPayerCustomArgs"
+          />
+        </FtFlexBox>
+      </template>
     </template>
   </FtSettingsSection>
 </template>
@@ -75,6 +85,7 @@ import FtInputTags from './FtInputTags/FtInputTags.vue'
 import store from '../store/index'
 
 const { t } = useI18n()
+const USING_ANDROID = !!process.env.IS_ANDROID
 
 /** @type {import('vue').ComputedRef<string>} */
 const externalPlayer = computed(() => store.getters.getExternalPlayer)
@@ -124,6 +135,13 @@ const externalPlayerCustomArgsTooltip = computed(() => {
  */
 function updateExternalPlayer(value) {
   store.dispatch('updateExternalPlayer', value)
+}
+
+/**
+ * @param {boolean} enabled
+ */
+function toggleAndroidExternalPlayer(enabled) {
+  store.dispatch('updateExternalPlayer', enabled ? 'android' : '')
 }
 
 /**
