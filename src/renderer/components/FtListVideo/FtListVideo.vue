@@ -1072,7 +1072,7 @@ async function handleExternalPlayer() {
           const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
           return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
         })[0]
-      if (!directProxyFallback && selectedAdaptiveVideo && selectedAdaptiveAudio) {
+      if (selectedAdaptiveVideo && selectedAdaptiveAudio) {
         const formatUrl = format => format.freeTubeUrl ?? format.url
         externalStreams = {
           videoUrl: formatUrl(selectedAdaptiveVideo),
