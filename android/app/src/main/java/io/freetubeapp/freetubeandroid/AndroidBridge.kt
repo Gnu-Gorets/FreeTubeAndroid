@@ -688,6 +688,7 @@ class AndroidBridge(
             try {
                 val intentUrl = "$relayUrl$extension"
                 val intent = Intent(Intent.ACTION_VIEW).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     setDataAndType(Uri.parse(intentUrl), mimeType)
                     if (!title.isNullOrBlank()) putExtra("title", title)
                 }
