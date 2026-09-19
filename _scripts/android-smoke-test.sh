@@ -28,8 +28,6 @@ PROXY_PORT=19050
 PROXY_LOG=""
 QUALITY=""
 QUALITY_VIDEO_ID="mXIAYbU3nQI"
-EXTERNAL_PLAYER_URL_ONE="https://youtu.be/ofcdHlKJ9W0?si=21-SJLZKS1ncPHzk"
-EXTERNAL_PLAYER_URL_TWO="https://youtu.be/vYosAN7UShU?si=l2zba0lXuuAiaUnH"
 EXTERNAL_PLAYER_WIFI_STATE=""
 EXTERNAL_PLAYER_MOBILE_STATE=""
 
@@ -46,7 +44,9 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality, external_player
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality,
+                        external_player, external_player_wifi_vlc, external_player_wifi_mpv,
+                        external_player_mobile_vlc, external_player_mobile_mpv
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -398,10 +398,11 @@ fullscreen_fit_screen() {
 }
 
 run_web_smoke_action() {
-  local action="$1" query="${2:-}" result="" marker
+  local action="$1" query="${2:-}" result="" marker shell_query
   marker="SMOKE_${action^^}_TEST:"
+  printf -v shell_query '%q' "$query"
   adb_shell am start -a io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION \
-    --es action "$action" --es query "$query" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+    --es action "$action" --es query "$shell_query" -n "$ACTIVITY" >/dev/null 2>&1 || return 1
   [[ "$action" == "fullscreen" ]] && adb_shell input keyevent KEYCODE_F
   for _ in $(seq 1 "$TIMEOUT"); do
     result=$(adb_cmd logcat -d -v brief | grep "$marker" | tail -1 || true)
@@ -566,15 +567,37 @@ save_external_network_state() {
   EXTERNAL_PLAYER_MOBILE_STATE=$(adb_shell settings get global mobile_data 2>/dev/null || true)
 }
 
+network_is_only() {
+  local expected="$1" dump wifi mobile
+  dump=$(adb_shell dumpsys connectivity 2>/dev/null) || return 1
+  wifi=$(grep -c 'ni{WIFI CONNECTED' <<<"$dump")
+  mobile=$(grep 'ni{MOBILE.*CONNECTED' <<<"$dump" | grep -c 'Capabilities:.*INTERNET')
+  if [[ "$expected" == "wifi" ]]; then
+    [[ "$wifi" -gt 0 && "$mobile" -eq 0 ]]
+  else
+    [[ "$wifi" -eq 0 && "$mobile" -gt 0 ]]
+  fi
+}
+
 set_external_network() {
-  if [[ "$1" == "wifi" ]]; then
+  local expected="$1"
+  if [[ "$expected" == "wifi" ]]; then
     adb_shell svc wifi enable
     adb_shell svc data disable
   else
     adb_shell svc wifi disable
     adb_shell svc data enable
   fi
-  sleep 3
+  for _ in $(seq 1 30); do
+    if network_is_only "$expected"; then
+      progress "network ready: $expected only"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Network setup failed: expected $expected only" >&2
+  adb_shell dumpsys connectivity >&2
+  return 1
 }
 
 restore_external_network_state() {
@@ -589,31 +612,44 @@ restore_external_network_state() {
 }
 
 external_player_case() {
-  local player_package="$1" network="$2" first_url="$3" second_url="$4"
+  local player_package="$1" network="$2" first_index="$3" second_index="$4"
   set_external_network "$network" || return 1
+  adb_shell am force-stop --user 0 "$player_package" >/dev/null 2>&1 || true
   start_app || return 1
-  adb_shell am start --user 0 -a android.intent.action.VIEW -d "$first_url" -t 'video/*' -p "$player_package" >/dev/null 2>&1 || return 1
+  run_web_smoke_action external_player "$first_index|$player_package" || return 1
   wait_for "$player_package" || return 1
   sleep 5
   adb_shell input keyevent KEYCODE_MEDIA_PAUSE
   adb_shell input keyevent KEYCODE_HOME
   sleep 2
-  start_app || return 1
-  adb_shell am start --user 0 -a android.intent.action.VIEW -d "$second_url" -t 'video/*' -p "$player_package" >/dev/null 2>&1 || return 1
+  adb_shell am start --user 0 -n "$ACTIVITY" >/dev/null 2>&1 || return 1
+  wait_for "$PACKAGE" || return 1
+  run_web_smoke_action external_player "$second_index|$player_package" || return 1
   wait_for "$player_package" || return 1
   sleep 5
 }
 
-external_player() {
+external_player_single() {
+  local player_package="$1" network="$2" first_index="$3" second_index="$4" status=0
   clean_logs
   save_external_network_state
-  local status=0
-  external_player_case org.videolan.vlc wifi "$EXTERNAL_PLAYER_URL_ONE" "$EXTERNAL_PLAYER_URL_TWO" || status=1
-  external_player_case is.xyz.mpv wifi "$EXTERNAL_PLAYER_URL_TWO" "$EXTERNAL_PLAYER_URL_TWO" || status=1
-  external_player_case org.videolan.vlc mobile "$EXTERNAL_PLAYER_URL_ONE" "$EXTERNAL_PLAYER_URL_TWO" || status=1
-  external_player_case is.xyz.mpv mobile "$EXTERNAL_PLAYER_URL_TWO" "$EXTERNAL_PLAYER_URL_TWO" || status=1
+  external_player_case "$player_package" "$network" "$first_index" "$second_index" || status=1
   restore_external_network_state
   no_runtime_errors || status=1
+  return "$status"
+}
+
+external_player_wifi_vlc() { external_player_single org.videolan.vlc wifi 0 1; }
+external_player_wifi_mpv() { external_player_single is.xyz.mpv wifi 0 1; }
+external_player_mobile_vlc() { external_player_single org.videolan.vlc mobile 0 1; }
+external_player_mobile_mpv() { external_player_single is.xyz.mpv mobile 0 1; }
+
+external_player() {
+  local status=0
+  external_player_wifi_vlc || status=1
+  external_player_wifi_mpv || status=1
+  external_player_mobile_vlc || status=1
+  external_player_mobile_mpv || status=1
   return "$status"
 }
 
@@ -910,6 +946,10 @@ case "$TEST" in
   playback) run_test playback playback ;;
   network-quality) run_test network-quality network_quality ;;
   external_player) run_test external_player external_player ;;
+  external_player_wifi_vlc) run_test external_player_wifi_vlc external_player_wifi_vlc ;;
+  external_player_wifi_mpv) run_test external_player_wifi_mpv external_player_wifi_mpv ;;
+  external_player_mobile_vlc) run_test external_player_mobile_vlc external_player_mobile_vlc ;;
+  external_player_mobile_mpv) run_test external_player_mobile_mpv external_player_mobile_mpv ;;
   long-press) run_test long-press long_press ;;
   controls) run_test controls controls ;;
   fullscreen-fit-screen) run_test fullscreen-fit-screen fullscreen_fit_screen ;;

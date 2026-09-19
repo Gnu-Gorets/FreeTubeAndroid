@@ -62,6 +62,7 @@ class AndroidBridge(
         val manifestBody: ByteArray? = null
     )
     private val externalStreams = ConcurrentHashMap<String, ExternalStream>()
+    private var smokeExternalPlayerPackage: String? = null
     private var externalRelayServer: ServerSocket? = null
     private var pendingDirectoryRequest: String? = null
     private val dataDirectory: java.io.File
@@ -685,6 +686,7 @@ class AndroidBridge(
             val target = Intent(Intent.ACTION_VIEW).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 setDataAndType(Uri.parse("$relayUrl.mpd"), "video/*")
+                smokeExternalPlayerPackage?.takeIf { it.isNotBlank() }?.let(::setPackage)
                 if (!title.isNullOrBlank()) putExtra("title", title)
             }
             try {
@@ -721,6 +723,11 @@ class AndroidBridge(
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    @JavascriptInterface
+    fun setSmokeExternalPlayerPackage(playerPackage: String) {
+        smokeExternalPlayerPackage = playerPackage.takeIf { it.isNotBlank() }
     }
 
     @JavascriptInterface
@@ -908,11 +915,15 @@ class AndroidBridge(
             Log.d("FreeTubeExternal", "relay-request token=${token.take(8)} request=${requestLine.substringBefore(' ')} range=${requestHeaders["range"]}")
             stream.manifestBody?.let { body ->
                 val response = "HTTP/1.1 200 OK\r\nContent-Type: application/dash+xml\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.UTF_8)
-                client.getOutputStream().use { output ->
-                    output.write(response)
-                    output.write(body)
+                try {
+                    client.getOutputStream().use { output ->
+                        output.write(response)
+                        output.write(body)
+                    }
+                    Log.d("FreeTubeExternal", "relay-manifest-response token=${token.take(8)} bytes=${body.size}")
+                } catch (error: java.io.IOException) {
+                    Log.d("FreeTubeExternal", "relay-client-closed token=${token.take(8)} message=${error.message}")
                 }
-                Log.d("FreeTubeExternal", "relay-manifest-response token=${token.take(8)} bytes=${body.size}")
                 return
             }
             val upstreamUrl = stream.url
