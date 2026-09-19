@@ -670,8 +670,9 @@ class AndroidBridge(
                 } else {
                     "video/*"
                 }
+                val intentUrl = if (streamsJson != null) "$relayUrl.mpd" else relayUrl
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(Uri.parse(relayUrl), mimeType)
+                    setDataAndType(Uri.parse(intentUrl), mimeType)
                     if (!title.isNullOrBlank()) putExtra(Intent.EXTRA_TITLE, title)
                 }
                 Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
@@ -687,7 +688,7 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
-        val token = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return
+        val token = Uri.parse(relayUrl).path?.substringAfterLast('/')?.removeSuffix(".mpd") ?: return
         val headers = try {
             val json = headersJson?.let(::JSONObject)
             json?.keys()?.asSequence()?.associateWith { json.getString(it) } ?: emptyMap()
@@ -850,7 +851,7 @@ class AndroidBridge(
                 }
             }
 
-            val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/') ?: return
+            val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/')?.removeSuffix(".mpd") ?: return
             var stream = externalStreams[token] ?: run {
                 Log.w("FreeTubeExternal", "relay-missing-token token=${token.take(8)}")
                 return
