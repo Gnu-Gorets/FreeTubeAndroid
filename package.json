@@ -52,6 +52,7 @@
     "test:long-press": "node _scripts/test-long-press-playback.mjs",
     "test:network-default-resolution": "node _scripts/test-network-default-resolution.mjs",
     "test:external-player": "node _scripts/test-external-player.mjs",
+    "test:external-player-range-regression": "node _scripts/test-external-player-range-regression.mjs",
     "test:player-menu": "node _scripts/test-player-menu.mjs",
     "ci": "pnpm install --frozen-lockfile"
   },
