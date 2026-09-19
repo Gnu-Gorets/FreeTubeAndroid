@@ -20,6 +20,8 @@ assert.match(utils, /payload\.maxQuality \?\? null/)
 assert.match(utils, /if \(!videoId && !playlistId\) return/)
 
 assert.match(bridge, /@JavascriptInterface\s+fun openExternalPlayer\(/)
+assert.match(bridge, /pending: Boolean\): String/)
+assert.match(bridge, /@JavascriptInterface\s+fun updateExternalPlayer\(/)
 assert.match(bridge, /Intent\.ACTION_VIEW/)
 assert.match(bridge, /Intent\.createChooser\(intent, null\)/)
 assert.match(bridge, /ActivityNotFoundException/)
@@ -30,6 +32,14 @@ assert.match(bridge, /setRequestProperty\("Cookie", it\)/)
 assert.match(bridge, /rewriteDashManifest\(/)
 assert.match(bridge, /maxHeight\?\.let/)
 assert.match(bridge, /registerExternalStreamsManifest\(/)
+assert.match(bridge, /val useDirectUrl = streamsJson == null && !useManifest/)
+assert.match(bridge, /val relayUrl = if \(useDirectUrl\)/)
+assert.match(bridge, /usePendingRelay -> ""/)
+
+assert.match(video, /pending: true/)
+assert.match(video, /await getLocalVideoInfo\(id\.value\)/)
+assert.match(video, /window\.Android\.updateExternalPlayer\(/)
+assert.match(video, /relayUrl && typeof window\.Android\?\.updateExternalPlayer === 'function'/)
 
 for (const component of [video, playlist, watchInfo]) {
   assert.match(component, /openExternalPlayer\(/)

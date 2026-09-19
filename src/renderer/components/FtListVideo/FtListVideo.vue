@@ -1014,9 +1014,17 @@ async function handleExternalPlayer() {
   emit('pause-player')
 
   if (process.env.IS_ANDROID) {
+    const relayUrl = openExternalPlayer({
+      videoId: id.value,
+      title: displayTitle.value,
+      playlistId: playlistIdFinal.value,
+      startTime: watchProgress.value,
+      pending: true
+    })
+    log('bridge-called', { elapsedMs: Math.round(performance.now() - startedAt) })
+
     let mediaUrl = null
     let manifestUrl = null
-    let externalStreams = null
     let targetQuality = 720
     let externalHeaders = null
     try {
@@ -1031,37 +1039,6 @@ async function handleExternalPlayer() {
         parseInt(store.getters.getMobileDefaultQuality),
         720
       )
-      const adaptiveFormats = info.streaming_data?.adaptive_formats ?? []
-      const selectedVideo = adaptiveFormats
-        .filter(format => format.has_video && !format.has_audio && typeof format.freeTubeUrl === 'string' && (format.height ?? 0) <= targetQuality)
-        .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
-      const audioFormats = adaptiveFormats
-        .filter(format => format.has_audio && !format.has_video && typeof format.freeTubeUrl === 'string')
-      const videoContainer = selectedVideo?.mime_type?.split(';')[0].split('/')[1]
-      const compatibleAudioFormats = audioFormats.filter(format => {
-        return videoContainer && format.mime_type?.split(';')[0].endsWith(`/${videoContainer}`)
-      })
-      const selectedAudio = [...(compatibleAudioFormats.length ? compatibleAudioFormats : audioFormats)]
-        .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]
-      if (selectedVideo && selectedAudio) {
-        externalStreams = {
-          videoUrl: selectedVideo.freeTubeUrl,
-          audioUrl: selectedAudio.freeTubeUrl,
-          videoWidth: selectedVideo.width,
-          videoHeight: selectedVideo.height,
-          videoMimeType: selectedVideo.mime_type,
-          videoBandwidth: selectedVideo.bitrate,
-          videoInitRange: selectedVideo.init_range,
-          videoIndexRange: selectedVideo.index_range,
-          audioMimeType: selectedAudio.mime_type,
-          audioBandwidth: selectedAudio.bitrate,
-          audioInitRange: selectedAudio.init_range,
-          audioIndexRange: selectedAudio.index_range,
-          audioSampleRate: selectedAudio.audio_sample_rate,
-          audioChannels: selectedAudio.audio_channels,
-          durationSeconds: info.basic_info?.duration ?? props.data.lengthSeconds
-        }
-      }
       const availableFormats = formats.filter(format => {
         return typeof format.freeTubeUrl === 'string' || typeof format.url === 'string'
       })
@@ -1084,27 +1061,23 @@ async function handleExternalPlayer() {
         elapsedMs: Math.round(performance.now() - startedAt),
         hasMediaUrl: Boolean(mediaUrl),
         hasManifestUrl: Boolean(manifestUrl),
-        hasExternalStreams: Boolean(externalStreams),
-        videoMimeType: externalStreams?.videoMimeType,
-        audioMimeType: externalStreams?.audioMimeType,
-        targetQuality,
-        durationSeconds: externalStreams?.durationSeconds
+        targetQuality
       })
     } catch (error) {
       log('resolve-error', { elapsedMs: Math.round(performance.now() - startedAt), error: String(error) })
       console.warn('Failed to resolve external player URL', error)
     }
 
-    openExternalPlayer({
-      videoId: id.value,
-      title: displayTitle.value,
-      mediaUrl,
-      manifestUrl,
-      externalStreams,
-      maxQuality: targetQuality,
-      externalHeaders
-    })
-    log('bridge-called', { elapsedMs: Math.round(performance.now() - startedAt) })
+    if (relayUrl && typeof window.Android?.updateExternalPlayer === 'function') {
+      window.Android.updateExternalPlayer(
+        relayUrl,
+        mediaUrl,
+        externalHeaders ? JSON.stringify(externalHeaders) : null,
+        manifestUrl,
+        targetQuality
+      )
+      log('relay-updated', { elapsedMs: Math.round(performance.now() - startedAt) })
+    }
     return
   }
 

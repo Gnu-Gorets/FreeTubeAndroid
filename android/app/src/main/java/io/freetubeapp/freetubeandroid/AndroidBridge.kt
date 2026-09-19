@@ -620,7 +620,7 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?, title: String?) {
+    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?, title: String?, pending: Boolean): String {
         val requestId = UUID.randomUUID().toString().take(8)
         val startedAt = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
@@ -628,7 +628,7 @@ class AndroidBridge(
         Log.d("FreeTubeExternal", "[$requestId] bridge-start thread=${Thread.currentThread().name} host=${uri.host} hasManifest=${manifestUrl != null} hasStreams=${streamsJson != null} streamsBytes=${streamsJson?.length ?: 0}")
         if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
             Log.w("FreeTubeExternal", "[$requestId] rejected invalid URL")
-            return
+            return ""
         }
 
         val headers = try {
@@ -640,15 +640,26 @@ class AndroidBridge(
         Log.d("FreeTubeExternal", "[$requestId] headers-parsed elapsedMs=${elapsedMs()} count=${headers.size}")
         val manifestUri = manifestUrl?.let(Uri::parse)
         val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
-        Log.d("FreeTubeExternal", "[$requestId] relay-registration-start elapsedMs=${elapsedMs()} useManifest=$useManifest")
-        val relayUrl = streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
-            ?: registerExternalStream(
-                if (useManifest) manifestUrl!! else url,
-                headers,
-                useManifest,
-                maxQuality
-            )
-        Log.d("FreeTubeExternal", "[$requestId] relay-registered elapsedMs=${elapsedMs()} useManifest=$useManifest")
+        val usePendingRelay = pending && streamsJson == null && !useManifest
+        val useDirectUrl = streamsJson == null && !useManifest && !usePendingRelay &&
+            uri.host == "www.youtube.com" && uri.path in setOf("/watch", "/playlist")
+        Log.d("FreeTubeExternal", "[$requestId] relay-registration-start elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl pending=$pending")
+        val relayUrl = if (useDirectUrl) {
+            url
+        } else {
+            streamsJson?.let { registerExternalStreamsManifest(it, headers, maxQuality) }
+                ?: registerExternalStream(
+                    when {
+                        useManifest -> manifestUrl!!
+                        usePendingRelay -> ""
+                        else -> url
+                    },
+                    headers,
+                    useManifest,
+                    maxQuality
+                )
+        }
+        Log.d("FreeTubeExternal", "[$requestId] relay-registered elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl")
         activity.runOnUiThread {
             Log.d("FreeTubeExternal", "[$requestId] chooser-start elapsedMs=${elapsedMs()}")
             try {
@@ -664,6 +675,24 @@ class AndroidBridge(
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
             }
         }
+        return relayUrl
+    }
+
+    @JavascriptInterface
+    fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?) {
+        val token = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return
+        val headers = try {
+            val json = headersJson?.let(::JSONObject)
+            json?.keys()?.asSequence()?.associateWith { json.getString(it) } ?: emptyMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+        val streamUrl = mediaUrl?.takeIf { it.startsWith("http") }
+            ?: manifestUrl?.takeIf { it.startsWith("http") }
+            ?: return
+        val isManifest = mediaUrl == null && manifestUrl != null
+        externalStreams[token] = ExternalStream(streamUrl, headers, isManifest, maxQuality)
+        Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=$isManifest")
     }
 
     private fun registerExternalStream(
@@ -805,13 +834,24 @@ class AndroidBridge(
             }
 
             val token = requestLine.split(' ').getOrNull(1)?.substringAfterLast('/') ?: return
-            val stream = externalStreams[token] ?: run {
+            var stream = externalStreams[token] ?: run {
                 Log.w("FreeTubeExternal", "relay-missing-token token=${token.take(8)}")
                 return
             }
+            for (attempt in 0 until 150) {
+                if (stream.url.isNotBlank() || stream.manifestBody != null) break
+                Thread.sleep(100)
+                stream = externalStreams[token] ?: return
+            }
+            if (stream.url.isBlank() && stream.manifestBody == null) {
+                Log.w("FreeTubeExternal", "relay-pending-timeout token=${token.take(8)}")
+                client.getOutputStream().bufferedWriter().use { output ->
+                    output.write("HTTP/1.1 504 Gateway Timeout\\r\\nConnection: close\\r\\n\\r\\n")
+                }
+                return
+            }
             Log.d("FreeTubeExternal", "relay-request token=${token.take(8)} request=${requestLine.substringBefore(' ')} range=${requestHeaders["range"]}")
-            if (stream.manifestBody != null) {
-                val body = stream.manifestBody
+            stream.manifestBody?.let { body ->
                 val response = "HTTP/1.1 200 OK\r\nContent-Type: application/dash+xml\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.UTF_8)
                 client.getOutputStream().use { output ->
                     output.write(response)
