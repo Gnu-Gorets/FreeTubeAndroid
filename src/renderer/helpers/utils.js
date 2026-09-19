@@ -272,6 +272,67 @@ export async function openExternalLink(url) {
 }
 
 /**
+ * Opens video or playlist in Android external player or Electron external player.
+ * @param {{ videoId?: string | null, title?: string | null, mediaUrl?: string | null, mediaMimeType?: string | null, manifestUrl?: string | null, externalHeaders?: Record<string, string> | null, externalStreams?: object | null, maxQuality?: number | null, pending?: boolean, playlistId?: string | null, startTime?: number | null, playbackRate?: number | null, playlistIndex?: number | null, playlistReverse?: boolean | null, playlistShuffle?: boolean | null, playlistLoop?: boolean | null }} payload
+ */
+export function openExternalPlayer(payload) {
+  if (process.env.IS_ANDROID && typeof window.Android?.openExternalPlayer === 'function') {
+    console.warn('[ExternalPlayer] bridge-entry', JSON.stringify({
+      hasVideoId: typeof payload.videoId === 'string',
+      hasMediaUrl: typeof payload.mediaUrl === 'string',
+      hasManifestUrl: typeof payload.manifestUrl === 'string',
+      hasExternalStreams: Boolean(payload.externalStreams)
+    }))
+    const videoId = typeof payload.videoId === 'string' ? encodeURIComponent(payload.videoId) : null
+    const playlistId = typeof payload.playlistId === 'string' ? encodeURIComponent(payload.playlistId) : null
+
+    if (!videoId && !playlistId) return
+
+    let url = typeof payload.mediaUrl === 'string' && /^https?:\/\//.test(payload.mediaUrl)
+      ? payload.mediaUrl
+      : videoId
+        ? `https://www.youtube.com/watch?v=${videoId}`
+        : `https://www.youtube.com/playlist?list=${playlistId}`
+
+    if (!payload.mediaUrl && videoId && playlistId) url += `&list=${playlistId}`
+    if (!payload.mediaUrl && videoId && typeof payload.startTime === 'number' && payload.startTime > 0) {
+      url += `&t=${Math.floor(payload.startTime)}`
+    }
+
+    return window.Android.openExternalPlayer(
+      url,
+      payload.externalHeaders ? JSON.stringify(payload.externalHeaders) : null,
+      payload.manifestUrl ?? null,
+      payload.maxQuality ?? null,
+      payload.externalStreams ? JSON.stringify(payload.externalStreams) : null,
+      payload.mediaMimeType ?? null,
+      payload.title ?? null,
+      payload.pending === true
+    )
+  } else if (process.env.IS_ELECTRON) {
+    window.ftElectron.openInExternalPlayer(payload)
+  }
+}
+
+/**
+ * Updates pending Android external player request with resolved media data.
+ * @param {string} relayUrl
+ * @param {{ mediaUrl?: string | null, manifestUrl?: string | null, externalHeaders?: Record<string, string> | null, externalStreams?: object | null, maxQuality?: number | null }} payload
+ */
+export function updateExternalPlayer(relayUrl, payload) {
+  if (process.env.IS_ANDROID && typeof window.Android?.updateExternalPlayer === 'function' && relayUrl) {
+    window.Android.updateExternalPlayer(
+      relayUrl,
+      payload.mediaUrl ?? null,
+      payload.externalHeaders ? JSON.stringify(payload.externalHeaders) : null,
+      payload.manifestUrl ?? null,
+      payload.maxQuality ?? null,
+      payload.externalStreams ? JSON.stringify(payload.externalStreams) : null
+    )
+  }
+}
+
+/**
  * Opens native Android sharesheet or copies sharing behavior to external link fallback.
  * @param {string} text
  */
