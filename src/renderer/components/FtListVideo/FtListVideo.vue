@@ -1035,8 +1035,13 @@ async function handleExternalPlayer() {
       const selectedVideo = adaptiveFormats
         .filter(format => format.has_video && !format.has_audio && typeof format.freeTubeUrl === 'string' && (format.height ?? 0) <= targetQuality)
         .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
-      const selectedAudio = adaptiveFormats
+      const audioFormats = adaptiveFormats
         .filter(format => format.has_audio && !format.has_video && typeof format.freeTubeUrl === 'string')
+      const videoContainer = selectedVideo?.mime_type?.split(';')[0].split('/')[1]
+      const compatibleAudioFormats = audioFormats.filter(format => {
+        return videoContainer && format.mime_type?.split(';')[0].endsWith(`/${videoContainer}`)
+      })
+      const selectedAudio = [...(compatibleAudioFormats.length ? compatibleAudioFormats : audioFormats)]
         .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]
       if (selectedVideo && selectedAudio) {
         externalStreams = {
@@ -1044,9 +1049,11 @@ async function handleExternalPlayer() {
           audioUrl: selectedAudio.freeTubeUrl,
           videoWidth: selectedVideo.width,
           videoHeight: selectedVideo.height,
+          videoMimeType: selectedVideo.mime_type,
           videoBandwidth: selectedVideo.bitrate,
           videoInitRange: selectedVideo.init_range,
           videoIndexRange: selectedVideo.index_range,
+          audioMimeType: selectedAudio.mime_type,
           audioBandwidth: selectedAudio.bitrate,
           audioInitRange: selectedAudio.init_range,
           audioIndexRange: selectedAudio.index_range,
@@ -1078,6 +1085,8 @@ async function handleExternalPlayer() {
         hasMediaUrl: Boolean(mediaUrl),
         hasManifestUrl: Boolean(manifestUrl),
         hasExternalStreams: Boolean(externalStreams),
+        videoMimeType: externalStreams?.videoMimeType,
+        audioMimeType: externalStreams?.audioMimeType,
         targetQuality,
         durationSeconds: externalStreams?.durationSeconds
       })

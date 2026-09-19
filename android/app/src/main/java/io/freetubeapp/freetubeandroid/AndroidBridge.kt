@@ -706,6 +706,18 @@ class AndroidBridge(
         val audioRelay = registerExternalStream(audioUrl, headers)
         val videoWidth = json.optInt("videoWidth")
         val videoHeight = json.optInt("videoHeight")
+        fun mimeType(name: String, fallback: String): String {
+            return json.optString(name).substringBefore(';').ifBlank { fallback }
+        }
+        fun codecs(name: String): String? {
+            val mimeType = json.optString(name)
+            return Regex("""codecs="([^"]+)"""").find(mimeType)?.groupValues?.get(1)
+        }
+        val videoMimeType = mimeType("videoMimeType", "video/mp4")
+        val audioMimeType = mimeType("audioMimeType", "audio/mp4")
+        val videoCodecs = codecs("videoMimeType")
+        val audioCodecs = codecs("audioMimeType")
+        Log.d("FreeTubeExternal", "relay-manifest-types video=$videoMimeType/$videoCodecs audio=$audioMimeType/$audioCodecs")
         fun readRange(name: String): Pair<Long, Long>? {
             val range = json.optJSONObject(name) ?: return null
             return range.optLong("start") to range.optLong("end")
@@ -725,16 +737,16 @@ class AndroidBridge(
         val manifest = """<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="$duration" minBufferTime="PT1.5S">
   <Period>
-    <AdaptationSet mimeType="video/mp4" contentType="video" maxWidth="$videoWidth" maxHeight="${maxHeight ?: videoHeight}">
-      <Representation id="video" bandwidth="$videoBandwidth" width="$videoWidth" height="$videoHeight">
+    <AdaptationSet mimeType="$videoMimeType" contentType="video"${videoCodecs?.let { " codecs=\"$it\"" } ?: ""} maxWidth="$videoWidth" maxHeight="${maxHeight ?: videoHeight}">
+      <Representation id="video" bandwidth="$videoBandwidth" width="$videoWidth" height="$videoHeight"${videoCodecs?.let { " codecs=\"$it\"" } ?: ""}>
         <BaseURL>$videoRelay</BaseURL>
         <SegmentBase${videoIndexRange?.let { " indexRange=\"$it\"" } ?: ""}>
           ${videoInitRange?.let { "<Initialization range=\"$it\"/>" } ?: ""}
         </SegmentBase>
       </Representation>
     </AdaptationSet>
-    <AdaptationSet mimeType="audio/mp4" contentType="audio" audioSamplingRate="$sampleRate">
-      <Representation id="audio" bandwidth="$audioBandwidth" audioSamplingRate="$sampleRate">
+    <AdaptationSet mimeType="$audioMimeType" contentType="audio"${audioCodecs?.let { " codecs=\"$it\"" } ?: ""} audioSamplingRate="$sampleRate">
+      <Representation id="audio" bandwidth="$audioBandwidth" audioSamplingRate="$sampleRate"${audioCodecs?.let { " codecs=\"$it\"" } ?: ""}>
         <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="$channels"/>
         <BaseURL>$audioRelay</BaseURL>
         <SegmentBase${audioIndexRange?.let { " indexRange=\"$it\"" } ?: ""}>
