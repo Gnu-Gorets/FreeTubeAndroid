@@ -313,6 +313,7 @@ import {
   getRelativeTimeFromDate,
   openExternalLink,
   openExternalPlayer,
+  updateExternalPlayer,
   showToast,
   toDistractionFreeTitle,
   deepCopy,
@@ -1015,10 +1016,18 @@ async function handleExternalPlayer() {
 
   if (process.env.IS_ANDROID) {
     let mediaUrl = null
-    let mediaMimeType = null
     let externalStreams = null
     let targetQuality = 720
     let externalHeaders = null
+    const relayUrl = openExternalPlayer({
+      videoId: id.value,
+      title: displayTitle.value,
+      playlistId: playlistIdFinal.value,
+      startTime: watchProgress.value,
+      pending: true
+    })
+    log('picker-called', { elapsedMs: Math.round(performance.now() - startedAt) })
+
     try {
       log('resolve-start')
       const { info, clientInfo } = await getLocalVideoInfo(id.value)
@@ -1087,10 +1096,8 @@ async function handleExternalPlayer() {
       }
       if (useDirectAdaptiveVideo && !useAdaptiveStreams) {
         mediaUrl = formatUrl(selectedAdaptiveVideo)
-        mediaMimeType = selectedAdaptiveVideo.mime_type?.split(';')[0] ?? null
       } else if (selectedFormat && !useAdaptiveStreams) {
         mediaUrl = formatUrl(selectedFormat)
-        mediaMimeType = selectedFormat.mime_type?.split(';')[0] ?? null
       }
       if (clientInfo) {
         externalHeaders = {
@@ -1117,19 +1124,13 @@ async function handleExternalPlayer() {
       console.warn('Failed to resolve external player URL', error)
     }
 
-    openExternalPlayer({
-      videoId: id.value,
-      title: displayTitle.value,
-      playlistId: playlistIdFinal.value,
-      startTime: watchProgress.value,
+    updateExternalPlayer(relayUrl, {
       mediaUrl,
-      mediaMimeType,
       externalHeaders,
       externalStreams,
-      maxQuality: targetQuality,
-      pending: !mediaUrl && !externalStreams
+      maxQuality: targetQuality
     })
-    log('bridge-called', {
+    log('relay-updated', {
       elapsedMs: Math.round(performance.now() - startedAt),
       direct: Boolean(mediaUrl),
       adaptive: Boolean(externalStreams)

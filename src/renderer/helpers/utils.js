@@ -315,6 +315,24 @@ export function openExternalPlayer(payload) {
 }
 
 /**
+ * Updates pending Android external player request with resolved media data.
+ * @param {string} relayUrl
+ * @param {{ mediaUrl?: string | null, manifestUrl?: string | null, externalHeaders?: Record<string, string> | null, externalStreams?: object | null, maxQuality?: number | null }} payload
+ */
+export function updateExternalPlayer(relayUrl, payload) {
+  if (process.env.IS_ANDROID && typeof window.Android?.updateExternalPlayer === 'function' && relayUrl) {
+    window.Android.updateExternalPlayer(
+      relayUrl,
+      payload.mediaUrl ?? null,
+      payload.externalHeaders ? JSON.stringify(payload.externalHeaders) : null,
+      payload.manifestUrl ?? null,
+      payload.maxQuality ?? null,
+      payload.externalStreams ? JSON.stringify(payload.externalStreams) : null
+    )
+  }
+}
+
+/**
  * Opens native Android sharesheet or copies sharing behavior to external link fallback.
  * @param {string} text
  */

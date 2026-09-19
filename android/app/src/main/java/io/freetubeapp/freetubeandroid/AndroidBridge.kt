@@ -1,10 +1,12 @@
 package io.freetubeapp.freetubeandroid
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.Notification
 import android.graphics.drawable.Icon
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
@@ -676,7 +678,7 @@ class AndroidBridge(
                     if (!title.isNullOrBlank()) putExtra(Intent.EXTRA_TITLE, title)
                 }
                 Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
-                activity.startActivity(Intent.createChooser(intent, null))
+                showExternalPlayerPicker(intent, requestId)
                 Log.d("FreeTubeExternal", "[$requestId] chooser-dispatched elapsedMs=${elapsedMs()}")
             } catch (error: ActivityNotFoundException) {
                 Log.w("FreeTubeExternal", "[$requestId] chooser-no-handler elapsedMs=${elapsedMs()}", error)
@@ -684,6 +686,25 @@ class AndroidBridge(
             }
         }
         return relayUrl
+    }
+
+    private fun showExternalPlayerPicker(intent: Intent, requestId: String) {
+        val activities = activity.packageManager.queryIntentActivities(intent, 0)
+        if (activities.isEmpty()) throw ActivityNotFoundException()
+
+        val labels = activities.map { it.loadLabel(activity.packageManager).toString() }.toTypedArray()
+        AlertDialog.Builder(activity)
+            .setItems(labels) { _, index ->
+                val app = activities[index].activityInfo
+                intent.component = ComponentName(app.packageName, app.name)
+                try {
+                    activity.startActivity(intent)
+                } catch (error: ActivityNotFoundException) {
+                    Log.w("FreeTubeExternal", "[$requestId] player-start-failed", error)
+                    Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
     }
 
     @JavascriptInterface
