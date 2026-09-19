@@ -78,12 +78,6 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun hasHttpProxy(): Boolean {
-        val connectivity = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        return connectivity.defaultProxy?.host?.isNotBlank() == true
-    }
-
-    @JavascriptInterface
     fun getNetworkType(): String {
         val connectivity = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val networks = connectivity.allNetworks
@@ -614,81 +608,26 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun openExternalPlayer(url: String, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?, title: String?, pending: Boolean): String {
-        val requestId = UUID.randomUUID().toString().take(8)
-        val startedAt = System.nanoTime()
-        fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
+    fun openExternalPlayer(url: String, isManifest: Boolean, title: String?): String {
         val uri = Uri.parse(url)
-        Log.d("FreeTubeExternal", "[$requestId] bridge-start thread=${Thread.currentThread().name} host=${uri.host} hasManifest=${manifestUrl != null} hasStreams=${streamsJson != null} streamsBytes=${streamsJson?.length ?: 0}")
         if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
-            Log.w("FreeTubeExternal", "[$requestId] rejected invalid URL")
+            Log.w("FreeTubeExternal", "rejected invalid URL")
             return ""
         }
-
-        val headers = try {
-            val json = headersJson?.let(::JSONObject)
-            json?.keys()?.asSequence()?.associateWith { json.getString(it) } ?: emptyMap()
-        } catch (_: Exception) {
-            emptyMap()
-        }
-        Log.d("FreeTubeExternal", "[$requestId] headers-parsed elapsedMs=${elapsedMs()} count=${headers.size}")
-        val manifestUri = manifestUrl?.let(Uri::parse)
-        val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
-        val usePendingRelay = pending && streamsJson == null && !useManifest
-        val useDirectUrl = streamsJson == null && !useManifest && !usePendingRelay &&
-            ((uri.host == "www.youtube.com" && uri.path in setOf("/watch", "/playlist")) ||
-                (hasHttpProxy() && uri.host?.endsWith(".googlevideo.com") == true))
-        Log.d("FreeTubeExternal", "[$requestId] relay-registration-start elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl pending=$pending")
-        val relayUrl = if (useDirectUrl) {
-            url
-        } else {
-            ExternalRelayService.register(
-                activity,
-                mainWebView.settings.userAgentString,
-                when {
-                    useManifest -> manifestUrl!!
-                    usePendingRelay -> ""
-                    else -> url
-                },
-                headers,
-                useManifest,
-                maxQuality,
-                streamsJson
-            )
-        }
-        Log.d("FreeTubeExternal", "[$requestId] relay-registered elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl")
         activity.runOnUiThread {
-            Log.d("FreeTubeExternal", "[$requestId] chooser-start elapsedMs=${elapsedMs()}")
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
+                    setDataAndType(uri, if (isManifest) "application/dash+xml" else "video/*")
                     if (!title.isNullOrBlank()) putExtra("title", title)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                    if (Uri.parse(relayUrl).scheme == "content") addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
                 activity.startActivity(Intent.createChooser(intent, null))
-                Log.d("FreeTubeExternal", "[$requestId] chooser-dispatched elapsedMs=${elapsedMs()}")
             } catch (error: ActivityNotFoundException) {
-                Log.w("FreeTubeExternal", "[$requestId] chooser-no-handler elapsedMs=${elapsedMs()}", error)
+                Log.w("FreeTubeExternal", "no external player", error)
                 Toast.makeText(activity, R.string.external_player_unavailable, Toast.LENGTH_SHORT).show()
             }
         }
-        return relayUrl
-    }
-
-    @JavascriptInterface
-    fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
-        ExternalRelayService.update(
-            activity,
-            mainWebView.settings.userAgentString,
-            relayUrl,
-            mediaUrl,
-            headersJson,
-            manifestUrl,
-            maxQuality,
-            streamsJson
-        )
+        return url
     }
 
     @JavascriptInterface
