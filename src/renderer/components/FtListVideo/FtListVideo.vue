@@ -1014,14 +1014,17 @@ async function handleExternalPlayer() {
   emit('pause-player')
 
   if (process.env.IS_ANDROID) {
-    const relayUrl = openExternalPlayer({
-      videoId: id.value,
-      title: displayTitle.value,
-      playlistId: playlistIdFinal.value,
-      startTime: watchProgress.value,
-      pending: true
-    })
-    log('bridge-called', { elapsedMs: Math.round(performance.now() - startedAt) })
+    const directProxyFallback = window.Android?.hasHttpProxy?.() === true
+    const relayUrl = directProxyFallback
+      ? null
+      : openExternalPlayer({
+          videoId: id.value,
+          title: displayTitle.value,
+          playlistId: playlistIdFinal.value,
+          startTime: watchProgress.value,
+          pending: true
+        })
+    log(directProxyFallback ? 'resolve-before-chooser' : 'bridge-called', { elapsedMs: Math.round(performance.now() - startedAt) })
 
     let mediaUrl = null
     let manifestUrl = null
@@ -1069,7 +1072,7 @@ async function handleExternalPlayer() {
           const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
           return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
         })[0]
-      if (selectedAdaptiveVideo && selectedAdaptiveAudio) {
+      if (!directProxyFallback && selectedAdaptiveVideo && selectedAdaptiveAudio) {
         const formatUrl = format => format.freeTubeUrl ?? format.url
         externalStreams = {
           videoUrl: formatUrl(selectedAdaptiveVideo),
@@ -1090,7 +1093,9 @@ async function handleExternalPlayer() {
         }
         manifestUrl = null
       }
-      mediaUrl = externalStreams || manifestUrl ? null : selectedFormat?.freeTubeUrl ?? selectedFormat?.url ?? null
+      mediaUrl = externalStreams || manifestUrl
+        ? null
+        : selectedFormat?.freeTubeUrl ?? selectedFormat?.url ?? null
       if (clientInfo) {
         externalHeaders = {
           'X-Goog-Visitor-Id': clientInfo.visitorData,
@@ -1109,7 +1114,17 @@ async function handleExternalPlayer() {
       console.warn('Failed to resolve external player URL', error)
     }
 
-    if (relayUrl && typeof window.Android?.updateExternalPlayer === 'function') {
+    if (directProxyFallback && (externalStreams || mediaUrl)) {
+      openExternalPlayer({
+        videoId: id.value,
+        mediaUrl: externalStreams ? null : mediaUrl,
+        externalStreams,
+        title: displayTitle.value,
+        externalHeaders,
+        maxQuality: targetQuality
+      })
+      log('direct-proxy-opened', { elapsedMs: Math.round(performance.now() - startedAt), targetQuality, adaptive: Boolean(externalStreams) })
+    } else if (relayUrl && typeof window.Android?.updateExternalPlayer === 'function') {
       window.Android.updateExternalPlayer(
         relayUrl,
         mediaUrl,

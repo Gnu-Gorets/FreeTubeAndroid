@@ -94,6 +94,12 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun hasHttpProxy(): Boolean {
+        val connectivity = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        return connectivity.defaultProxy?.host?.isNotBlank() == true
+    }
+
+    @JavascriptInterface
     fun getNetworkType(): String {
         val connectivity = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val networks = connectivity.allNetworks
@@ -646,7 +652,8 @@ class AndroidBridge(
         val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
         val usePendingRelay = pending && streamsJson == null && !useManifest
         val useDirectUrl = streamsJson == null && !useManifest && !usePendingRelay &&
-            uri.host == "www.youtube.com" && uri.path in setOf("/watch", "/playlist")
+            ((uri.host == "www.youtube.com" && uri.path in setOf("/watch", "/playlist")) ||
+                (hasHttpProxy() && uri.host?.endsWith(".googlevideo.com") == true))
         Log.d("FreeTubeExternal", "[$requestId] relay-registration-start elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl pending=$pending")
         val relayUrl = if (useDirectUrl) {
             url
@@ -670,6 +677,7 @@ class AndroidBridge(
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(Uri.parse(relayUrl), if (useManifest) "application/dash+xml" else "video/*")
                     if (!title.isNullOrBlank()) putExtra("title", title)
+                    if (Uri.parse(relayUrl).scheme == "content") addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 Log.d("FreeTubeExternal", "[$requestId] chooser-intent-ready elapsedMs=${elapsedMs()} type=${intent.type}")
                 activity.startActivity(Intent.createChooser(intent, null))
@@ -737,7 +745,7 @@ class AndroidBridge(
             }
         }
 
-        return "http://127.0.0.1:${externalRelayServer?.localPort}/$token"
+        return "http://localhost:${externalRelayServer?.localPort}/$token"
     }
 
     private fun registerExternalStreamsManifest(jsonText: String, headers: Map<String, String>, maxHeight: Int?): String {
