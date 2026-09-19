@@ -429,7 +429,7 @@ class MainActivity : Activity() {
     }
 
     private fun runSmokeAction(action: String?, query: String?) {
-        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout") {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player") {
             Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
             return
         }
@@ -438,6 +438,29 @@ class MainActivity : Activity() {
             """
             (() => {
               const value = $value;
+              if ('$action' === 'external_player') {
+                const parts = value.split('|');
+                const index = Number(parts[0]);
+                const playerPackage = parts[1];
+                let attempts = 0;
+                const open = () => {
+                  const cards = [...document.querySelectorAll('.ft-list-video')];
+                  const button = cards[index]?.querySelector('.externalPlayerIcon .iconButton');
+                  if (!button || !playerPackage) {
+                    if (++attempts < 30) {
+                      setTimeout(open, 1000);
+                    } else {
+                      console.log('SMOKE_EXTERNAL_PLAYER_TEST:FAIL:card-or-player-not-found');
+                    }
+                    return;
+                  }
+                  window.Android?.setSmokeExternalPlayerPackage?.(playerPackage);
+                  button.click();
+                  console.log('SMOKE_EXTERNAL_PLAYER_TEST:PASS:' + index + ':' + playerPackage);
+                };
+                open();
+                return;
+              }
               if ('$action' === 'video_state') {
                 const video = document.querySelector('video');
                 console.log('SMOKE_VIDEO_STATE:' + JSON.stringify({
