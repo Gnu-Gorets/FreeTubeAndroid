@@ -1074,7 +1074,7 @@ async function handleExternalPlayer() {
           return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
         })[0]
       const useDirectAdaptiveVideo = networkType === 'mobile' && Boolean(selectedAdaptiveVideo)
-      const useAdaptiveStreams = Boolean(selectedAdaptiveVideo && selectedAdaptiveAudio)
+      const useAdaptiveStreams = !selectedFormat && Boolean(selectedAdaptiveVideo && selectedAdaptiveAudio)
       if (useAdaptiveStreams) {
         externalStreams = {
           videoUrl: formatUrl(selectedAdaptiveVideo),
