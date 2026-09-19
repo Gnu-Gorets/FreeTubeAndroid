@@ -142,6 +142,7 @@
         :dislike-count="videoDislikeCount"
         :view-count="videoViewCount"
         :get-timestamp="getTimestamp"
+        :get-media-url="getExternalPlayerUrl"
         :is-live-content="isLiveContent"
         :is-live="isLive"
         :is-upcoming="isUpcoming"
