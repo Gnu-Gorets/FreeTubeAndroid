@@ -1975,6 +1975,10 @@ export default defineComponent({
       }
     },
 
+    getExternalPlayerUrl: function () {
+      return this.$refs.player?.getExternalPlayerUrl?.() || null
+    },
+
     getWatchedProgress: function () {
       const player = this.$refs.player
 

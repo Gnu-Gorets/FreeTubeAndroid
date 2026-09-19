@@ -119,7 +119,7 @@
         </span>
         <span class="videoOptionsMobileRow">
           <FtIconButton
-            v-if="USING_ELECTRON && externalPlayer !== ''"
+            v-if="(USING_ELECTRON || IS_ANDROID) && externalPlayer !== ''"
             :title="t('Video.External Player.OpenInTemplate', { externalPlayer })"
             :icon="['fas', 'external-link-alt']"
             theme="secondary"
@@ -157,7 +157,7 @@ import FtSubscribeButton from '../FtSubscribeButton/FtSubscribeButton.vue'
 
 import store from '../../store'
 
-import { formatNumber, showToast, getLocalesWithFallback } from '../../helpers/utils'
+import { formatNumber, openExternalPlayer, showToast, getLocalesWithFallback } from '../../helpers/utils'
 
 const props = defineProps({
   id: {
@@ -207,6 +207,10 @@ const props = defineProps({
   getTimestamp: {
     type: Function,
     required: true
+  },
+  getMediaUrl: {
+    type: Function,
+    default: () => null
   },
   isLive: {
     type: Boolean,
@@ -262,6 +266,7 @@ const emit = defineEmits([
 ])
 
 const USING_ELECTRON = process.env.IS_ELECTRON
+const IS_ANDROID = process.env.IS_ANDROID
 
 const { locale, t } = useI18n()
 
@@ -356,7 +361,9 @@ const rememberHistory = computed(() => store.getters.getRememberHistory)
 const historyEntryExists = computed(() => store.getters.getHistoryCacheById[props.id] !== undefined)
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => store.getters.getExternalPlayer)
+const externalPlayer = computed(() => process.env.IS_ANDROID
+  ? store.getters.getExternalPlayer !== '' ? t('Settings.External Player Settings.External Player') : ''
+  : store.getters.getExternalPlayer)
 
 /** @type {import('vue').ComputedRef<number>} */
 const defaultPlayback = computed(() => store.getters.getDefaultPlayback)
@@ -370,6 +377,8 @@ function handleExternalPlayer() {
   if (props.inUserPlaylist) {
     payload = {
       videoId: props.id,
+      title: props.title,
+      mediaUrl: props.getMediaUrl(),
       startTime: props.getTimestamp(),
       playbackRate: defaultPlayback.value,
     }
@@ -378,6 +387,8 @@ function handleExternalPlayer() {
 
     payload = {
       videoId: props.id,
+      title: props.title,
+      mediaUrl: props.getMediaUrl(),
       playlistId: props.playlistId,
       startTime: props.getTimestamp(),
       playbackRate: defaultPlayback.value,
@@ -388,9 +399,7 @@ function handleExternalPlayer() {
     }
   }
 
-  if (process.env.IS_ELECTRON) {
-    window.ftElectron.openInExternalPlayer(payload)
-  }
+  openExternalPlayer(payload)
 
   if (rememberHistory.value) {
     // Marking as watched
