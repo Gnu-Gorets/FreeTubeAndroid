@@ -1025,8 +1025,9 @@ async function handleExternalPlayer() {
       log('resolve-done', { elapsedMs: Math.round(performance.now() - startedAt) })
       const formats = info.streaming_data?.formats ?? []
       const adaptiveFormats = info.streaming_data?.adaptive_formats ?? []
+      const networkType = getNetworkType()
       targetQuality = getDefaultQualityForNetwork(
-        getNetworkType(),
+        networkType,
         parseInt(store.getters.getWifiDefaultQuality),
         parseInt(store.getters.getMobileDefaultQuality),
         720
@@ -1063,7 +1064,7 @@ async function handleExternalPlayer() {
           const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
           return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
         })[0]
-      const useAdaptiveStreams = selectedAdaptiveVideo && selectedAdaptiveAudio &&
+      const useAdaptiveStreams = networkType !== 'mobile' && selectedAdaptiveVideo && selectedAdaptiveAudio &&
         (!selectedFormat || (selectedAdaptiveVideo.height ?? 0) > (selectedFormat.height ?? 0))
       if (useAdaptiveStreams) {
         externalStreams = {
@@ -1102,6 +1103,7 @@ async function handleExternalPlayer() {
         selectedFormatHeight: selectedFormat?.height ?? null,
         selectedFormatItag: selectedFormat?.itag ?? null,
         selectedAdaptiveHeight: selectedAdaptiveVideo?.height ?? null,
+        networkType,
         selectedAudioLanguage: selectedAdaptiveAudio?.language ?? null,
         selectedAudioOriginal: selectedAdaptiveAudio?.is_original === true,
         targetQuality
