@@ -679,13 +679,23 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
-    fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?) {
+    fun updateExternalPlayer(relayUrl: String, mediaUrl: String?, headersJson: String?, manifestUrl: String?, maxQuality: Int?, streamsJson: String?) {
         val token = Uri.parse(relayUrl).path?.substringAfterLast('/') ?: return
         val headers = try {
             val json = headersJson?.let(::JSONObject)
             json?.keys()?.asSequence()?.associateWith { json.getString(it) } ?: emptyMap()
         } catch (_: Exception) {
             emptyMap()
+        }
+        streamsJson?.let { jsonText ->
+            val manifestRelayUrl = registerExternalStreamsManifest(jsonText, headers, maxQuality)
+            val manifestToken = Uri.parse(manifestRelayUrl).path?.substringAfterLast('/')
+            val manifestStream = manifestToken?.let(externalStreams::get)
+            if (manifestStream != null) {
+                externalStreams[token] = manifestStream
+                Log.d("FreeTubeExternal", "relay-updated token=${token.take(8)} isManifest=true hasStreams=true")
+            }
+            return
         }
         val streamUrl = mediaUrl?.takeIf { it.startsWith("http") }
             ?: manifestUrl?.takeIf { it.startsWith("http") }
