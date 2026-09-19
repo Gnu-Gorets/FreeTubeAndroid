@@ -904,7 +904,12 @@ class AndroidBridge(
                 val contentLength = connection.contentLengthLong
                 val isPartialResponse = upstreamStatus == 206 && rangeStart != null && contentLength >= 0
                 val status = if (isPartialResponse) 206 else upstreamStatus
-                val upstreamContentRange = connection.getHeaderField("Content-Range")
+                val contentRange = connection.getHeaderField("Content-Range")
+                    ?: if (isPartialResponse && rangeStart == 0L && contentLength > 0) {
+                        "bytes 0-${contentLength - 1}/$contentLength"
+                    } else {
+                        null
+                    }
                 output.write("HTTP/1.1 $status ${if (status == 206) "Partial Content" else connection.responseMessage ?: "OK"}\r\n")
                 val manifestBody = if (stream.isManifest && upstreamStatus < 400) {
                     rewriteDashManifest(connection.inputStream.use { it.readBytes() }, stream)
@@ -917,7 +922,7 @@ class AndroidBridge(
                 } else {
                     connection.getHeaderField("Content-Length")?.let { length -> output.write("Content-Length: $length\r\n") }
                 }
-                upstreamContentRange?.let { output.write("Content-Range: $it\r\n") }
+                contentRange?.let { output.write("Content-Range: $it\r\n") }
                 output.write("Accept-Ranges: bytes\r\nConnection: close\r\n\r\n")
                 output.flush()
 

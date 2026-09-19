@@ -7,12 +7,12 @@ const bridge = await readFile('android/app/src/main/java/io/freetubeapp/freetube
 // rangeStart + partialLength advertises current chunk size as full file size.
 assert.match(
   bridge,
-  /val upstreamContentRange = connection\.getHeaderField\("Content-Range"\)/,
+  /val contentRange = connection\.getHeaderField\("Content-Range"\)/,
   'relay must read upstream Content-Range'
 )
 assert.match(
   bridge,
-  /upstreamContentRange\?\.let/,
+  /contentRange\?\.let/,
   'relay must forward upstream Content-Range'
 )
 assert.doesNotMatch(
