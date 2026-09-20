@@ -77,6 +77,7 @@ class AndroidBridge(
     private var mediaArtist = ""
     private var mediaDuration = 0L
     private var mediaThumbnail: android.graphics.Bitmap? = null
+    private var keepAliveActive = false
     private var pendingFile: Triple<String, String, String>? = null
 
     @JavascriptInterface
@@ -551,11 +552,26 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun updateMediaSessionState(state: String?, position: String?) {
-        activity.runOnUiThread { updateMediaState(state?.toIntOrNull() ?: PlaybackState.STATE_PAUSED, position?.toLongOrNull() ?: 0) }
+        val playbackState = state?.toIntOrNull() ?: PlaybackState.STATE_PAUSED
+        if (playbackState == PlaybackState.STATE_PLAYING) startKeepAlive() else stopKeepAlive()
+        activity.runOnUiThread { updateMediaState(playbackState, position?.toLongOrNull() ?: 0) }
+    }
+
+    private fun startKeepAlive() {
+        if (keepAliveActive) return
+        activity.startForegroundService(Intent(activity, KeepAliveService::class.java))
+        keepAliveActive = true
+    }
+
+    private fun stopKeepAlive() {
+        if (!keepAliveActive) return
+        activity.stopService(Intent(activity, KeepAliveService::class.java))
+        keepAliveActive = false
     }
 
     @JavascriptInterface
     fun cancelMediaNotification() {
+        stopKeepAlive()
         notificationManager.cancel(1001)
         mediaSession.isActive = false
     }
@@ -564,10 +580,14 @@ class AndroidBridge(
     fun cancelMediaSession() = cancelMediaNotification()
 
     @JavascriptInterface
-    fun enableKeepScreenOn() { activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    fun enableKeepScreenOn() {
+        activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
 
     @JavascriptInterface
-    fun disableKeepScreenOn() { activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    fun disableKeepScreenOn() {
+        activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
 
     @JavascriptInterface
     fun enterPictureInPicture(isPlaying: Boolean): Boolean {
