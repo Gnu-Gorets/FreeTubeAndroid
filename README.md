@@ -27,8 +27,8 @@ This repository keeps shared FreeTube UI and adds Android lifecycle, WebView, me
 
 Android app has two layers:
 
-* `src/renderer/` contains shared FreeTube UI and product logic
-* `android/` contains native WebView shell, lifecycle and media integration
+- `src/renderer/` contains shared FreeTube UI and product logic
+- `android/` contains native WebView shell, lifecycle and media integration
 
 No official YouTube API is used. Built in extractor can use optional [Invidious API](https://github.com/iv-org/invidious).
 
@@ -36,18 +36,18 @@ Subscriptions, playlists and history stay on device. YouTube can still receive v
 
 ## Android features
 
-* No ads inside video flow
-* No Google account required for subscriptions
-* External player and picture in picture support
-* SponsorBlock
-* Themes, profiles, keyboard shortcuts and distraction free settings
+- No ads inside video flow
+- No Google account required for subscriptions
+- External player and picture in picture support
+- SponsorBlock
+- Themes, profiles, keyboard shortcuts and distraction free settings
 
 ## Repository map
 
-* `src/renderer/` Shared UI, router, store and localization
-* `android/app/src/main/java/` Native Android bridge and lifecycle code
-* `_scripts/` Webpack, packaging and development tools
-* `docs/` Architecture, build and test documentation
+- `src/renderer/` Shared UI, router, store and localization
+- `android/app/src/main/java/` Native Android bridge and lifecycle code
+- `_scripts/` Webpack, packaging and development tools
+- `docs/` Architecture, build and test documentation
 
 ## Download
 
@@ -100,10 +100,9 @@ Read [Contribution Guidelines](https://github.com/FreeTubeApp/FreeTube/blob/deve
 
 ## Links
 
-* [FreeTube documentation](https://docs.freetubeapp.io/)
-* [Issues](https://github.com/Gnu-Gorets/FreeTubeAndroid/issues)
-* [Discussions](https://github.com/Gnu-Gorets/FreeTubeAndroid/discussions)
-* [FreeTube Matrix room](https://matrix.to/#/#freetube:matrix.org)
+- [FreeTube documentation](https://docs.freetubeapp.io/)
+- [Issues](https://github.com/Gnu-Gorets/FreeTubeAndroid/issues)
+- [Discussions](https://github.com/Gnu-Gorets/FreeTubeAndroid/discussions)
 
 ## License
 
