@@ -28,6 +28,7 @@ const config = {
     web: path.join(__dirname, '../src/renderer/main.js'),
   },
   output: {
+    clean: { keep: /\.gitkeep$/ },
     path: path.join(__dirname, '../android/app/src/main/assets'),
     filename: '[name].js',
   },
