@@ -110,11 +110,11 @@ Output:
 android/app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-This APK is unsigned and cannot update an installed signed app.
+This APK is unsigned and cannot update installed signed app.
 
 ## 5. GitHub nightly build
 
-Every push to `development` runs the same `android-nightly` Compose service. CI provides signing files and version values, so output is signed.
+Every push to `development` runs same `android-nightly` Compose service. CI provides signing files and version values, so output is signed.
 
 Pipeline behavior:
 
