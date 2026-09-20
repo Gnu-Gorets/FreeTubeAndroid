@@ -1,3 +1,4 @@
+---
 services:
   android-build:
     build:
@@ -16,10 +17,33 @@ services:
       ANDROID_SDK_ROOT: /opt/android-sdk
       CI: "true"
       PNPM_HOME: /pnpm
-      PATH: /opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       npm_config_update_notifier: "false"
       PNPM_CONFIG_LOGLEVEL: "error"
       GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+  android-nightly:
+    extends:
+      service: android-build
+    environment:
+      ANDROID_VERSION_NAME: ${ANDROID_VERSION_NAME:-}
+      ANDROID_VERSION_CODE: ${ANDROID_VERSION_CODE:-}
+      ANDROID_APPLICATION_ID: ${ANDROID_APPLICATION_ID:-}
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        base_version=$$(node -p "require('./package.json').version")
+        version_name="$${ANDROID_VERSION_NAME:-$${base_version}-nightly.local}"
+        version_code="$${ANDROID_VERSION_CODE:-1}"
+        application_id="$${ANDROID_APPLICATION_ID:-io.freetubeapp.freetubeandroid.nightly}"
+        pnpm install --frozen-lockfile
+        pnpm run pack:android:core
+        cd android
+        ./gradlew clean assembleRelease \
+          -PandroidVersionName="$${version_name}" \
+          -PandroidVersionCode="$${version_code}" \
+          -PandroidApplicationId="$${application_id}"
 
 volumes:
   gradle-cache: {}
