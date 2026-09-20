@@ -1,12 +1,12 @@
 # Repository architecture
 
-FreeTubeAndroid is a FreeTube web application packaged in multiple runtimes:
+FreeTubeAndroid is FreeTube web application packaged in multiple runtimes:
 
 - Electron desktop app.
 - Browser/PWA build.
-- Android application with a native `WebView` wrapper.
+- Android application with native `WebView` wrapper.
 
-The product logic is mostly shared JavaScript. Android-specific behavior is exposed through a small Kotlin bridge.
+product logic is mostly shared JavaScript. Android-specific behavior is exposed through small Kotlin bridge.
 
 ## Repository map
 
@@ -30,39 +30,39 @@ The product logic is mostly shared JavaScript. Android-specific behavior is expo
 
 ### Renderer
 
-Use `src/renderer/` for product UI and shared browser-compatible behavior. Keep platform-specific calls behind the existing runtime interfaces and datastore handlers.
+Use `src/renderer/` for product UI and shared browser-compatible behavior. Keep platform-specific calls behind existing runtime interfaces and datastore handlers.
 
 ### Electron
 
-Use `src/main/` for privileged desktop operations. Expose new renderer capabilities through `src/preload/`; do not bypass the preload boundary from Vue code.
+Use `src/main/` for privileged desktop operations. Expose new renderer capabilities through `src/preload/`; do not bypass preload boundary from Vue code.
 
 ### Android
 
-`MainActivity.kt` creates a `WebView`, loads `file:///android_asset/index.html`, and installs `AndroidBridge` as the JavaScript interface named `Android`. The Kotlin layer handles Android capabilities such as file pickers, media controls, notifications, screen state, and WebView helpers.
+`MainActivity.kt` creates `WebView`, loads `file:///android_asset/index.html`, and installs `AndroidBridge` as JavaScript interface named `Android`. Kotlin layer handles Android capabilities such as file pickers, media controls, notifications, screen state, and WebView helpers.
 
-The Android web bundle is produced by `_scripts/webpack.android.config.js` into `android/app/src/main/assets/`. Files in that directory are generated except for native resources and committed source assets explicitly required by the Android project. Rebuild the bundle instead of editing generated `index.html`, `web.js`, or generated static files by hand.
+Android web bundle is produced by `_scripts/webpack.android.config.js` into `android/app/src/main/assets/`. Files in that directory are generated except for native resources and committed source assets explicitly required by Android project. Rebuild bundle instead of editing generated `index.html`, `web.js`, or generated static files by hand.
 
 ### Data storage
 
-`src/datastores/handlers/index.js` selects a runtime handler. Electron and Web/PWA have separate handlers. Android uses the Web-compatible path plus native bridge support for app-local files and Android document providers.
+`src/datastores/handlers/index.js` selects runtime handler. Electron and Web/PWA have separate handlers. Android uses Web-compatible path plus native bridge support for app-local files and Android document providers.
 
 ## Change routing
 
 - UI, views, components, styles: `src/renderer/`.
 - Navigation: `src/renderer/router/`.
 - Shared renderer state: `src/renderer/store/`.
-- API/domain helpers: `src/renderer/helpers/` or the closest existing module.
+- API/domain helpers: `src/renderer/helpers/` or closest existing module.
 - Electron privileged behavior: `src/main/` and `src/preload/`.
 - Persistence behavior: `src/datastores/`.
 - Android lifecycle, intents, WebView, or system integration: `android/app/src/main/java/`.
 - Android build or asset generation: `android/app/build.gradle.kts` and `_scripts/webpack.android.config.js`.
 - Build or development behavior: `_scripts/` and `package.json`.
 
-Before adding code, search for all callers and existing runtime-specific implementations. Prefer the existing interface over a new platform branch.
+Before adding code, search for all callers and existing runtime-specific implementations. Prefer existing interface over new platform branch.
 
 ## Important constraints
 
 - Support both built-in/Local API and Invidious API where feature behavior touches data loading.
-- Preserve privacy behavior. Do not add tracking, cookies, or official YouTube API calls without an explicit architectural decision.
-- Keep Android bridge methods narrow. A JavaScript-exposed method is a trust boundary between bundled web code and native code.
-- Treat `android/app/src/main/assets/` generated output as build artifacts unless a file is clearly source-owned.
+- Preserve privacy behavior. Do not add tracking, cookies, or official YouTube API calls without explicit architectural decision.
+- Keep Android bridge methods narrow. JavaScript-exposed method is trust boundary between bundled web code and native code.
+- Treat `android/app/src/main/assets/` generated output as build artifacts unless file is clearly source-owned.
