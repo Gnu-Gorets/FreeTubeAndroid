@@ -42,6 +42,10 @@ Subscriptions, playlists and history stay on device. YouTube can still receive v
 - SponsorBlock
 - Themes, profiles, keyboard shortcuts and distraction free settings
 
+## Screenshot
+
+![FreeTube Android home screen](docs/images/android-home.png)
+
 ## Repository map
 
 - `src/renderer/` Shared UI, router, store and localization
