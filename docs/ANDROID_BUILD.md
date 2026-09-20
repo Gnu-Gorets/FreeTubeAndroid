@@ -18,7 +18,21 @@ APK output:
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Gradle cache, pnpm store, and Android debug keystore use Docker named volumes. This keeps app and androidTest debug signatures compatible across separate containers. The repository and generated Android assets are bind-mounted into `/workspace`; generated output is ignored by Git.
+Local nightly release build does not require signing:
+
+```bash
+docker compose run --rm android-nightly
+```
+
+Output:
+
+```text
+android/app/build/outputs/apk/release/app-release-unsigned.apk
+```
+
+For GitHub signed nightly setup, see `docs/ANDROID_NIGHTLY_SIGNING.md`.
+
+Gradle cache, pnpm store, and Android debug keystore use Docker named volumes. This keeps app and androidTest debug signatures compatible across separate containers. repository and generated Android assets are bind-mounted into `/workspace`; generated output is ignored by Git.
 
 ## Install on device
 
@@ -29,11 +43,11 @@ adb devices -l
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-A connected device is not required to build the APK. Device validation must be reported separately when no device is available.
+connected device is not required to build APK. Device validation must be reported separately when no device is available.
 
 ## Toolchain
 
-The image currently provides:
+image currently provides:
 
 - Node.js 24;
 - pnpm 12.3.4;
