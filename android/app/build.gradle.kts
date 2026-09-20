@@ -1,6 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val signingPropertiesFile = rootProject.file("keystore.properties")
+val signingProperties = Properties().apply {
+    if (signingPropertiesFile.exists()) {
+        signingPropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -9,12 +18,30 @@ android {
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "io.freetubeapp.freetubeandroid"
+        applicationId = providers.gradleProperty("androidApplicationId")
+            .orElse("io.freetubeapp.freetubeandroid")
+            .get()
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-local"
+        versionCode = providers.gradleProperty("androidVersionCode")
+            .map(String::toInt)
+            .orElse(1)
+            .get()
+        versionName = providers.gradleProperty("androidVersionName")
+            .orElse("0.1.0-local")
+            .get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("nightly") {
+            if (signingPropertiesFile.exists()) {
+                storeFile = file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -22,6 +49,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            if (signingPropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("nightly")
+            }
         }
     }
 
