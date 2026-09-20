@@ -1,0 +1,104 @@
+---
+name: Android Nightly
+
+'on':
+  push:
+    branches:
+      - development
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-nightly
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Build Android release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_version=$(jq -er '.version | strings' package.json)
+          version_name="${base_version}-nightly.${GITHUB_RUN_NUMBER}"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare signing files
+        env:
+          ANDROID_NIGHTLY_KEYSTORE_BASE64: >-
+            ${{ secrets.ANDROID_NIGHTLY_KEYSTORE_BASE64 }}
+          ANDROID_NIGHTLY_KEYSTORE_PASSWORD: >-
+            ${{ secrets.ANDROID_NIGHTLY_KEYSTORE_PASSWORD }}
+          ANDROID_NIGHTLY_KEY_ALIAS: >-
+            ${{ secrets.ANDROID_NIGHTLY_KEY_ALIAS }}
+          ANDROID_NIGHTLY_KEY_PASSWORD: >-
+            ${{ secrets.ANDROID_NIGHTLY_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_NIGHTLY_KEYSTORE_BASE64"
+          test -n "$ANDROID_NIGHTLY_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_NIGHTLY_KEY_ALIAS"
+          test -n "$ANDROID_NIGHTLY_KEY_PASSWORD"
+          printf '%s' "$ANDROID_NIGHTLY_KEYSTORE_BASE64" \
+            | base64 --decode > android/app/nightly.keystore
+          {
+            printf 'storeFile=nightly.keystore\n'
+            printf 'storePassword=%s\n' "$ANDROID_NIGHTLY_KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_NIGHTLY_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$ANDROID_NIGHTLY_KEY_PASSWORD"
+          } > android/keystore.properties
+
+      - name: Build Docker image
+        run: docker compose build android-nightly
+
+      - name: Build signed release APK
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        run: |
+          docker compose run --rm \
+            -e ANDROID_VERSION_NAME="$VERSION_NAME" \
+            -e ANDROID_VERSION_CODE="$GITHUB_RUN_NUMBER" \
+            -e ANDROID_APPLICATION_ID=io.freetubeapp.freetubeandroid.nightly \
+            android-nightly
+
+      - name: Publish nightly Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_PATH: android/app/build/outputs/apk/release/app-release.apk
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$APK_PATH"
+          notes=$(printf 'Commit: `%s`\nVersion: `%s`\nWorkflow run: `%s`' \
+            "$GITHUB_SHA" "$VERSION_NAME" "$GITHUB_RUN_ID")
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release upload nightly "$APK_PATH#freetube-nightly.apk" --clobber
+            gh release edit nightly \
+              --title "FreeTube Android Nightly" \
+              --notes "$notes" \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          else
+            gh release create nightly "$APK_PATH#freetube-nightly.apk" \
+              --target "$GITHUB_SHA" \
+              --title "FreeTube Android Nightly" \
+              --notes "$notes" \
+              --prerelease
+          fi
+
+      - name: Remove signing files
+        if: always()
+        run: rm -f android/app/nightly.keystore android/keystore.properties
