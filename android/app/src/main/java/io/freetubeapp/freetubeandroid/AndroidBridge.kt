@@ -78,6 +78,60 @@ class AndroidBridge(
     private var mediaDuration = 0L
     private var mediaThumbnail: android.graphics.Bitmap? = null
     private var pendingFile: Triple<String, String, String>? = null
+    private val downloadManager = DownloadRuntime.manager(activity)
+    private val downloadListener: (org.json.JSONArray) -> Unit = { snapshot ->
+        activity.runOnUiThread {
+            mainWebView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('download-update', {detail: ${snapshot}}))",
+                null
+            )
+        }
+    }
+
+    init {
+        downloadManager.addListener(downloadListener)
+    }
+
+    @JavascriptInterface
+    fun enqueueDownload(requestJson: String): String {
+        DownloadService.start(activity)
+        return downloadManager.enqueue(JSONObject(requestJson)).toString()
+    }
+
+    @JavascriptInterface
+    fun getDownloads(): String = downloadManager.snapshot().toString()
+
+    @JavascriptInterface
+    fun getDownloadSettings(): String = downloadManager.settings().toString()
+
+    @JavascriptInterface
+    fun updateDownloadSettings(settingsJson: String): Boolean {
+        downloadManager.updateSettings(JSONObject(settingsJson))
+        return true
+    }
+
+    @JavascriptInterface
+    fun refreshDownload(id: String, requestJson: String): Boolean =
+        downloadManager.replaceUrls(id, JSONObject(requestJson))
+
+    @JavascriptInterface
+    fun pauseDownload(id: String): Boolean = downloadManager.pause(id)
+
+    @JavascriptInterface
+    fun resumeDownload(id: String): Boolean = downloadManager.resume(id)
+
+    @JavascriptInterface
+    fun cancelDownload(id: String): Boolean = downloadManager.cancel(id)
+
+    @JavascriptInterface
+    fun retryDownload(id: String): Boolean = downloadManager.retry(id)
+
+    @JavascriptInterface
+    fun deleteDownload(id: String): Boolean = downloadManager.delete(id)
+
+    fun dispose() {
+        downloadManager.removeListener(downloadListener)
+    }
 
     @JavascriptInterface
     fun setSwipeRefreshEnabled(enabled: Boolean) {
@@ -241,6 +295,19 @@ class AndroidBridge(
     @JavascriptInterface
     fun revokePermissionForTree(tree: String) {
         activity.revokeUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+
+    @JavascriptInterface
+    fun getDownloadDirectory(): String = DownloadStorage.DEFAULT_DIRECTORY
+
+    @JavascriptInterface
+    fun revokeDownloadDirectory(tree: String): Boolean {
+        return try {
+            revokePermissionForTree(tree)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @JavascriptInterface
@@ -997,6 +1064,16 @@ class AndroidBridge(
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
+        }
+        activity.startActivity(Intent.createChooser(sendIntent, null))
+    }
+
+    @JavascriptInterface
+    fun shareFile(uri: String, mimeType: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType.ifBlank { "application/octet-stream" }
+            putExtra(Intent.EXTRA_STREAM, Uri.parse(uri))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         activity.startActivity(Intent.createChooser(sendIntent, null))
     }

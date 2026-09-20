@@ -837,6 +837,38 @@ Playlist:
     VideoDurationDescending: Продолжительность (Длиннейшие)
     PublishedNewest: Дата публикации (Сначала новые)
     PublishedOldest: Дата публикации (Сначала старые)
+Downloads:
+  Downloads: Загрузки
+  Download: Скачать
+  Type: Тип загрузки
+  Video: Видео
+  Audio: Аудио
+  Format: Формат
+  Video format: Видеоформат
+  Audio format: Аудиоформат
+  Download subtitles: Скачать субтитры
+  Audio format is not available: Аудиоформат недоступен
+  ETA: Осталось
+  LabelSeparator: ':'
+  PerSecond: /с
+  Share: Поделиться
+  Empty: Загрузок пока нет
+  Active: Активные
+  Post processing: Постобработка
+  Paused: Приостановленные
+  Completed: Завершённые
+  Failed: Ошибки
+  Canceled: Отменённые
+  Pause: Пауза
+  Resume: Продолжить
+  Cancel: Отменить
+  Retry: Повторить
+  Open: Открыть
+  Source: Исходное видео
+  Delete: Удалить
+  Prefer local files: Предпочитать загруженные файлы
+  Play all: Воспроизвести все загруженные видео
+
 Change Format:
   Change Media Formats: 'Изменить форматы видео'
   Use Dash Formats: 'Использовать форматы DASH'

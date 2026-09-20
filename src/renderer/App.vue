@@ -175,6 +175,8 @@ const defaultInvidiousInstance = computed(() => store.getters.getDefaultInvidiou
 const dataReady = ref(false)
 
 onMounted(async () => {
+  performance.mark('freetube:app-mounted')
+
   if (process.env.IS_ANDROID) {
     window.addEventListener('youtube-link', ({ detail }) => {
       if (detail?.link) handleYoutubeLink(detail.link)
@@ -182,7 +184,10 @@ onMounted(async () => {
     window.Android?.onAppReady?.()
   }
 
-  await store.dispatch('grabUserSettings')
+  await Promise.all([
+    store.dispatch('grabUserSettings'),
+    store.dispatch('fetchInvidiousInstancesFromFile')
+  ])
 
   if (process.env.IS_ANDROID && store.getters.getUseProxy) {
     const proxyId = crypto.randomUUID()
@@ -204,18 +209,12 @@ onMounted(async () => {
     })
   }
 
+  performance.mark('freetube:critical-local-data-ready')
   updateTheme()
 
-  await store.dispatch('fetchInvidiousInstancesFromFile')
   if (defaultInvidiousInstance.value === '') {
     await store.dispatch('setRandomCurrentInvidiousInstance')
   }
-
-  store.dispatch('fetchInvidiousInstances').then(() => {
-    if (defaultInvidiousInstance.value === '') {
-      store.dispatch('setRandomCurrentInvidiousInstance')
-    }
-  })
 
   store.dispatch('grabAllProfiles', t('Profile.All Channels')).then(() => {
     store.dispatch('grabHistory')
@@ -232,10 +231,16 @@ onMounted(async () => {
     }
 
     dataReady.value = true
+    performance.mark('freetube:shell-ready')
 
     setTimeout(() => {
+      store.dispatch('fetchInvidiousInstances').then(() => {
+        if (defaultInvidiousInstance.value === '') {
+          store.dispatch('setRandomCurrentInvidiousInstance')
+        }
+      })
       checkForNewUpdates()
-    }, 500)
+    }, 2000)
   })
 
   if (route.path === '/') {
