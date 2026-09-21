@@ -54,6 +54,7 @@
     "test:external-player": "node _scripts/test-external-player.mjs",
     "test:external-player-range-regression": "node _scripts/test-external-player-range-regression.mjs",
     "test:player-menu": "node _scripts/test-player-menu.mjs",
+    "test:search-continuation": "node _scripts/test-search-continuation.mjs",
     "ci": "pnpm install --frozen-lockfile"
   },
   "dependencies": {

@@ -4,6 +4,7 @@ import { parseLooseJSON } from 'bgutils-js/utils'
 
 import { SEARCH_CHAR_LIMIT } from '../../../constants'
 import { PlayerCache } from './PlayerCache'
+import { createLocalSearchContinuation } from './local-search-continuation.mjs'
 import {
   CHANNEL_HANDLE_REGEX,
   calculatePublishedDate,
@@ -284,7 +285,7 @@ export async function getLocalCachedFeedContinuation(type, continuation) {
   if (type === 'playlist') {
     return new YT.Playlist(innertube.actions, page, true)
   } else {
-    return new YT.Search(innertube.actions, page, true)
+    return createLocalSearchContinuation(innertube.actions, page)
   }
 }
 
@@ -388,8 +389,9 @@ export async function getLocalSearchResults(query, filters, safetyMode) {
 export async function getLocalSearchContinuation(continuationData) {
   let response
 
-  if (continuationData instanceof YT.Search) {
-    response = await continuationData.getContinuation()
+  if (continuationData instanceof Mixins.Feed) {
+    const page = await continuationData.getContinuationData()
+    response = createLocalSearchContinuation(continuationData.actions, page)
   } else {
     response = await getLocalCachedFeedContinuation('search', continuationData)
   }
