@@ -19,7 +19,7 @@
         :data="shownResults"
       />
       <FtAutoLoadNextPageWrapper
-        v-if="!isNextPageLoading"
+        v-if="showFetchMoreButton && !isNextPageLoading"
         @load-next-page="nextPage"
       >
         <div
@@ -73,6 +73,10 @@ const searchPage = ref(1)
 /** @type {import('vue').ShallowRef<import('youtubei.js').YT.Search | string | null>} */
 const nextPageRef = shallowRef(null)
 const shownResults = shallowRef([])
+
+const showFetchMoreButton = computed(() => {
+  return apiUsed.value === 'invidious' || nextPageRef.value !== null
+})
 
 const query = ref('')
 const processedQuery = computed(() => query.value.trim())
@@ -239,6 +243,7 @@ async function getNextpageLocal(payload) {
     const { results, continuationData } = await getLocalSearchContinuation(payload.options.nextPageRef)
 
     if (results.length === 0) {
+      nextPageRef.value = null
       return
     }
 
@@ -287,6 +292,7 @@ async function performSearchInvidious(payload, options = { resetSearchPage: fals
   try {
     const results = await getInvidiousSearchResults(payload.query, searchPage.value, payload.searchSettings)
     if (!results) {
+      isLoading.value = false
       return
     }
 
