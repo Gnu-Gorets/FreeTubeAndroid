@@ -122,6 +122,18 @@ class MainActivity : Activity() {
                 super.onPageFinished(view, url)
                 swipeRefresh.isRefreshing = false
             }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): Boolean {
+                val uri = request?.url ?: return false
+                if (request.isForMainFrame && uri.scheme in setOf("http", "https")) {
+                    androidBridge.openExternalLink(uri.toString())
+                    return true
+                }
+                return false
+            }
         }
         var fullscreenView: View? = null
         val root = findViewById<ViewGroup>(android.R.id.content)
