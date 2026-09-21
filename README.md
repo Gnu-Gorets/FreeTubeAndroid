@@ -10,8 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/Gnu-Gorets/FreeTubeAndroid/releases">Download</a> ·
-  <a href="https://github.com/Gnu-Gorets/FreeTubeAndroid/issues">Report issue</a> ·
-  <a href="https://github.com/Gnu-Gorets/FreeTubeAndroid/discussions">Discussions</a>
+  <a href="https://github.com/Gnu-Gorets/FreeTubeAndroid/issues">Report issue to Android fork</a>
 </p>
 
 > [!NOTE]
@@ -96,17 +95,11 @@ pnpm run checkforbadtemplates
 
 Android validation uses physical device and personal Android profile `user 0`.
 
-## Contributing
-
-Shared product changes usually belong in [FreeTube](https://github.com/FreeTubeApp/FreeTube). Android lifecycle, WebView, native bridge, workflows and Android specific fixes belong here.
-
-Read [Contribution Guidelines](https://github.com/FreeTubeApp/FreeTube/blob/development/CONTRIBUTING.md) before opening pull request.
-
 ## Links
 
+- [Upstream FreeTube](https://github.com/FreeTubeApp/FreeTube)
 - [FreeTube documentation](https://docs.freetubeapp.io/)
-- [Issues](https://github.com/Gnu-Gorets/FreeTubeAndroid/issues)
-- [Discussions](https://github.com/Gnu-Gorets/FreeTubeAndroid/discussions)
+- [Issues to Android fork](https://github.com/Gnu-Gorets/FreeTubeAndroid/issues)
 
 ## License
 
