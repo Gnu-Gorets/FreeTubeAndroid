@@ -74,6 +74,10 @@ const searchPage = ref(1)
 const nextPageRef = shallowRef(null)
 const shownResults = shallowRef([])
 
+const showFetchMoreButton = computed(() => {
+  return apiUsed.value === 'invidious' || nextPageRef.value !== null
+})
+
 const query = ref('')
 const processedQuery = computed(() => query.value.trim())
 
@@ -242,6 +246,12 @@ async function getNextpageLocal(payload) {
       return
     }
 
+    if (results.length === 0) {
+      nextPageRef.value = null
+      lastSearchHasSomeValidResults.value = validResultsCount > 0
+      return
+    }
+
     apiUsed.value = 'local'
 
     shownResults.value = shownResults.value.concat(results)
@@ -287,6 +297,7 @@ async function performSearchInvidious(payload, options = { resetSearchPage: fals
   try {
     const results = await getInvidiousSearchResults(payload.query, searchPage.value, payload.searchSettings)
     if (!results) {
+      isLoading.value = false
       return
     }
 
