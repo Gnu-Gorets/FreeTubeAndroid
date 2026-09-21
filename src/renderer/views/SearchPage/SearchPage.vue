@@ -78,6 +78,10 @@ const lastSearchHasSomeValidResults = ref(true)
 // Only used for Invidious
 const lastSearchHasSomeRawResults = ref(true)
 
+const showFetchMoreButton = computed(() => {
+  return apiUsed.value === 'invidious' || nextPageRef.value !== null
+})
+
 const query = ref('')
 const processedQuery = computed(() => query.value.trim())
 
@@ -254,6 +258,12 @@ async function getNextpageLocal(payload) {
   try {
     const { results, continuationData, validResultsCount } = await getLocalSearchContinuation(payload.options.nextPageRef)
 
+    if (results.length === 0) {
+      nextPageRef.value = null
+      lastSearchHasSomeValidResults.value = validResultsCount > 0
+      return
+    }
+
     apiUsed.value = 'local'
 
     shownResults.value = shownResults.value.concat(results)
@@ -309,6 +319,7 @@ async function performSearchInvidious(payload, options = { resetSearchPage: fals
       rawResultsCount,
     } = await getInvidiousSearchResults(payload.query, searchPage.value, payload.searchSettings)
     if (!results) {
+      isLoading.value = false
       return
     }
 
