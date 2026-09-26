@@ -58,6 +58,14 @@ export class StatsButton extends shaka.ui.Element {
       this.updateLocalisedStrings_()
     })
 
+    this.eventManager.listen(controls, 'submenuopen', () => {
+      this.button_.classList.add('shaka-hidden')
+    })
+
+    this.eventManager.listen(controls, 'submenuclose', () => {
+      this.button_.classList.remove('shaka-hidden')
+    })
+
     this.updateLocalisedStrings_()
   }
 
