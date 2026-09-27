@@ -638,6 +638,8 @@ About:
 Channel:
   Subscribe: 'Abonneren'
   Unsubscribe: 'Deabonneren'
+  Enable New Video Notifications: "Meldingen over nieuwe video's"
+  Disable New Video Notifications: "Meldingen over nieuwe video's uitschakelen"
   Search Channel: 'Kanaal zoeken'
   Your search results have returned 0 results: 'Uw zoekactie heeft 0 resultaten opgeleverd'
   Videos:

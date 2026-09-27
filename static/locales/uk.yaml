@@ -686,6 +686,8 @@ Profile:
 Channel:
   Subscribe: 'Підписатися'
   Unsubscribe: 'Відписатися'
+  Enable New Video Notifications: "Сповіщати про нові відео"
+  Disable New Video Notifications: "Вимкнути сповіщення про нові відео"
   Channel has been removed from your subscriptions: 'Канал прибрано з ваших підписок'
   Removed subscription from {count} other channel(s): 'Вилучено підписку з {count} інших каналів'
   Added channel to your subscriptions: 'Додано канал до підписок'

@@ -712,6 +712,8 @@ Profile:
 Channel:
   Subscribe: 'Telli'
   Unsubscribe: 'Lõpeta tellimus'
+  Enable New Video Notifications: "Teavita mind uutest videotest"
+  Disable New Video Notifications: "Lülita uute videote teavitused välja"
   Channel has been removed from your subscriptions: 'Kustutasin kanali sinu tellimustest'
   Removed subscription from {count} other channel(s): 'Kustutasin tellimuse ka {count}''st muust kanalist'
   Added channel to your subscriptions: 'Lisasin kanali sinu tellimuste hulka'

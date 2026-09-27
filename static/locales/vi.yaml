@@ -642,6 +642,8 @@ About:
 Channel:
   Subscribe: 'Đăng ký'
   Unsubscribe: 'Hủy đăng ký'
+  Enable New Video Notifications: "Thông báo cho tôi về video mới"
+  Disable New Video Notifications: "Tắt thông báo video mới"
   Search Channel: 'Tìm trong kênh'
   Your search results have returned 0 results: 'Kết quả tìm kiếm của bạn là 0 kết quả'
   Videos:

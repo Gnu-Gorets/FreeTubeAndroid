@@ -659,6 +659,8 @@ About:
 Channel:
   Subscribe: 'Odoberať'
   Unsubscribe: 'Odhlásiť odber'
+  Enable New Video Notifications: "Upozorňovať na nové videá"
+  Disable New Video Notifications: "Vypnúť upozornenia na nové videá"
   Search Channel: 'Vyhľadať v kanáli'
   Your search results have returned 0 results: 'Vaše vyhľadávanie vrátilo 0 výsledkov'
   Videos:

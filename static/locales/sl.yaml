@@ -389,6 +389,8 @@ Profile:
 Channel:
   Subscribe: 'Naroči se'
   Unsubscribe: 'Prekini naročnino'
+  Enable New Video Notifications: "Obveščaj me o novih videoposnetkih"
+  Disable New Video Notifications: "Izklopi obvestila o novih videoposnetkih"
   Channel has been removed from your subscriptions: 'Kanal je bil odstranjen iz vaših naročnin'
   Removed subscription from {count} other channel(s): 'Naročnina je bila prekinjena v {count} kanalih'
   Added channel to your subscriptions: 'Kanal je bil dodan v vaše naročnine'

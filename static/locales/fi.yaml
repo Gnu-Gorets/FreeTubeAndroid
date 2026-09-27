@@ -634,6 +634,8 @@ About:
 Channel:
   Subscribe: 'Tilaa'
   Unsubscribe: 'Peruuta tilaus'
+  Enable New Video Notifications: "Ilmoita uusista videoista"
+  Disable New Video Notifications: "Poista uusien videoiden ilmoitukset käytöstä"
   Search Channel: 'Etsi kanavalta'
   Your search results have returned 0 results: 'Hakusi on tuottanut 0 tulosta'
   Videos:

@@ -454,6 +454,8 @@ About:
 Channel:
   Subscribe: 'Suscribir'
   Unsubscribe: 'Desuscribir'
+  Enable New Video Notifications: "Avisarme sobre videos nuevos"
+  Disable New Video Notifications: "Desactivar notificaciones de videos nuevos"
   Search Channel: 'Buscar canal'
   Your search results have returned 0 results: 'Los resultados de su búsqueda han arrojado 0 resultados'
   Videos:

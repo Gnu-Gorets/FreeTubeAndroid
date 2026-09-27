@@ -715,6 +715,8 @@ Profile:
 Channel:
   Subscribe: ''
   Unsubscribe: ''
+  Enable New Video Notifications: "Më njofto për videot e reja"
+  Disable New Video Notifications: "Çaktivizo njoftimet për videot e reja"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''

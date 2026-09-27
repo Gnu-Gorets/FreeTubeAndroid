@@ -668,6 +668,8 @@ About:
 Channel:
   Subscribe: 'S’abonner'
   Unsubscribe: 'Se désabonner'
+  Enable New Video Notifications: "M’avertir des nouvelles vidéos"
+  Disable New Video Notifications: "Désactiver les notifications de nouvelles vidéos"
   Search Channel: 'Chercher dans la chaîne'
   Your search results have returned 0 results: 'Les résultats de votre recherche ont donné 0 résultat'
   Videos:

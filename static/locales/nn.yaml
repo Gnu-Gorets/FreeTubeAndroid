@@ -528,6 +528,8 @@ Profile:
 Channel:
   Subscribe: 'Abonner'
   Unsubscribe: 'Opphev abonnement'
+  Enable New Video Notifications: "Varsle meg om nye videoar"
+  Disable New Video Notifications: "Slå av varsel om nye videoar"
   Channel has been removed from your subscriptions: 'Kanalen har blitt fjerna frå dine abonnement'
   Removed subscription from {count} other channel(s): 'Fjerna abonnement frå {count} kanal(ar)'
   Added channel to your subscriptions: 'Lagt til kanal til dine abonnentar'

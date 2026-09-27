@@ -84,6 +84,8 @@ Settings:
   # On Settings Page
   Theme Settings: {}
 Channel:
+  Enable New Video Notifications: "नयाँ भिडियोबारे मलाई जानकारी दिनुहोस्"
+  Disable New Video Notifications: "नयाँ भिडियोका सूचना बन्द गर्नुहोस्"
   Videos:
     Videos: भिडियोहरू
 Tooltips: {}

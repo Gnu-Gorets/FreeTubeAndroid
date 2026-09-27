@@ -441,6 +441,8 @@ Profile:
 Channel:
   Subscribe: 'Prenumeruoti'
   Unsubscribe: 'Atšaukti prenumeratą'
+  Enable New Video Notifications: "Pranešti apie naujus vaizdo įrašus"
+  Disable New Video Notifications: "Išjungti pranešimus apie naujus vaizdo įrašus"
   Channel has been removed from your subscriptions: 'Kanalas pašalintas iš jūsų prenumeratų'
   Removed subscription from {count} other channel(s): 'Prenumerata pašalinta iš {count} kito(-ų) kanalo(-ų)'
   Added channel to your subscriptions: 'Prie jūsų prenumeratų pridėtas kanalas'

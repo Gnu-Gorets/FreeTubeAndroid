@@ -664,6 +664,8 @@ About:
 Channel:
   Subscribe: 'チャンネル登録'
   Unsubscribe: '登録解除'
+  Enable New Video Notifications: "新しい動画を通知する"
+  Disable New Video Notifications: "新しい動画の通知をオフにする"
   Search Channel: 'チャンネル内検索'
   Your search results have returned 0 results: '検索結果が0件です'
   Videos:

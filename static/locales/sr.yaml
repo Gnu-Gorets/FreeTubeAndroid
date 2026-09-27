@@ -669,6 +669,8 @@ Profile:
 Channel:
   Subscribe: 'Запрати'
   Unsubscribe: 'Прекини праћење'
+  Enable New Video Notifications: "Обавештавај ме о новим видео-снимцима"
+  Disable New Video Notifications: "Искључи обавештења о новим видео-снимцима"
   Channel has been removed from your subscriptions: 'Канал је уклоњен из ваших праћења'
   Removed subscription from {count} other channel(s): 'Уклоњено праћење са {count} других канала'
   Added channel to your subscriptions: 'Канал је додат у ваша праћења'

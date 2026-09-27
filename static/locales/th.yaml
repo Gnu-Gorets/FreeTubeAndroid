@@ -759,6 +759,8 @@ Profile:
 Channel:
   Subscribe: ''
   Unsubscribe: ''
+  Enable New Video Notifications: "แจ้งเตือนเมื่อมีวิดีโอใหม่"
+  Disable New Video Notifications: "ปิดการแจ้งเตือนวิดีโอใหม่"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''

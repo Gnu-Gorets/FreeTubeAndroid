@@ -666,6 +666,8 @@ Profile:
 Channel:
   Subscribe: 'Abonnér'
   Unsubscribe: 'Afmeld'
+  Enable New Video Notifications: "Giv mig besked om nye videoer"
+  Disable New Video Notifications: "Slå notifikationer om nye videoer fra"
   Channel has been removed from your subscriptions: 'Kanalen blev fjernet fra dine abonnementer'
   Removed subscription from {count} other channel(s): 'Fjernede abonnement fra {count} andre kanaler'
   Added channel to your subscriptions: 'Føjede kanal til dine abonnementer'

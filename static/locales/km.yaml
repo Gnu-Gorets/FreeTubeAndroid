@@ -14,6 +14,8 @@ Settings:
   General Settings: {}
   Theme Settings: {}
 Channel:
+  Enable New Video Notifications: "ជូនដំណឹងខ្ញុំអំពីវីដេអូថ្មី"
+  Disable New Video Notifications: "បិទការជូនដំណឹងអំពីវីដេអូថ្មី"
   Videos:
     Videos: វីដេអូ
 Tooltips: {}

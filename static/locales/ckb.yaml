@@ -581,6 +581,8 @@ Profile:
 Channel:
   Subscribe: ''
   Unsubscribe: ''
+  Enable New Video Notifications: "ئاگادارم بکەرەوە لە ڤیدیۆ نوێکان"
+  Disable New Video Notifications: "ئاگادارکردنەوەی ڤیدیۆ نوێکان ناچالاک بکە"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''

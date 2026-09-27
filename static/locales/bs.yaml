@@ -549,6 +549,8 @@ Settings:
     Unable to write file: Nije moguće pisati u datoteku
     Unknown data key: Nepoznati ključ podataka
 Channel:
+  Enable New Video Notifications: "Obavijesti me o novim videozapisima"
+  Disable New Video Notifications: "Isključi obavijesti o novim videozapisima"
   Videos:
     Videos: Videozapisi
 Tooltips: {}

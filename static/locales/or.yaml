@@ -103,6 +103,8 @@ Settings:
       କରିବା
   SponsorBlock Settings: {}
 Channel:
+  Enable New Video Notifications: "ନୂଆ ଭିଡିଓ ବିଷୟରେ ମୋତେ ଜଣାନ୍ତୁ"
+  Disable New Video Notifications: "ନୂଆ ଭିଡିଓ ବିଜ୍ଞପ୍ତି ବନ୍ଦ କରନ୍ତୁ"
   Videos:
     Videos: ଭିଡିଓ
   Playlists: {}

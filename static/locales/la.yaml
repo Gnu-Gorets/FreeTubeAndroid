@@ -163,6 +163,8 @@ Settings:
   Data Settings:
     Import Subscriptions: Subscriptiones Importare
 Channel:
+  Enable New Video Notifications: "Me de novis pelliculis certiorem fac"
+  Disable New Video Notifications: "Notificationes de novis pelliculis desine"
   Videos: {}
   Playlists: {}
 Video: {}

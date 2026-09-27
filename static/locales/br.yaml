@@ -781,6 +781,8 @@ Profile:
 Channel:
   Subscribe: 'Koumanantiñ'
   Unsubscribe: 'Digoumanantiñ'
+  Enable New Video Notifications: "Kemenn diwar-benn ar videoioù nevez"
+  Disable New Video Notifications: "Diweredekaat ar c'hemennadennoù diwar-benn videoioù nevez"
   Channel has been removed from your subscriptions: 'Dilamet eo bet ar chadenn diouzh ho koumanantoù'
   Removed subscription from {count} other channel(s): 'Dilamet eo bet ar c''houmanant diouzh {count} chadenn all'
   Added channel to your subscriptions: 'Chadenn ouzhpennet d''ho koumanantoù'

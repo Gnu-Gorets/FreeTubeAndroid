@@ -687,6 +687,8 @@ Profile:
 Channel:
   Subscribe: 'Abonați-vă'
   Unsubscribe: 'Dezabonați-vă'
+  Enable New Video Notifications: "Anunță-mă despre videoclipuri noi"
+  Disable New Video Notifications: "Dezactivează notificările pentru videoclipuri noi"
   Channel has been removed from your subscriptions: 'Canalul a fost eliminat din abonamentele tale'
   Removed subscription from {count} other channel(s): 'Abonament eliminat de pe {count} alt(e) canal(e)'
   Added channel to your subscriptions: 'Adăugat canal la abonamentele tale'

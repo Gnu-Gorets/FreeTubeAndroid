@@ -684,6 +684,8 @@ Profile:
 Channel:
   Subscribe: 'اشتراك'
   Unsubscribe: 'إلغاء الاشتراك'
+  Enable New Video Notifications: "أعلمني بالفيديوهات الجديدة"
+  Disable New Video Notifications: "أوقف الإشعارات بالفيديوهات الجديدة"
   Search Channel: 'ابحث في القناة'
   Your search results have returned 0 results: 'لم تُعد نتيجة بحثك أي نتائج'
   Videos:

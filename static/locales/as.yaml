@@ -17,6 +17,8 @@ Settings:
   Theme Settings: {}
   Subscription Settings: {}
 Channel:
+  Enable New Video Notifications: "নতুন ভিডিঅ'ৰ বিষয়ে মোক জনাব"
+  Disable New Video Notifications: "নতুন ভিডিঅ'ৰ জাননী বন্ধ কৰক"
   Playlists: {}
   Videos:
     Videos: ভিডিঅ

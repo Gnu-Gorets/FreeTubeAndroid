@@ -675,6 +675,8 @@ Profile:
 Channel:
   Subscribe: ''
   Unsubscribe: ''
+  Enable New Video Notifications: "नए वीडियो की सूचना दें"
+  Disable New Video Notifications: "नए वीडियो की सूचना बंद करें"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''

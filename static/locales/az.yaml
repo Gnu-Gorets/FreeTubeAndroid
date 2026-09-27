@@ -636,6 +636,8 @@ Channel:
       Oldest: Ən köhnə
   Subscribe: Abunə ol
   Unsubscribe: Abunə olmayın
+  Enable New Video Notifications: "Yeni videolar barədə mənə bildiriş göndər"
+  Disable New Video Notifications: "Yeni video bildirişlərini söndür"
   Channel has been removed from your subscriptions: Kanal abunəliklərinizdən silindi
   Removed subscription from {count} other channel(s): Digər {count} kanal(lar)dan abunəlik silindi
   Added channel to your subscriptions: Abunəliklərinizə kanal əlavə edildi

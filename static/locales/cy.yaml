@@ -720,6 +720,8 @@ Profile:
 Channel:
   Subscribe: 'Tanysgrifio'
   Unsubscribe: 'Dad-danysgrifio'
+  Enable New Video Notifications: "Rhowch wybod i mi am fideos newydd"
+  Disable New Video Notifications: "Diffodd hysbysiadau am fideos newydd"
   Channel has been removed from your subscriptions: 'Mae''r sianel wedi''i dynnu o''ch tanysgrifiadau'
   Removed subscription from {count} other channel(s): 'Tynnwyd y tanysgrifiad o {count} sianel(i) arall'
   Added channel to your subscriptions: 'Ychwanegwyd sianel at eich tanysgrifiadau'

@@ -684,6 +684,8 @@ Profile:
 Channel:
   Subscribe: 'הרשמה למינוי'
   Unsubscribe: 'ביטול המינוי'
+  Enable New Video Notifications: "הודעה על סרטונים חדשים"
+  Disable New Video Notifications: "כיבוי התראות על סרטונים חדשים"
   Channel has been removed from your subscriptions: 'הערוץ נמחק מרשימת המינויים שלך'
   Removed subscription from {count} other channel(s): 'הוסר מינוי מ־{count} ערוצים נוספים'
   Added channel to your subscriptions: 'הערוץ נוסף לרשימת המנויים שלך'

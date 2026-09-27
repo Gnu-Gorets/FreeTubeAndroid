@@ -664,6 +664,8 @@ Channel:
       Most Popular: Plej popularaj
   Subscribe: Aboni
   Unsubscribe: Malaboni
+  Enable New Video Notifications: "Informu min pri novaj videoj"
+  Disable New Video Notifications: "Malŝalti sciigojn pri novaj videoj"
   Channel has been removed from your subscriptions: La kanalo estis forigita el viaj abonoj
   Removed subscription from {count} other channel(s): Forigis abonon el {count} alia(j) kanalo(j)
   Added channel to your subscriptions: Aldonis kanalon al viaj abonoj

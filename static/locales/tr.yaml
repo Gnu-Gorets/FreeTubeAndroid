@@ -716,6 +716,8 @@ Profile:
 Channel:
   Subscribe: 'Abone ol'
   Unsubscribe: 'Abonelikten çık'
+  Enable New Video Notifications: "Yeni videolardan beni haberdar et"
+  Disable New Video Notifications: "Yeni video bildirimlerini kapat"
   Channel has been removed from your subscriptions: 'Kanal aboneliklerinizden kaldırıldı'
   Removed subscription from {count} other channel(s): 'Diğer {count} kanallarından abonelik kaldırıldı'
   Added channel to your subscriptions: 'Kanal aboneliklerinize eklendi'

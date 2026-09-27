@@ -106,6 +106,8 @@ Settings:
       8k: 8k
   Settings: Mga Setting
 Channel:
+  Enable New Video Notifications: "Ipaalam sa akin ang mga bagong video"
+  Disable New Video Notifications: "I-off ang mga notification para sa mga bagong video"
   Videos:
     Videos: Mga video
   Playlists: {}

@@ -712,6 +712,8 @@ Profile:
 Channel:
   Subscribe: 'Odebírat'
   Unsubscribe: 'Zrušit odběr'
+  Enable New Video Notifications: "Upozorňovat na nová videa"
+  Disable New Video Notifications: "Vypnout upozornění na nová videa"
   Channel has been removed from your subscriptions: 'Kanál byl odebrán z vašich odběrů'
   Removed subscription from {count} other channel(s): 'Odběr odebrán z {count} dalších kanálů'
   Added channel to your subscriptions: 'Kanál přidán do vašich odběrů'

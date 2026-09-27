@@ -702,6 +702,8 @@ Profile:
 Channel:
   Subscribe: 'Абониране'
   Unsubscribe: 'Отписване'
+  Enable New Video Notifications: "Известявай ме за нови видеоклипове"
+  Disable New Video Notifications: "Изключи известията за нови видеоклипове"
   Channel has been removed from your subscriptions: 'Каналът беше премахнат от вашите абонаменти'
   Removed subscription from {count} other channel(s): 'Премахнат абонамент от {count} друг(и) канал(и)'
   Added channel to your subscriptions: 'Каналът е добавен към вашите абонаменти'

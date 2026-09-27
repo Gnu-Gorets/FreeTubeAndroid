@@ -90,6 +90,8 @@ Settings:
   Player Settings: {}
 About: {}
 Channel:
+  Enable New Video Notifications: "নতুন ভিডিও সম্পর্কে আমাকে জানান"
+  Disable New Video Notifications: "নতুন ভিডিওর বিজ্ঞপ্তি বন্ধ করুন"
   Videos:
     Videos: ভিডিও
   Playlists: {}

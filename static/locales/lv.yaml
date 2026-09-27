@@ -589,6 +589,8 @@ Profile:
 Channel:
   Subscribe: 'Abonēt'
   Unsubscribe: 'Pārtraukt abonēt'
+  Enable New Video Notifications: "Paziņot par jauniem videoklipiem"
+  Disable New Video Notifications: "Izslēgt paziņojumus par jauniem videoklipiem"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''

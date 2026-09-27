@@ -147,6 +147,8 @@ Settings:
     Proxy Videos Through Invidious: 'इनविडियस के माध्यम से प्रॉक्सी वीडियो'
 About: {}
 Channel:
+  Enable New Video Notifications: "नए वीडियो के बारे में सूचित करें"
+  Disable New Video Notifications: "नए वीडियो की सूचनाएँ बंद करें"
   Videos:
     Videos: वीडियो
 Video:

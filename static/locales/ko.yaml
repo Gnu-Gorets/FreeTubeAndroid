@@ -454,6 +454,8 @@ Profile:
 Channel:
   Subscribe: '구독'
   Unsubscribe: '구독 취소'
+  Enable New Video Notifications: "새 동영상 알림 받기"
+  Disable New Video Notifications: "새 동영상 알림 끄기"
   Channel has been removed from your subscriptions: '채널이 구독에서 제거되었습니다'
   Removed subscription from {count} other channel(s): '다른 {count}개의 채널에서 구독을 제거했습니다'
   Added channel to your subscriptions: '구독에 채널을 추가했습니다'

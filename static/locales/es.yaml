@@ -708,6 +708,8 @@ Profile:
 Channel:
   Subscribe: 'Suscribirse'
   Unsubscribe: 'Desuscribirse'
+  Enable New Video Notifications: "Avisarme de vídeos nuevos"
+  Disable New Video Notifications: "Desactivar notificaciones de vídeos nuevos"
   Search Channel: 'Buscar en canal'
   Your search results have returned 0 results: 'Su búsqueda no encontró resultados'
   Videos:

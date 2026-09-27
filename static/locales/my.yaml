@@ -668,6 +668,8 @@ Profile:
 Channel:
   Subscribe: ''
   Unsubscribe: ''
+  Enable New Video Notifications: "ဗီဒီယိုအသစ်များအကြောင်း အသိပေးရန်"
+  Disable New Video Notifications: "ဗီဒီယိုအသစ် အသိပေးချက်များကို ပိတ်ရန်"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''

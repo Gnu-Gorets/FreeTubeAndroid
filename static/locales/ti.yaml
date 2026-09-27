@@ -23,6 +23,8 @@ Settings:
   Player Settings: {}
   SponsorBlock Settings: {}
 Channel:
+  Enable New Video Notifications: "ብዛዕባ ሓደስቲ ቪድዮታት ኣፍልጠኒ"
+  Disable New Video Notifications: "ናይ ሓደስቲ ቪድዮታት ምልክታታት ኣጥፍእ"
   Videos: {}
 Video:
   External Player: {}

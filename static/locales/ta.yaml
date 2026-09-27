@@ -746,6 +746,8 @@ Profile:
 Channel:
   Subscribe: 'குழுசேர்'
   Unsubscribe: 'குழுவிலகவும்'
+  Enable New Video Notifications: "புதிய காணொளிகள் குறித்து எனக்குத் தெரிவிக்கவும்"
+  Disable New Video Notifications: "புதிய காணொளிகளுக்கான அறிவிப்புகளை முடக்கு"
   Channel has been removed from your subscriptions: 'உங்கள் சந்தாக்களிலிருந்து சேனல் அகற்றப்பட்டுள்ளது'
   Removed subscription from {count} other channel(s): '{count} பிற சேனல்களிலிருந்து சந்தாவை அகற்று)'
   Added channel to your subscriptions: 'உங்கள் சந்தாக்களில் சேனல் சேர்க்கப்பட்டது'

@@ -668,6 +668,8 @@ About:
 Channel:
   Subscribe: '订阅'
   Unsubscribe: '取消订阅'
+  Enable New Video Notifications: "有新视频时通知我"
+  Disable New Video Notifications: "关闭新视频通知"
   Search Channel: '搜索频道'
   Your search results have returned 0 results: '您的搜索结果是0结果'
   Videos:

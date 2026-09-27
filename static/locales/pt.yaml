@@ -683,6 +683,8 @@ Profile:
 Channel:
   Subscribe: 'Subscrever'
   Unsubscribe: 'Cancelar subscrição'
+  Enable New Video Notifications: "Notificar-me sobre vídeos novos"
+  Disable New Video Notifications: "Desativar notificações de vídeos novos"
   Channel has been removed from your subscriptions: 'O canal foi removido das suas subscrições'
   Removed subscription from {count} other channel(s): 'Subscrição removida de mais {count} canais'
   Added channel to your subscriptions: 'Canal adicionado às suas subscrições'

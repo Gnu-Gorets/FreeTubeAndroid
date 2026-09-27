@@ -718,6 +718,8 @@ Profile:
 Channel:
   Subscribe: 'Feliratkozás'
   Unsubscribe: 'Leiratkozás'
+  Enable New Video Notifications: "Értesítés új videókról"
+  Disable New Video Notifications: "Új videókról szóló értesítések kikapcsolása"
   Channel has been removed from your subscriptions: 'A csatorna el lett távolítva a feliratkozásokból'
   Removed subscription from {count} other channel(s): 'A feliratkozás el lett távolítva {count} másik csatornából'
   Added channel to your subscriptions: 'Csatorna hozzáadva a feliratkozásaihoz'

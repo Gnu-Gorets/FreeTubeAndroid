@@ -699,6 +699,8 @@ Profile:
 Channel:
   Subscribe: 'Pretplati se'
   Unsubscribe: 'Otkaži pretplatu'
+  Enable New Video Notifications: "Obavijesti me o novim videozapisima"
+  Disable New Video Notifications: "Isključi obavijesti o novim videozapisima"
   Search Channel: 'Pretraži kanal'
   Your search results have returned 0 results: 'Pretraživanje je vratilo 0 rezultata'
   Videos:

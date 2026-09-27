@@ -664,6 +664,8 @@ About:
 Channel:
   Subscribe: 'Zasubskrybuj'
   Unsubscribe: 'Odsubskrybuj'
+  Enable New Video Notifications: "Powiadamiaj o nowych filmach"
+  Disable New Video Notifications: "Wyłącz powiadomienia o nowych filmach"
   Search Channel: 'Przeszukaj kanał'
   Your search results have returned 0 results: 'Twoje zapytanie zwróciło 0 wyników'
   Videos:

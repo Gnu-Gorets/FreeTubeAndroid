@@ -508,6 +508,8 @@ About:
   #On About page
   Website: Sitio web
 Channel:
+  Enable New Video Notifications: "Avisarme sobre videos nuevos"
+  Disable New Video Notifications: "Desactivar avisos de videos nuevos"
   Videos: {}
   Playlists: {}
   About:

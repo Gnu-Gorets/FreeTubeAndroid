@@ -19,6 +19,8 @@ Settings:
   Theme Settings: {}
   Player Settings: {}
 Channel:
+  Enable New Video Notifications: "ᱱᱟᱶᱟ ᱵᱷᱤᱰᱤᱭᱳ ᱨᱮ ᱤᱧ ᱠᱚ ᱥᱚᱫᱚᱨᱟᱭᱢᱮ"
+  Disable New Video Notifications: "ᱱᱟᱶᱟ ᱵᱷᱤᱰᱤᱭᱳ ᱥᱚᱫᱚᱨᱟ ᱵᱚᱸᱫ ᱢᱮ"
   Videos: {}
 Tooltips: {}
 New Window: ᱱᱟᱶᱟ ᱣᱤᱱᱰᱚ

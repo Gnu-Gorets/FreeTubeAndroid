@@ -358,6 +358,8 @@ Profile:
 Channel:
   Subscribe: 'Subscriu-te'
   Unsubscribe: 'Cancel·la la subscripció'
+  Enable New Video Notifications: "Notifica'm els vídeos nous"
+  Disable New Video Notifications: "Desactiva les notificacions de vídeos nous"
   Channel has been removed from your subscriptions: 'El canal s''ha eliminat de les teves subscripcions'
   Removed subscription from {count} other channel(s): 'S''ha suprimit la subscripció dels altres {count} canals'
   Added channel to your subscriptions: 'Afegeix canal a les teves subscripcions'

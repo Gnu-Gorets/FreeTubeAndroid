@@ -661,6 +661,8 @@ About:
 Channel:
   Subscribe: 'Abonner'
   Unsubscribe: 'Opphev abonnement'
+  Enable New Video Notifications: "Varsle meg om nye videoer"
+  Disable New Video Notifications: "Slå av varsler om nye videoer"
   Search Channel: 'Søk i kanal'
   Your search results have returned 0 results: 'Søktet ditt ga 0 resultater'
   Videos:

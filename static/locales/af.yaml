@@ -705,6 +705,8 @@ Profile:
 Channel:
   Subscribe: 'Teken in'
   Unsubscribe: 'Teken uit'
+  Enable New Video Notifications: "Stel my in kennis van nuwe video's"
+  Disable New Video Notifications: "Skakel kennisgewings oor nuwe video's af"
   Channel has been removed from your subscriptions: 'Kanaal is uit u intekeninge verwyder'
   Removed subscription from {count} other channel(s): 'Intekening van {count} ander kanaal(e) is verwyder'
   Added channel to your subscriptions: 'Kanaal is tot u intekeninge toegevoeg'

@@ -681,6 +681,8 @@ Profile:
 Channel:
   Subscribe: 'Εγγραφή'
   Unsubscribe: 'Απεγγραφή'
+  Enable New Video Notifications: "Ειδοποίησέ με για νέα βίντεο"
+  Disable New Video Notifications: "Απενεργοποίηση ειδοποιήσεων για νέα βίντεο"
   Channel has been removed from your subscriptions: 'Το κανάλι έχει καταργηθεί από τις Συνδρομές/Εγγραφές σας'
   Removed subscription from {count} other channel(s): 'Αφαιρέθηκε η συνδρομή από {count} άλλα κανάλια'
   Added channel to your subscriptions: 'Προστέθηκε κανάλι στις συνδρομές/εγγραφές σας'

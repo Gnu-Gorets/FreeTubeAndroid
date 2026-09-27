@@ -703,6 +703,8 @@ Profile:
 Channel:
   Subscribe: 'Prenumerera'
   Unsubscribe: 'Avsluta prenumeration'
+  Enable New Video Notifications: "Meddela mig om nya videor"
+  Disable New Video Notifications: "Stäng av aviseringar om nya videor"
   Channel has been removed from your subscriptions: 'Kanalen har tagits bort från dina prenumerationer'
   Removed subscription from {count} other channel(s): 'Prenumerationen togs bort från ytterligare en kanal | Prenumerationen togs bort från ytterligare {count} kanaler'
   Added channel to your subscriptions: 'Kanalen har lagts till bland dina prenumerationer'

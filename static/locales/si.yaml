@@ -68,6 +68,8 @@ Settings:
       Dark: 'අඳුරු'
   Player Settings: {}
 Channel:
+  Enable New Video Notifications: "අලුත් වීඩියෝ ගැන මට දැනුම් දෙන්න"
+  Disable New Video Notifications: "අලුත් වීඩියෝ දැනුම්දීම් අක්‍රිය කරන්න"
   Playlists: {}
   Videos:
     Videos: වීඩියෝ

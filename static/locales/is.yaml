@@ -701,6 +701,8 @@ Profile:
 Channel:
   Subscribe: 'Gerast áskrifandi'
   Unsubscribe: 'Segja upp áskrift'
+  Enable New Video Notifications: "Láta mig vita af nýjum myndböndum"
+  Disable New Video Notifications: "Slökkva á tilkynningum um ný myndbönd"
   Channel has been removed from your subscriptions: 'Rás var fjarlægð úr áskriftunum þínum'
   Removed subscription from {count} other channel(s): 'Fjarlægði áskrift úr {count} rás(um) til viðbótar'
   Added channel to your subscriptions: 'Bætti rás í áskriftirnar þínar'

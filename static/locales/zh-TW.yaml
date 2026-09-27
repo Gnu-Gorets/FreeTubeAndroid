@@ -664,6 +664,8 @@ About:
 Channel:
   Subscribe: '訂閱'
   Unsubscribe: '取消訂閱'
+  Enable New Video Notifications: "有新影片時通知我"
+  Disable New Video Notifications: "關閉新影片通知"
   Search Channel: '搜尋頻道'
   Your search results have returned 0 results: '搜尋結果為零'
   Videos:

@@ -75,7 +75,9 @@ Settings:
   # On Settings Page
   Theme Settings: {}
   SponsorBlock Settings: {}
-Channel: {}
+Channel:
+  Enable New Video Notifications: "Mich über neui Videos benachrichtige"
+  Disable New Video Notifications: "Benachrichtigunge für neui Videos ausschalte"
 Tooltips: {}
 Search Listing:
   Label:

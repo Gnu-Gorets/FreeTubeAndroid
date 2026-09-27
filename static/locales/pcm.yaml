@@ -750,6 +750,8 @@ Profile:
 Channel:
   Subscribe: ''
   Unsubscribe: ''
+  Enable New Video Notifications: "Make I sabi wen new videos dey"
+  Disable New Video Notifications: "Make new video notifications komot"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''

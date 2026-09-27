@@ -709,6 +709,8 @@ Profile:
 Channel:
   Subscribe: 'Langganan'
   Unsubscribe: 'Berhenti Berlangganan'
+  Enable New Video Notifications: "Beri tahu saya tentang video baru"
+  Disable New Video Notifications: "Matikan notifikasi video baru"
   Channel has been removed from your subscriptions: 'Kanal telah dihapus dari langganan Anda'
   Removed subscription from {count} other channel(s): 'Langganan terhapus dari {count} kanal lainnya'
   Added channel to your subscriptions: 'Kanal ditambahkan ke langganan Anda'
