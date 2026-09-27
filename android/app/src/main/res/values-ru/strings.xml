@@ -1,0 +1,4 @@
+<resources>
+    <string name="new_video_notification_channel">Новые видео</string>
+    <string name="new_video_notification_fallback_title">Новое видео</string>
+</resources>

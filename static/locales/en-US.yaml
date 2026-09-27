@@ -804,6 +804,8 @@ Profile:
 Channel:
   Subscribe: Subscribe
   Unsubscribe: Unsubscribe
+  Enable New Video Notifications: Notify me about new videos
+  Disable New Video Notifications: Stop new video notifications
   Channel has been removed from your subscriptions: Channel has been removed from
     your subscriptions
   Removed subscription from {count} other channel(s): Removed subscription from {count} other channel(s)

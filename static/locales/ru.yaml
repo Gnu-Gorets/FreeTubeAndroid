@@ -643,6 +643,8 @@ Channel:
   Subscribe: 'Подписаться'
   Unsubscribe: 'Отписаться'
   Search Channel: 'Поиск на канале'
+  Enable New Video Notifications: Уведомлять о новых видео
+  Disable New Video Notifications: Не уведомлять о новых видео
   Your search results have returned 0 results: 'По вашему запросу ничего не найдено'
   Videos:
     Videos: 'Видео'

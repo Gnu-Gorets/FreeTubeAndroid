@@ -46,7 +46,7 @@ Options:
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
                         fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality,
                         external_player, external_player_wifi_vlc, external_player_wifi_mpv,
-                        external_player_mobile_vlc, external_player_mobile_mpv
+                        external_player_mobile_vlc, external_player_mobile_mpv, notification, notification-background
   --keep-data           do not clear app data (default)
   --timeout SECONDS     wait timeout (default: 45)
   -h, --help            show help
@@ -509,6 +509,33 @@ search() {
   grep -q 'Search Results' "$ARTIFACT_DIR/search.png" 2>/dev/null && return 0
   # WebView text is not exposed to adb screenshot tools. Presence of a non-empty screenshot is fallback.
   [[ -s "$ARTIFACT_DIR/search.png" ]]
+}
+
+notification() {
+  [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
+  [[ -f "$TEST_APK" ]] || { echo "Test APK not found: $TEST_APK"; return 1; }
+  adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
+  adb_cmd install -r --user 0 "$TEST_APK" >/dev/null || return 1
+  adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#notificationWorkerEndToEnd" "$TEST_RUNNER" \
+    >"$ARTIFACT_DIR/notification-instrumentation.txt" 2>&1
+  cat "$ARTIFACT_DIR/notification-instrumentation.txt"
+  adb_cmd uninstall --user 0 "$TEST_PACKAGE" >/dev/null 2>&1 || true
+  grep -q 'OK (' "$ARTIFACT_DIR/notification-instrumentation.txt" &&
+    ! grep -Eq 'INSTRUMENTATION_FAILED|shortMsg=Process crashed|FAILURES!!!' "$ARTIFACT_DIR/notification-instrumentation.txt"
+}
+
+notification_background() {
+  [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
+  [[ -f "$TEST_APK" ]] || { echo "Test APK not found: $TEST_APK"; return 1; }
+  adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
+  adb_cmd install -r --user 0 "$TEST_APK" >/dev/null || return 1
+  adb_shell input keyevent KEYCODE_HOME
+  adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#backgroundNotificationWorkerWithoutPeriodicDelay" "$TEST_RUNNER" \
+    >"$ARTIFACT_DIR/notification-background-instrumentation.txt" 2>&1
+  cat "$ARTIFACT_DIR/notification-background-instrumentation.txt"
+  adb_cmd uninstall --user 0 "$TEST_PACKAGE" >/dev/null 2>&1 || true
+  grep -q 'OK (' "$ARTIFACT_DIR/notification-background-instrumentation.txt" &&
+    ! grep -Eq 'INSTRUMENTATION_FAILED|shortMsg=Process crashed|FAILURES!!!' "$ARTIFACT_DIR/notification-background-instrumentation.txt"
 }
 
 settings_sort() {
@@ -1025,6 +1052,8 @@ case "$TEST" in
   cleanup) run_test cleanup cleanup ;;
   recovery) run_test recovery recovery ;;
   settings-sort) run_test settings-sort settings_sort ;;
+  notification) run_test notification notification ;;
+  notification-background) run_test notification-background notification_background ;;
   ui-scale-layout) run_test ui-scale-layout ui_scale_layout ;;
   proxy) run_test proxy proxy_settings ;;
   *) echo "Unknown test: $TEST" >&2; usage >&2; exit 2 ;;

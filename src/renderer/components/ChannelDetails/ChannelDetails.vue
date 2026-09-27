@@ -63,6 +63,12 @@
             :channel-thumbnail="thumbnailUrl"
             @subscribed="subscribed"
           />
+          <FtButton
+            v-if="isAndroid && activeSubscription"
+            :label="activeSubscription.notifyOnNewVideos ? $t('Channel.Disable New Video Notifications') : $t('Channel.Enable New Video Notifications')"
+            :title="activeSubscription.notifyOnNewVideos ? $t('Channel.Disable New Video Notifications') : $t('Channel.Enable New Video Notifications')"
+            @click="toggleNotifications"
+          />
         </div>
       </div>
 
@@ -261,6 +267,7 @@ import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
 import FtShareButton from '../FtShareButton/FtShareButton.vue'
 import FtSubscribeButton from '../FtSubscribeButton/FtSubscribeButton.vue'
 import FtInput from '../FtInput/FtInput.vue'
+import FtButton from '../FtButton/FtButton.vue'
 
 import store from '../../store/index'
 
@@ -334,6 +341,10 @@ const hideUnsubscribeButton = computed(() => {
   return store.getters.getHideUnsubscribeButton
 })
 
+const isAndroid = process.env.IS_ANDROID
+const activeProfile = computed(() => store.getters.getActiveProfile)
+const activeSubscription = computed(() => activeProfile.value?.subscriptions.find(channel => channel.id === props.id))
+
 const formattedSubCount = computed(() => {
   if (hideChannelSubscriptions.value) {
     return null
@@ -343,6 +354,16 @@ const formattedSubCount = computed(() => {
 
 function subscribed() {
   emit('subscribed')
+}
+
+function toggleNotifications() {
+  const enabled = !activeSubscription.value.notifyOnNewVideos
+  if (enabled) window.Android?.requestNotificationPermission?.()
+  store.dispatch('setChannelNotifications', {
+    channelId: props.id,
+    profileId: activeProfile.value._id,
+    enabled
+  })
 }
 
 /**

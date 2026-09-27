@@ -91,6 +91,26 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            activity.runOnUiThread {
+                activity.requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 101)
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun syncNotificationSubscriptions(channelIdsJson: String) {
+        try {
+            SubscriptionNotificationWorker.syncSubscriptions(activity, JSONArray(channelIdsJson))
+        } catch (error: Exception) {
+            Log.e("FreeTubeNotifications", "Invalid subscription notification list", error)
+        }
+    }
+
+    @JavascriptInterface
     fun isLandscape(): Boolean {
         return activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     }

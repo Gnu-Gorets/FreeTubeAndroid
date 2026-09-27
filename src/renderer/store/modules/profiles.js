@@ -38,6 +38,15 @@ const getters = {
   },
 }
 
+function syncNotificationSubscriptions(profileList) {
+  if (!process.env.IS_ANDROID || typeof window.Android?.syncNotificationSubscriptions !== 'function') return
+
+  const channelIds = [...new Set(profileList.flatMap(profile =>
+    profile.subscriptions.filter(channel => channel.notifyOnNewVideos).map(channel => channel.id)
+  ))]
+  window.Android.syncNotificationSubscriptions(JSON.stringify(channelIds))
+}
+
 const collator = new Intl.Collator(undefined, {
   usage: 'sort',
   caseFirst: 'upper',
@@ -82,6 +91,7 @@ const actions = {
       try {
         await DBProfileHandlers.create(defaultProfile)
         commit('setProfileList', [defaultProfile])
+        syncNotificationSubscriptions([defaultProfile])
       } catch (errMessage) {
         console.error(errMessage)
       }
@@ -104,6 +114,7 @@ const actions = {
     }
 
     commit('setProfileList', profiles)
+    syncNotificationSubscriptions(profiles)
   },
 
   async batchUpdateSubscriptionDetails({ dispatch, state }, channels) {
@@ -214,19 +225,30 @@ const actions = {
     }
   },
 
-  async updateProfile({ commit }, profile) {
+  async setChannelNotifications({ dispatch, state }, { channelId, profileId, enabled }) {
+    const profile = state.profileList.find(item => item._id === profileId)
+    const index = profile?.subscriptions.findIndex(channel => channel.id === channelId) ?? -1
+    if (index < 0 || profile.subscriptions[index].notifyOnNewVideos === enabled) return
+
+    const updated = deepCopy(profile)
+    updated.subscriptions[index].notifyOnNewVideos = enabled
+    await dispatch('updateProfile', updated)
+  },
+
+  async updateProfile({ commit, state }, profile) {
     try {
       console.warn(`[Profiles] upsert ${profile._id} subscriptions=${profile.subscriptions?.length ?? 0}`)
       await DBProfileHandlers.upsert(profile)
       console.warn(`[Profiles] persisted ${profile._id}`)
       commit('upsertProfileToList', profile)
+      syncNotificationSubscriptions(state.profileList)
       console.warn(`[Profiles] committed ${profile._id}`)
     } catch (errMessage) {
       console.error('[Profiles] upsert failed', errMessage)
     }
   },
 
-  async addChannelToProfiles({ commit }, { channel, profileIds }) {
+  async addChannelToProfiles({ commit, state }, { channel, profileIds }) {
     // If this is an Invidious URL, convert it to a YouTube one
     if (!channel.thumbnail.startsWith('https://yt3.googleusercontent.com/')) {
       channel.thumbnail = channel.thumbnail.replace(/^https?:\/\/[^/]+\/ggpht/, 'https://yt3.googleusercontent.com')
@@ -235,24 +257,27 @@ const actions = {
     try {
       await DBProfileHandlers.addChannelToProfiles(channel, profileIds)
       commit('addChannelToProfiles', { channel, profileIds })
+      syncNotificationSubscriptions(state.profileList)
     } catch (errMessage) {
       console.error(errMessage)
     }
   },
 
-  async removeChannelFromProfiles({ commit }, { channelId, profileIds }) {
+  async removeChannelFromProfiles({ commit, state }, { channelId, profileIds }) {
     try {
       await DBProfileHandlers.removeChannelFromProfiles(channelId, profileIds)
       commit('removeChannelFromProfiles', { channelId, profileIds })
+      syncNotificationSubscriptions(state.profileList)
     } catch (errMessage) {
       console.error(errMessage)
     }
   },
 
-  async removeProfile({ commit }, profileId) {
+  async removeProfile({ commit, state }, profileId) {
     try {
       await DBProfileHandlers.delete(profileId)
       commit('removeProfileFromList', profileId)
+      syncNotificationSubscriptions(state.profileList)
     } catch (errMessage) {
       console.error(errMessage)
     }
