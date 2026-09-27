@@ -15,12 +15,14 @@ import androidx.work.WorkManager
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -45,6 +47,8 @@ class CoordinateFreeSmokeTest {
         val previousPrefs = prefs.all.mapValues { it.value as? String }
         prefs.edit().clear().putString(SubscriptionNotificationWorker.CHANNELS, "[\"$channelId\"]").commit()
         val manager = context.getSystemService(NotificationManager::class.java)
+        assertFalse(SubscriptionNotificationWorker.isNotificationChannelEnabled(NotificationManager.IMPORTANCE_NONE))
+        assertTrue(SubscriptionNotificationWorker.isNotificationChannelEnabled(NotificationManager.IMPORTANCE_DEFAULT))
         val emptyFeed = feed()
         listOf("video-one", "video-two", "video-three", "video-four", "video-five").forEach { manager.cancel(it.hashCode()) }
         val firstFeed = feed("video-one" to "First video")
@@ -106,9 +110,10 @@ class CoordinateFreeSmokeTest {
             assertTrue(manager.activeNotifications.none { it.id == "video-four".hashCode() })
             runBlocking { assertTrue(runWorker(context, permissionDeniedFeed) is ListenableWorker.Result.Success) }
             val latestVideoId = "video-four"
-            val latestNotification = manager.activeNotifications.single { it.id == latestVideoId.hashCode() }
+            val latestNotification = waitForNotification(manager, latestVideoId)
+            assertNotNull(latestNotification)
             val monitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false)
-            latestNotification.notification.contentIntent.send()
+            latestNotification!!.notification.contentIntent.send()
             val activity = instrumentation.waitForMonitorWithTimeout(monitor, 10_000) as? MainActivity
             assertTrue("Notification should open MainActivity", activity != null)
             assertEquals(latestVideoId, activity?.intent?.data?.getQueryParameter("v"))
@@ -213,6 +218,36 @@ class CoordinateFreeSmokeTest {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 instrumentation.uiAutomation.dropShellPermissionIdentity()
             }
+        }
+    }
+
+    @Test
+    fun notificationSyncRestoresMissingPeriodicWork() {
+        val context = instrumentation.targetContext
+        val prefs = context.getSharedPreferences(SubscriptionNotificationWorker.PREFS, 0)
+        val previousPrefs = prefs.all.mapValues { it.value as? String }
+        val previousChannels = JSONArray(prefs.getString(SubscriptionNotificationWorker.CHANNELS, "[]"))
+        val channels = JSONArray().put("UCabcdefghijklmnopqrstuv")
+        val workManager = WorkManager.getInstance(context)
+
+        try {
+            workManager.cancelUniqueWork(SubscriptionNotificationWorker.INITIAL_WORK).result.get(10, TimeUnit.SECONDS)
+            workManager.cancelUniqueWork(SubscriptionNotificationWorker.UNIQUE_WORK).result.get(10, TimeUnit.SECONDS)
+            prefs.edit().putString(SubscriptionNotificationWorker.CHANNELS, channels.toString()).commit()
+
+            repeat(2) {
+                SubscriptionNotificationWorker.syncSubscriptions(context, channels)
+                assertTrue(workManager.getWorkInfosForUniqueWork(SubscriptionNotificationWorker.UNIQUE_WORK)
+                    .get(10, TimeUnit.SECONDS).any { !it.state.isFinished })
+                workManager.cancelUniqueWork(SubscriptionNotificationWorker.UNIQUE_WORK).result.get(10, TimeUnit.SECONDS)
+            }
+        } finally {
+            workManager.cancelUniqueWork(SubscriptionNotificationWorker.INITIAL_WORK).result.get(10, TimeUnit.SECONDS)
+            workManager.cancelUniqueWork(SubscriptionNotificationWorker.UNIQUE_WORK).result.get(10, TimeUnit.SECONDS)
+            prefs.edit().clear().apply {
+                previousPrefs.forEach { (key, value) -> if (value != null) putString(key, value) }
+            }.commit()
+            SubscriptionNotificationWorker.syncSubscriptions(context, previousChannels)
         }
     }
 

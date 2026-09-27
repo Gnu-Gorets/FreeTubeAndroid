@@ -512,16 +512,20 @@ search() {
 }
 
 notification() {
+  [[ "$(adb_shell am get-current-user 2>/dev/null)" == "0" ]] || { echo "FAIL: Android user 0 is required"; return 1; }
   [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
   [[ -f "$TEST_APK" ]] || { echo "Test APK not found: $TEST_APK"; return 1; }
   adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
   adb_cmd install -r --user 0 "$TEST_APK" >/dev/null || return 1
   adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#notificationWorkerEndToEnd" "$TEST_RUNNER" \
     >"$ARTIFACT_DIR/notification-instrumentation.txt" 2>&1
-  cat "$ARTIFACT_DIR/notification-instrumentation.txt"
+  adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#notificationSyncRestoresMissingPeriodicWork" "$TEST_RUNNER" \
+    >"$ARTIFACT_DIR/notification-schedule-instrumentation.txt" 2>&1
+  cat "$ARTIFACT_DIR/notification-instrumentation.txt" "$ARTIFACT_DIR/notification-schedule-instrumentation.txt"
   adb_cmd uninstall --user 0 "$TEST_PACKAGE" >/dev/null 2>&1 || true
   grep -q 'OK (' "$ARTIFACT_DIR/notification-instrumentation.txt" &&
-    ! grep -Eq 'INSTRUMENTATION_FAILED|shortMsg=Process crashed|FAILURES!!!' "$ARTIFACT_DIR/notification-instrumentation.txt"
+    grep -q 'OK (' "$ARTIFACT_DIR/notification-schedule-instrumentation.txt" &&
+    ! grep -Eq 'INSTRUMENTATION_FAILED|shortMsg=Process crashed|FAILURES!!!' "$ARTIFACT_DIR/notification-instrumentation.txt" "$ARTIFACT_DIR/notification-schedule-instrumentation.txt"
 }
 
 notification_background() {

@@ -3,4 +3,6 @@
     <string name="external_player_unavailable">No app can open this video</string>
     <string name="new_video_notification_channel">New videos</string>
     <string name="new_video_notification_fallback_title">New video</string>
+    <string name="notification_check_channel">Background checks</string>
+    <string name="notification_check_title">Checking for new videos</string>
 </resources>
