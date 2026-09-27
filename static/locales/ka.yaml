@@ -200,8 +200,8 @@ Settings:
       Catppuccin Mocha Peach: 'ატმისფერი Catppuccin Mocha'
   Player Settings: {}
 Channel:
-  Enable New Video Notifications: "ახალი ვიდეოების შესახებ შეტყობინება"
-  Disable New Video Notifications: "ახალი ვიდეოების შეტყობინებების გამორთვა"
+  Enable New Video Notifications: "შემატყობინე ახალი ვიდეოების შესახებ"
+  Disable New Video Notifications: "გამორთე ახალი ვიდეოების შეტყობინებები"
   Playlists: {}
   Videos:
     Videos: ვიდეოები

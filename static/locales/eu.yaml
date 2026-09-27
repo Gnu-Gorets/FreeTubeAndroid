@@ -709,7 +709,7 @@ Profile:
 Channel:
   Subscribe: 'Harpidetu'
   Unsubscribe: 'Kendu harpidetza'
-  Enable New Video Notifications: "Jakinarazi bideo berrien berri"
+  Enable New Video Notifications: "Jakinarazi bideo berriak argitaratzen direnean"
   Disable New Video Notifications: "Desaktibatu bideo berrien jakinarazpenak"
   Channel has been removed from your subscriptions: 'Kanala zure harpidetzetatik kendu da'
   Removed subscription from {count} other channel(s): 'Harpidetza beste {count} kanaletatik ezabatu da'

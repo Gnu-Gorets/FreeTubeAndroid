@@ -471,8 +471,8 @@ Profile:
 Channel:
   Subscribe: ''
   Unsubscribe: ''
-  Enable New Video Notifications: "Faailoa mai vitio fou"
-  Disable New Video Notifications: "Tape faasilasilaga mo vitio fou"
+  Enable New Video Notifications: "Fa'ailoa mai pe a iai ni vitio fou"
+  Disable New Video Notifications: "Taofi fa'asilasilaga mo vitio fou"
   Channel has been removed from your subscriptions: ''
   Removed subscription from {count} other channel(s): ''
   Added channel to your subscriptions: ''
