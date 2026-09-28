@@ -236,9 +236,10 @@ class CoordinateFreeSmokeTest {
             prefs.edit().putString(SubscriptionNotificationWorker.CHANNELS, channels.toString()).commit()
 
             repeat(2) {
-                SubscriptionNotificationWorker.syncSubscriptions(context, channels)
-                assertTrue(workManager.getWorkInfosForUniqueWork(SubscriptionNotificationWorker.UNIQUE_WORK)
-                    .get(10, TimeUnit.SECONDS).any { !it.state.isFinished })
+                SubscriptionNotificationWorker.restoreSchedule(context)!!.result.get(10, TimeUnit.SECONDS)
+                val work = workManager.getWorkInfosForUniqueWork(SubscriptionNotificationWorker.UNIQUE_WORK)
+                    .get(10, TimeUnit.SECONDS)
+                assertEquals(1, work.count { it.state == WorkInfo.State.ENQUEUED })
                 workManager.cancelUniqueWork(SubscriptionNotificationWorker.UNIQUE_WORK).result.get(10, TimeUnit.SECONDS)
             }
         } finally {
@@ -247,7 +248,7 @@ class CoordinateFreeSmokeTest {
             prefs.edit().clear().apply {
                 previousPrefs.forEach { (key, value) -> if (value != null) putString(key, value) }
             }.commit()
-            SubscriptionNotificationWorker.syncSubscriptions(context, previousChannels)
+            SubscriptionNotificationWorker.syncSubscriptions(context, previousChannels).result.get(10, TimeUnit.SECONDS)
         }
     }
 

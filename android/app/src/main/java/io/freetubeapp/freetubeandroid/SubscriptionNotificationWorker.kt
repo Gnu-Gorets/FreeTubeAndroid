@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -13,12 +12,12 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
-import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.NetworkType
+import androidx.work.Operation
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
@@ -44,7 +43,6 @@ class SubscriptionNotificationWorker(context: Context, params: WorkerParameters)
             inputData.getBoolean(TEST_NOTIFICATIONS_ENABLED, false)
         } else null
 
-        setForeground(createForegroundInfo())
         var hadFailures = false
         for (i in 0 until channels.length()) {
             val channelId = channels.optString(i)
@@ -81,38 +79,11 @@ class SubscriptionNotificationWorker(context: Context, params: WorkerParameters)
                     }
                 }
             } catch (error: Exception) {
-                Log.w(TAG, "Feed check failed for $channelId", error)
+                Log.w(TAG, "Feed check failed: ${error.javaClass.simpleName}", error)
                 hadFailures = true
             }
         }
         return if (hadFailures) Result.retry() else Result.success()
-    }
-
-    private fun createForegroundInfo(): ForegroundInfo {
-        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(NotificationChannel(
-                CHECK_CHANNEL_ID,
-                applicationContext.getString(R.string.notification_check_channel),
-                NotificationManager.IMPORTANCE_LOW
-            ))
-        }
-        val notification = NotificationCompat.Builder(applicationContext, CHECK_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_media_notification_icon)
-            .setContentTitle(applicationContext.getString(R.string.notification_check_title))
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setProgress(0, 0, true)
-            .build()
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(
-                CHECK_NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            ForegroundInfo(CHECK_NOTIFICATION_ID, notification)
-        }
     }
 
     private fun fetchFeed(channelId: String): Feed {
@@ -185,7 +156,13 @@ class SubscriptionNotificationWorker(context: Context, params: WorkerParameters)
         manager.notify(videoId.hashCode(), notification)
         }
 
-        fun syncSubscriptions(context: Context, channelIds: JSONArray) {
+        fun restoreSchedule(context: Context): Operation? {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val saved = try { JSONArray(prefs.getString(CHANNELS, "[]")) } catch (_: Exception) { return null }
+            return if (saved.length() > 0) syncSubscriptions(context, saved) else null
+        }
+
+        fun syncSubscriptions(context: Context, channelIds: JSONArray): Operation {
             val appContext = context.applicationContext
             val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val normalizedIds = (0 until channelIds.length()).map { channelIds.optString(it) }.distinct().sorted()
@@ -205,8 +182,7 @@ class SubscriptionNotificationWorker(context: Context, params: WorkerParameters)
             val workManager = WorkManager.getInstance(appContext)
             if (normalizedIds.isEmpty()) {
                 workManager.cancelUniqueWork(INITIAL_WORK)
-                workManager.cancelUniqueWork(UNIQUE_WORK)
-                return
+                return workManager.cancelUniqueWork(UNIQUE_WORK)
             }
             val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
             if (changed) {
@@ -218,15 +194,13 @@ class SubscriptionNotificationWorker(context: Context, params: WorkerParameters)
             val periodicRequest = PeriodicWorkRequestBuilder<SubscriptionNotificationWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(constraints)
                 .build()
-            workManager.enqueueUniquePeriodicWork(UNIQUE_WORK, ExistingPeriodicWorkPolicy.KEEP, periodicRequest)
+            return workManager.enqueueUniquePeriodicWork(UNIQUE_WORK, ExistingPeriodicWorkPolicy.KEEP, periodicRequest)
         }
 
         private const val TAG = "FreeTubeNotifications"
         const val PREFS = "subscription_notifications"
         const val CHANNELS = "channel_ids"
         const val CHANNEL_ID = "new_videos"
-        const val CHECK_CHANNEL_ID = "notification_check"
-        const val CHECK_NOTIFICATION_ID = 1002
         const val UNIQUE_WORK = "subscription_notifications"
         const val INITIAL_WORK = "subscription_notifications_initial"
         const val TEST_FEED = "test_feed"
