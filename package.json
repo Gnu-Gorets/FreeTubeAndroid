@@ -119,6 +119,8 @@
     "vue-loader": "^17.4.2",
     "webpack": "^5.111.1",
     "webpack-cli": "^7.2.3",
-    "webpack-dev-server": "^6.0.0"
+    "webpack-dev-server": "^6.0.0",
+    "css-minimizer-webpack-plugin": "^8.0.0",
+    "json-minimizer-webpack-plugin": "^5.0.1"
   }
 }
