@@ -276,6 +276,9 @@ importers:
       sass-loader:
         specifier: ^17.0.1
         version: 17.0.1(sass@1.105.1)(webpack@5.111.1)
+      serialize-javascript:
+        specifier: ^7.0.5
+        version: 7.1.2
       stylelint:
         specifier: ^17.16.0
         version: 17.16.0(supports-color@10.2.2)(typescript@6.0.3)
