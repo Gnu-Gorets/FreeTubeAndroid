@@ -86,6 +86,7 @@ export default defineComponent({
   beforeRouteLeave: async function (to, from, next) {
     this.handleRouteChange()
     window.removeEventListener('beforeunload', this.handleWatchProgressAutoSave)
+    window.removeEventListener('app-pause', this.handleWatchProgressAutoSave)
     document.removeEventListener('keydown', this.resetAutoplayInterruptionTimeout)
     document.removeEventListener('click', this.resetAutoplayInterruptionTimeout)
 
@@ -500,6 +501,7 @@ export default defineComponent({
       document.addEventListener('click', this.resetAutoplayInterruptionTimeout)
 
       window.addEventListener('beforeunload', this.handleWatchProgressAutoSave)
+      window.addEventListener('app-pause', this.handleWatchProgressAutoSave)
       this.resetAutoplayInterruptionTimeout()
     },
 
