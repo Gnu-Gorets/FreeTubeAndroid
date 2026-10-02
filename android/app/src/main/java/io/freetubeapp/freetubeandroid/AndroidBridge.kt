@@ -424,7 +424,15 @@ class AndroidBridge(
             override fun onMediaButtonEvent(intent: Intent): Boolean {
                 val keyEvent = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
                     ?: return super.onMediaButtonEvent(intent)
-                if (keyEvent.action != KeyEvent.ACTION_DOWN) return true
+                if (keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD || keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_REWIND) {
+                    val direction = if (keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD) "forward" else "backward"
+                    when (keyEvent.action) {
+                        KeyEvent.ACTION_DOWN -> if (keyEvent.repeatCount == 0) dispatchMediaEvent("seek-$direction-start")
+                        KeyEvent.ACTION_UP -> dispatchMediaEvent("seek-stop")
+                    }
+                    return true
+                }
+                if (keyEvent.action != KeyEvent.ACTION_DOWN) return super.onMediaButtonEvent(intent)
                 when (keyEvent.keyCode) {
                     KeyEvent.KEYCODE_MEDIA_PLAY -> dispatchMediaEvent("play")
                     KeyEvent.KEYCODE_MEDIA_PAUSE -> dispatchMediaEvent("pause")
@@ -440,6 +448,8 @@ class AndroidBridge(
             override fun onPause() = dispatchMediaEvent("pause")
             override fun onSkipToNext() = dispatchMediaEvent("next")
             override fun onSkipToPrevious() = dispatchMediaEvent("previous")
+            override fun onFastForward() = dispatchMediaEvent("seek-forward")
+            override fun onRewind() = dispatchMediaEvent("seek-backward")
             override fun onSeekTo(pos: Long) = dispatchMediaEvent("seek", pos)
         })
     }
@@ -1031,7 +1041,7 @@ class AndroidBridge(
             .build())
         mediaSession.setPlaybackState(PlaybackState.Builder()
             .setState(state, position, if (state == PlaybackState.STATE_PLAYING) 1f else 0f)
-            .setActions(PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
+            .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_FAST_FORWARD or PlaybackState.ACTION_REWIND or PlaybackState.ACTION_SEEK_TO)
             .build())
         (activity as? MainActivity)?.updatePictureInPictureAction(state == PlaybackState.STATE_PLAYING)
         val notification = Notification.Builder(activity, "media_controls")
