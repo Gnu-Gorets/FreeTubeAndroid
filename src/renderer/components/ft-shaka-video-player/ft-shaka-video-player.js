@@ -2951,6 +2951,17 @@ export default defineComponent({
     const mediaSeek = event => {
       if (video.value && Number.isFinite(event.detail?.position)) video.value.currentTime = event.detail.position / 1000
     }
+    let mediaSeekInterval
+    const startMediaSeek = direction => {
+      clearInterval(mediaSeekInterval)
+      seekBySeconds(direction * defaultSkipInterval.value, true)
+      mediaSeekInterval = setInterval(() => seekBySeconds(direction, true), 250)
+    }
+    const mediaSeekForward = () => seekBySeconds(defaultSkipInterval.value, true)
+    const mediaSeekBackward = () => seekBySeconds(-defaultSkipInterval.value, true)
+    const mediaSeekForwardStart = () => startMediaSeek(1)
+    const mediaSeekBackwardStart = () => startMediaSeek(-1)
+    const mediaSeekStop = () => clearInterval(mediaSeekInterval)
 
     onMounted(async () => {
       const videoElement = video.value
@@ -2958,6 +2969,11 @@ export default defineComponent({
         window.addEventListener('media-play', mediaPlay)
         window.addEventListener('media-pause', mediaPause)
         window.addEventListener('media-seek', mediaSeek)
+        window.addEventListener('media-seek-forward', mediaSeekForward)
+        window.addEventListener('media-seek-backward', mediaSeekBackward)
+        window.addEventListener('media-seek-forward-start', mediaSeekForwardStart)
+        window.addEventListener('media-seek-backward-start', mediaSeekBackwardStart)
+        window.addEventListener('media-seek-stop', mediaSeekStop)
         videoElement.addEventListener('play', () => updateMediaSessionState(STATE_PLAYING))
         videoElement.addEventListener('pause', () => updateMediaSessionState(STATE_PAUSED))
         videoElement.addEventListener('timeupdate', () => updateMediaSessionState(videoElement.paused ? STATE_PAUSED : STATE_PLAYING, Math.floor(videoElement.currentTime * 1000)))
@@ -3507,6 +3523,12 @@ export default defineComponent({
       window.removeEventListener('media-play', mediaPlay)
       window.removeEventListener('media-pause', mediaPause)
       window.removeEventListener('media-seek', mediaSeek)
+      window.removeEventListener('media-seek-forward', mediaSeekForward)
+      window.removeEventListener('media-seek-backward', mediaSeekBackward)
+      window.removeEventListener('media-seek-forward-start', mediaSeekForwardStart)
+      window.removeEventListener('media-seek-backward-start', mediaSeekBackwardStart)
+      window.removeEventListener('media-seek-stop', mediaSeekStop)
+      clearInterval(mediaSeekInterval)
     })
 
     // #endregion tear down
