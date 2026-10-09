@@ -60,6 +60,12 @@ jobs:
             printf 'keyPassword=%s\n' "$ANDROID_NIGHTLY_KEY_PASSWORD"
           } > android/keystore.properties
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build Docker image
         run: docker compose build android-nightly
 
