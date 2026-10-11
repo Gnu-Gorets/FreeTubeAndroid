@@ -897,7 +897,7 @@ async function getLocalVideoInfoUncached(id) {
   if (info.captions?.caption_tracks) {
     info.captions.caption_tracks = info.captions.caption_tracks.filter((captionTrack) => {
       try {
-        const url = new URL(captionTrack.base_url)
+        const url = new URL(captionTrack.base_url, 'https://www.youtube.com')
 
         url.searchParams.set('potc', '1')
         url.searchParams.set('pot', contentPoToken)
