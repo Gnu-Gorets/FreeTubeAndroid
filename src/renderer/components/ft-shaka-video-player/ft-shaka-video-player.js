@@ -37,6 +37,7 @@ import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../help
 import { getNetworkType } from '../../helpers/android/network'
 import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
 import { isPlayerMenuOpen } from '../../helpers/player/player-menu.mjs'
+import { addAndroidDoubleTapSeeking } from '../../helpers/player/android-double-tap.mjs'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -1009,6 +1010,9 @@ export default defineComponent({
           }
         }
 
+        // Keep Shaka's indicators; Android touch handler owns tap detection.
+        if (process.env.IS_ANDROID) firstTimeConfig.seekOnTaps = true
+
         if (document.pictureInPictureEnabled) {
           firstTimeConfig.mediaSession.supportedActions.push('enterpictureinpicture')
         }
@@ -1070,6 +1074,7 @@ export default defineComponent({
     let longPressTimer
     let longPressPlaybackRate
     let longPressControlsContainer
+    let removeDoubleTapSeeking
 
     function startLongPressPlayback(event) {
       if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
@@ -1096,6 +1101,12 @@ export default defineComponent({
       if (!process.env.IS_ANDROID) return
       removeLongPressPlaybackListeners()
       longPressControlsContainer = controlsContainer
+      removeDoubleTapSeeking = addAndroidDoubleTapSeeking(controlsContainer, ui.getControls(), direction => {
+        if (!canSeek()) return 0
+        const seconds = direction * defaultSkipInterval.value
+        seekBySeconds(seconds, true)
+        return seconds
+      })
       controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
       controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
       controlsContainer.addEventListener('pointercancel', stopLongPressPlayback)
@@ -1104,6 +1115,8 @@ export default defineComponent({
 
     function removeLongPressPlaybackListeners() {
       if (!longPressControlsContainer) return
+      removeDoubleTapSeeking()
+      removeDoubleTapSeeking = null
       longPressControlsContainer.removeEventListener('pointerdown', startLongPressPlayback)
       longPressControlsContainer.removeEventListener('pointerup', stopLongPressPlayback)
       longPressControlsContainer.removeEventListener('pointercancel', stopLongPressPlayback)
