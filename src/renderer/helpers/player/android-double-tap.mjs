@@ -5,6 +5,28 @@ const SCROLL_THRESHOLD = 10
 export function addAndroidDoubleTapSeeking (container, controls, seek) {
   let touchStart = null
   let lastTap = null
+  let indicator = null
+  let indicatorTimer
+
+  function hideIndicator () {
+    clearTimeout(indicatorTimer)
+    if (!indicator) return
+    indicator.style.opacity = '0'
+    indicator.querySelector('span').textContent = '0s'
+    indicator = null
+  }
+
+  function showIndicator (seconds) {
+    const element = container.querySelector(seconds < 0 ? '.shaka-rewind-container' : '.shaka-fast-forward-container')
+    if (!element) return
+    if (indicator !== element) hideIndicator()
+    indicator = element
+    const value = indicator.querySelector('span')
+    value.textContent = `${parseInt(value.textContent, 10) + seconds}s`
+    indicator.style.opacity = '1'
+    clearTimeout(indicatorTimer)
+    indicatorTimer = setTimeout(hideIndicator, TAP_WINDOW)
+  }
 
   function start (event) {
     touchStart = null
@@ -46,11 +68,15 @@ export function addAndroidDoubleTapSeeking (container, controls, seek) {
     }
 
     if (lastTap && lastTap.direction === start.direction && event.timeStamp - lastTap.time < TAP_WINDOW) {
-      seek(start.direction)
-    } else if (controls.isOpaque()) {
-      controls.hideUI()
+      const seconds = seek(start.direction)
+      if (seconds) showIndicator(seconds)
     } else {
-      controls.showUI()
+      hideIndicator()
+      if (controls.isOpaque()) {
+        controls.hideUI()
+      } else {
+        controls.showUI()
+      }
     }
     lastTap = { direction: start.direction, time: event.timeStamp }
   }
@@ -58,6 +84,7 @@ export function addAndroidDoubleTapSeeking (container, controls, seek) {
   function cancel () {
     touchStart = null
     lastTap = null
+    hideIndicator()
   }
 
   container.addEventListener('touchstart', start, { capture: true, passive: true })

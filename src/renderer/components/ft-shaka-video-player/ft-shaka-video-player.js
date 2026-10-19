@@ -1010,8 +1010,8 @@ export default defineComponent({
           }
         }
 
-        // Shaka ignores the first seek tap while controls are hidden.
-        if (process.env.IS_ANDROID) firstTimeConfig.seekOnTaps = false
+        // Keep Shaka's indicators; Android touch handler owns tap detection.
+        if (process.env.IS_ANDROID) firstTimeConfig.seekOnTaps = true
 
         if (document.pictureInPictureEnabled) {
           firstTimeConfig.mediaSession.supportedActions.push('enterpictureinpicture')
@@ -1102,7 +1102,10 @@ export default defineComponent({
       removeLongPressPlaybackListeners()
       longPressControlsContainer = controlsContainer
       removeDoubleTapSeeking = addAndroidDoubleTapSeeking(controlsContainer, ui.getControls(), direction => {
-        seekBySeconds(direction * defaultSkipInterval.value, false, true)
+        if (!canSeek()) return 0
+        const seconds = direction * defaultSkipInterval.value
+        seekBySeconds(seconds, true)
+        return seconds
       })
       controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
       controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
