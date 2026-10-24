@@ -2,11 +2,13 @@
 
 ## Before changes
 
-For Android, build, runtime, or packaging work, read `docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md` first.
+1. For Android, build, runtime, or packaging changes, read `docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md` first.
+2. Before changing behavior, inspect implementation, callers, tests, and docs. Surface conflicts instead of guessing. For bugs, trace shared callers and fix narrowest root cause.
+3. Keep UI in `src/renderer/` and Android lifecycle/bridge code in `android/app/src/main/java/`. Preserve Electron, PWA, and Android boundaries; reuse existing interfaces and keep exposed JS bridge methods narrow.
 
 ## Checks and builds
 
-Host checks use `pnpm@11`:
+1. Host checks use `pnpm@11`:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -16,7 +18,7 @@ pnpm run lint-yml
 pnpm run checkforbadtemplates
 ```
 
-Android packaging/build uses Docker only. Do not use host Android tooling or host `pnpm` for it:
+2. Android packaging and builds use Docker only. Do not use host Android tooling or host `pnpm` for them:
 
 ```bash
 docker compose run --rm android-build bash -lc \
@@ -24,11 +26,12 @@ docker compose run --rm android-build bash -lc \
    cd android && ./gradlew assembleDebug'
 ```
 
-APK: `android/app/build/outputs/apk/debug/app-debug.apk`. Host `adb` is for device installation/tests only.
+3. APK: `android/app/build/outputs/apk/debug/app-debug.apk`. Host `adb` is for device installation and tests only.
+4. Never hand-edit generated `dist/` or `android/app/src/main/assets/`; regenerate them. Keep generated output, local data, logs, screenshots, recordings, and `docs/plans/` out of commits.
 
-## Android device rules
+## Android device safety
 
-Before every ADB command, require a physical device with state `device` and user `0`:
+Before device interaction, run:
 
 ```bash
 adb devices -l
@@ -36,22 +39,18 @@ adb get-state
 adb shell am get-current-user
 ```
 
-Use explicit `--user 0` for install/start/stop/grant. Never use or switch to work profile `10` or `/data/user/10/`. Test only `io.freetubeapp.freetubeandroid` unless explicitly approved. Never change system density, scale, resolution, font scale, or display settings. App `UI Scale` is allowed only for documented FreeTube smoke normalization.
+Proceed only when physical device state is `device` and active user is `0`.
 
-## Files and architecture
-
-- Never hand-edit generated `dist/` or `android/app/src/main/assets/`; regenerate them.
-- Keep generated output, local data, logs, screenshots, recordings, and `docs/plans/` out of commits.
-- UI belongs in `src/renderer/`; Android lifecycle/bridge in `android/app/src/main/java/`. Preserve Electron/PWA/Android boundaries.
-- Read callers before adding helpers/branches, reuse existing interfaces, and keep JS-exposed bridge methods narrow.
+1. Use explicit `--user 0` for install, start, stop, and grant.
+2. Never use or switch to work profile `10` or `/data/user/10/`.
+3. Test only `io.freetubeapp.freetubeandroid` unless explicitly approved.
+4. Never change system density, scale, resolution, font scale, or display settings. App `UI Scale` is allowed only for documented FreeTube smoke normalization.
+5. Do not change device data, app state, or system settings during manual testing unless explicitly requested.
 
 ## Git workflow
 
-- Direct commits and force pushes to `development` are allowed for repository-owner-approved maintenance changes.
-- Preserve Conventional Commits and coordinate force pushes with active contributors.
-- Do not use direct commits or pushes for development changes.
-- Start each change from current `development` in a separate feature branch.
-- Push feature branch and merge only through a PR targeting `development`.
-- Open PRs only in this fork, `Gnu-Gorets/FreeTubeAndroid`; never open PRs in upstream `FreeTubeApp/FreeTube`.
-- Use GitHub `Squash and merge`; do not use merge commits or rebase merge.
-- Use Conventional Commits: `<type>[optional scope]: <description>`.
+1. Direct commits and force pushes to `development` are allowed only for repository-owner-approved maintenance. Preserve Conventional Commits and coordinate force pushes with active contributors.
+2. For development work, do not commit or push directly. Start from current `development` in separate feature branch, push branch, and merge only through PR targeting `development`.
+3. Open PRs only in `Gnu-Gorets/FreeTubeAndroid`, never upstream `FreeTubeApp/FreeTube`.
+4. Use GitHub `Squash and merge`; do not use merge commits or rebase merge.
+5. Commit format: `<type>[optional scope]: <description>`.
