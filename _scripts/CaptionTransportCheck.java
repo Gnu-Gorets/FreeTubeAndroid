@@ -96,6 +96,11 @@ public final class CaptionTransportCheck {
             var resumed = transport.execute(connection(url), headers);
             resumed.body.close();
             check(requests.get() == 4);
+            long failedChange = transport.beginProxyChange();
+            transport.cancelProxyChange(failedChange);
+            var afterFailedChange = transport.execute(connection(url), headers);
+            afterFailedChange.body.close();
+            check(requests.get() == 5);
         } finally {
             server.stop(0);
         }

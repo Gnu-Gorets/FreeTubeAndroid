@@ -57,6 +57,13 @@ final class CaptionTransport implements AutoCloseable {
         }
     }
 
+    synchronized void cancelProxyChange(long generation) {
+        if (isCurrentProxyChange(generation)) {
+            proxyEnabled = false;
+            NewPipeCaptionDownloader.Companion.resumeAfterProxyClearIfCreated();
+        }
+    }
+
     void stop() {
         closed = true;
         NewPipeCaptionDownloader.Companion.cancelActiveIfCreated();

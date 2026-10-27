@@ -510,6 +510,7 @@ class AndroidBridge(
                                 notifyMain(id, true)
                             }
                         } catch (error: Exception) {
+                            captionTransport.cancelProxyChange(generation)
                             messages[id] = error.message ?: error.toString()
                             notifyMain(id, false)
                         }
