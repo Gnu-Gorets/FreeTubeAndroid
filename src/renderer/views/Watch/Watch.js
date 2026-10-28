@@ -886,16 +886,19 @@ export default defineComponent({
             }
 
             if (result.captions) {
+              const androidCaptions = process.env.IS_ANDROID
+              const captionFormat = androidCaptions ? 'ttml' : 'vtt'
+              const captionMimeType = androidCaptions ? 'application/ttml+xml' : 'text/vtt'
               const captionTracks = result.captions?.caption_tracks?.map((caption) => {
                 const url = new URL(caption.base_url)
-                url.searchParams.set('fmt', 'vtt')
+                url.searchParams.set('fmt', captionFormat)
 
                 return {
                   id: caption.vss_id,
                   url: url.toString(),
                   label: caption.name.text,
                   language: caption.language_code,
-                  mimeType: 'text/vtt'
+                  mimeType: captionMimeType
                 }
               }) ?? []
 
