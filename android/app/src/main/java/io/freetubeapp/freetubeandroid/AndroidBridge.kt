@@ -51,6 +51,7 @@ class AndroidBridge(
     private val parent: ViewGroup,
     private val onSwipeRefreshEnabledChanged: (Boolean) -> Unit
 ) {
+    internal val captionTransport = CaptionTransport()
     private val messages = ConcurrentHashMap<String, String>()
     private val fileExecutor = Executors.newSingleThreadExecutor()
     private val externalRelayExecutor = Executors.newFixedThreadPool(4)
@@ -494,12 +495,26 @@ class AndroidBridge(
                 val config = ProxyConfig.Builder()
                     .addProxyRule("$proxyProtocol://$host:$proxyPort")
                     .build()
-                ProxyController.getInstance().setProxyOverride(
-                    config,
-                    activity.mainExecutor
-                ) {
-                    messages[id] = "ok"
-                    notifyMain(id, true)
+                val generation = captionTransport.beginProxyChange()
+                fileExecutor.execute {
+                    captionTransport.cancelActive()
+                    activity.runOnUiThread applyProxy@{
+                        if (!captionTransport.isCurrentProxyChange(generation)) {
+                            messages[id] = "Proxy change superseded"
+                            notifyMain(id, false)
+                            return@applyProxy
+                        }
+                        try {
+                            ProxyController.getInstance().setProxyOverride(config, activity.mainExecutor) {
+                                messages[id] = "ok"
+                                notifyMain(id, true)
+                            }
+                        } catch (error: Exception) {
+                            captionTransport.cancelProxyChange(generation)
+                            messages[id] = error.message ?: error.toString()
+                            notifyMain(id, false)
+                        }
+                    }
                 }
             } catch (error: Exception) {
                 messages[id] = error.message ?: error.toString()
@@ -518,17 +533,34 @@ class AndroidBridge(
                 return@runOnUiThread
             }
 
-            try {
-                ProxyController.getInstance().clearProxyOverride(activity.mainExecutor) {
-                    messages[id] = "ok"
-                    notifyMain(id, true)
+            val generation = captionTransport.beginProxyChange()
+            fileExecutor.execute {
+                captionTransport.cancelActive()
+                activity.runOnUiThread clearCaptionProxy@{
+                    if (!captionTransport.isCurrentProxyChange(generation)) {
+                        messages[id] = "Proxy change superseded"
+                        notifyMain(id, false)
+                        return@clearCaptionProxy
+                    }
+                    try {
+                        ProxyController.getInstance().clearProxyOverride(activity.mainExecutor) {
+                            captionTransport.finishProxyClear(generation)
+                            messages[id] = "ok"
+                            notifyMain(id, true)
+                        }
+                    } catch (error: Exception) {
+                        messages[id] = error.message ?: error.toString()
+                        notifyMain(id, false)
+                    }
                 }
-            } catch (error: Exception) {
-                messages[id] = error.message ?: error.toString()
-                notifyMain(id, false)
             }
         }
         return id
+    }
+
+    internal fun closeCaptionTransport() {
+        captionTransport.stop()
+        fileExecutor.execute { captionTransport.close() }
     }
 
     @JavascriptInterface
