@@ -123,6 +123,29 @@ class MainActivity : Activity() {
                 swipeRefresh.isRefreshing = false
             }
 
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): android.webkit.WebResourceResponse? {
+                if (request == null || request.isForMainFrame) return null
+                return try {
+                    val response = androidBridge.captionTransport.fetch(
+                        request.method, request.url.toString(), request.requestHeaders
+                    ) ?: return null
+                    android.webkit.WebResourceResponse(
+                        response.headers["Content-Type"]?.substringBefore(';') ?: "application/octet-stream",
+                        null, response.status, response.reason, response.headers, response.body
+                    )
+                } catch (error: Exception) {
+                    Log.w("FreeTubeCaptions", "Caption transport failed: ${error.javaClass.simpleName}")
+                    android.webkit.WebResourceResponse(
+                        "text/plain", "utf-8", 502, "Caption request failed",
+                        mapOf("Access-Control-Allow-Origin" to "*"),
+                        java.io.ByteArrayInputStream(byteArrayOf())
+                    )
+                }
+            }
+
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: android.webkit.WebResourceRequest?
@@ -299,6 +322,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         Log.i("FreeTubeLifecycle", "onDestroy finishing=$isFinishing changingConfigurations=$isChangingConfigurations")
         androidBridge.cancelMediaNotification()
+        androidBridge.closeCaptionTransport()
         webView.destroy()
         super.onDestroy()
     }
