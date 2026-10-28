@@ -40,6 +40,8 @@ Use `src/main/` for privileged desktop operations. Expose new renderer capabilit
 
 `MainActivity.kt` creates `WebView`, loads `file:///android_asset/index.html`, and installs `AndroidBridge` as JavaScript interface named `Android`. Kotlin layer handles Android capabilities such as file pickers, media controls, notifications, screen state, and WebView helpers.
 
+`CaptionTransport` intercepts only HTTPS GET requests to `www.youtube.com/api/timedtext`. On Android, NewPipe Extractor selects TTML track and bounded OkHttp downloader fetches it without cookies or authorization. Redirects are refused; HTTP errors remain errors. Configured proxies keep WebView transport because native HTTP does not inherit WebView proxy overrides.
+
 Android web bundle is produced by `_scripts/webpack.android.config.js` into `android/app/src/main/assets/`. Files in that directory are generated except for native resources and committed source assets explicitly required by Android project. Rebuild bundle instead of editing generated `index.html`, `web.js`, or generated static files by hand.
 
 ### Data storage
