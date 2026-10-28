@@ -172,9 +172,9 @@
 <script setup>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import autolinker from 'autolinker'
-import swiperA11yCssUrl from 'swiper/element/css/a11y'
-import swiperNavigationCssUrl from 'swiper/element/css/navigation'
-import swiperPaginationCssUrl from 'swiper/element/css/pagination'
+import 'swiper/element/css/a11y'
+import 'swiper/element/css/navigation'
+import 'swiper/element/css/pagination'
 import { A11y, Navigation, Pagination } from 'swiper/modules'
 import { computed, onMounted, useTemplateRef } from 'vue'
 
@@ -318,12 +318,6 @@ if (postType === 'multiImage' && postContent.content.length > 0) {
     /** @type {import('swiper/element').SwiperContainer} */
     const swiperOptions = {
       modules: [A11y, Navigation, Pagination],
-
-      injectStylesUrls: [
-        swiperA11yCssUrl,
-        swiperNavigationCssUrl,
-        swiperPaginationCssUrl
-      ],
 
       a11y: true,
       navigation: true,
