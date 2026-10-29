@@ -96,8 +96,9 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun enqueueDownload(requestJson: String): String {
+        val id = downloadManager.enqueue(JSONObject(requestJson))
         DownloadService.start(activity)
-        return downloadManager.enqueue(JSONObject(requestJson)).toString()
+        return id.toString()
     }
 
     @JavascriptInterface
