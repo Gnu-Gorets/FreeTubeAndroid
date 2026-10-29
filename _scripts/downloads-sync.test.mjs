@@ -5,6 +5,7 @@ import test from 'node:test'
 const manager = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadManager.kt', import.meta.url), 'utf8')
 const storage = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadStorage.kt', import.meta.url), 'utf8')
 const bridge = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
+const activity = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
 const service = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
 
 test('external output deletion removes mission on every downloads snapshot', () => {
@@ -25,10 +26,10 @@ test('Downloads tab refreshes after returning from file manager', async () => {
   assert.match(downloadsView, /refreshDownloads\('app-resume'\)/)
 })
 
-test('download updates are coalesced before reaching WebView', () => {
-  assert.match(bridge, /DOWNLOAD_UPDATE_INTERVAL_MS = 1000L/)
-  assert.match(bridge, /pendingDownloadSnapshot/)
-  assert.match(bridge, /mainHandler\.postDelayed\(downloadUpdateRunnable, DOWNLOAD_UPDATE_INTERVAL_MS\)/)
+test('download progress updates are throttled before WebView dispatch', () => {
+  assert.match(manager, /if \(!isActive \|\| now - lastProgressPersistAt >= PROGRESS_PERSIST_INTERVAL_MS\) \{\s*lastProgressPersistAt = now\s*\n\s*persistLocked\(\)/s)
+  assert.match(manager, /private fun persistLocked\(\) \{\s*val snapshot = snapshotLocked\(\)\s*storage\.saveMetadata\(snapshot\)\s*listeners\.forEach \{ it\(snapshot\) \}/s)
+  assert.match(bridge, /activity\.runOnUiThread \{\s*mainWebView\.evaluateJavascript\(/s)
 })
 
 test('download notification uses video title and low-importance channel', () => {
@@ -41,7 +42,16 @@ test('download notification uses video title and low-importance channel', () => 
 })
 
 test('download service starts after mission enqueue', () => {
-  assert.match(bridge, /val id = downloadManager\.enqueue\(request\)\s*DownloadService\.start\(activity\)\s*return id\.toString\(\)/)
+  assert.match(bridge, /val id = downloadManager\.enqueue\(JSONObject\(requestJson\)\)\s*DownloadService\.start\(activity\)\s*return id\.toString\(\)/)
+})
+
+test('bridge listener is disposed before WebView destruction', () => {
+  assert.match(activity, /androidBridge\.dispose\(\)\s*androidBridge\.cancelMediaNotification\(\)\s*androidBridge\.closeCaptionTransport\(\)\s*webView\.destroy\(\)/)
+})
+
+test('download notification opens Downloads route', () => {
+  assert.match(activity, /const val OPEN_DOWNLOADS_EXTRA = "open_downloads"/)
+  assert.match(activity, /getBooleanExtra\(OPEN_DOWNLOADS_EXTRA, false\)[\s\S]*window\.location\.hash = '#\/downloads'/)
 })
 
 test('download progress persistence is throttled', () => {

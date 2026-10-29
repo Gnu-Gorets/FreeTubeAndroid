@@ -96,8 +96,9 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun enqueueDownload(requestJson: String): String {
+        val id = downloadManager.enqueue(JSONObject(requestJson))
         DownloadService.start(activity)
-        return downloadManager.enqueue(JSONObject(requestJson)).toString()
+        return id.toString()
     }
 
     @JavascriptInterface
@@ -696,13 +697,6 @@ class AndroidBridge(
     @JavascriptInterface
     fun disableKeepScreenOn() {
         activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
-
-    @JavascriptInterface
-    fun enterPictureInPicture(isPlaying: Boolean): Boolean {
-        val mainActivity = activity as? MainActivity ?: return false
-        activity.runOnUiThread { mainActivity.enterPictureInPicture(isPlaying) }
-        return true
     }
 
     @JavascriptInterface
