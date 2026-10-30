@@ -3033,6 +3033,7 @@ export default defineComponent({
       }
 
       videoResizeObserver.observe(videoElement)
+      addLongPressPlaybackListeners(videoElement)
 
       registerScreenshotButton()
       registerPictureInPictureButton()

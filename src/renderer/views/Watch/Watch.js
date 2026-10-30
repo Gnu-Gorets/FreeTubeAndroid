@@ -12,6 +12,7 @@ import CommentSection from '../../components/CommentSection/CommentSection.vue'
 import WatchVideoLiveChat from '../../components/WatchVideoLiveChat/WatchVideoLiveChat.vue'
 import WatchVideoPlaylist from '../../components/WatchVideoPlaylist/WatchVideoPlaylist.vue'
 import WatchVideoRecommendations from '../../components/WatchVideoRecommendations/WatchVideoRecommendations.vue'
+import DownloadDialog from '../../components/DownloadDialog/DownloadDialog.vue'
 import FtAgeRestricted from '../../components/FtAgeRestricted/FtAgeRestricted.vue'
 import { calculateColorLuminance } from '../../helpers/colors'
 import {
@@ -47,6 +48,7 @@ import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
 import { createMediaSession } from '../../helpers/android/media-session'
+import { getDownloads } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -69,6 +71,84 @@ const UNAVAILABLE_VIDEO_THUMBNAILS = {
   dark: 'https://www.youtube.com/img/desktop/unavailable/unavailable_video_dark_theme.png'
 }
 
+function normalizeVideoQuality(value) {
+  const height = String(value).match(/\d{3,4}/)?.[0]
+  return height ? `${height}p` : value
+}
+
+function formatDownloadSize(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return ''
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes < 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KiB', 'MiB', 'GiB']
+  let amount = bytes
+  let unit = 'B'
+  for (const nextUnit of units) {
+    amount /= 1024
+    unit = nextUnit
+    if (amount < 1024 || nextUnit === units.at(-1)) break
+  }
+  return `${amount.toFixed(amount < 10 ? 1 : 0)} ${unit}`
+}
+
+function normalizeDownloadFormat(format, kind, index) {
+  const mimeType = format.mime_type || format.mimeType || format.type || ''
+  const [container, codecs] = mimeType.split(';')
+  const size = [format.content_length, format.clen].find(value => Number(value) > 0) || ''
+  const hasVideo = container.startsWith('video/')
+  const hasAudio = container.startsWith('audio/')
+  const language = format.language || format.audio_track?.id?.split('.')[0] || ''
+  const audioTrackId = format.audio_track?.id || language || 'und'
+  let audioTrackLabel = format.audio_track?.display_name || ''
+  if (!audioTrackLabel && language) {
+    try {
+      audioTrackLabel = new Intl.DisplayNames('en-US', { type: 'language', languageDisplay: 'standard' }).of(language)
+    } catch {
+      audioTrackLabel = language
+    }
+  }
+  return {
+    id: `${kind}-${format.itag || index}`,
+    kind,
+    url: format.freeTubeUrl || format.url,
+    mimeType: container,
+    codecs: codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
+    extension: format.container || container.split('/')[1],
+    quality: format.qualityLabel || format.quality || '',
+    container: format.container || container.split('/')[1],
+    bitrateLabel: format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : '',
+    label: kind === 'audio'
+      ? [
+          format.container || container.split('/')[1],
+          format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : 'unknown quality',
+          formatDownloadSize(size)
+        ].filter(Boolean).join(' · ')
+      : [
+          format.container || container.split('/')[1],
+          format.height ? `${format.height}p` : normalizeVideoQuality(format.qualityLabel || format.quality || format.container || container),
+          formatDownloadSize(size)
+        ].filter(Boolean).join(' · '),
+    size,
+    width: format.width,
+    height: format.height,
+    bitrate: format.bitrate,
+    language,
+    audioTrackId,
+    audioTrackLabel,
+    hasVideo,
+    hasAudio
+  }
+}
+
+function normalizeDownloadFormats(progressiveFormats, adaptiveFormats, getAdaptiveKind) {
+  return progressiveFormats
+    .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
+    .concat(adaptiveFormats
+      .filter(format => format.url)
+      .map((format, index) => normalizeDownloadFormat(format, getAdaptiveKind(format), index)))
+}
+
 export default defineComponent({
   name: 'Watch',
   components: {
@@ -81,6 +161,8 @@ export default defineComponent({
     'watch-video-live-chat': WatchVideoLiveChat,
     'watch-video-playlist': WatchVideoPlaylist,
     'watch-video-recommendations': WatchVideoRecommendations,
+    DownloadDialog,
+    'download-dialog': DownloadDialog,
     'ft-age-restricted': FtAgeRestricted
   },
   beforeRouteLeave: async function (to, from, next) {
@@ -91,7 +173,17 @@ export default defineComponent({
     document.removeEventListener('click', this.resetAutoplayInterruptionTimeout)
 
     if (this.$refs.player) {
-      await this.destroyPlayer()
+      try {
+        await Promise.race([
+          this.destroyPlayer(),
+          new Promise(resolve => setTimeout(resolve, 2000))
+        ])
+      } catch (error) {
+        console.warn('[Watch] Player cleanup failed', error)
+      } finally {
+        next()
+      }
+      return
     }
 
     next()
@@ -105,6 +197,7 @@ export default defineComponent({
   },
   data: function () {
     return {
+      usingAndroid: process.env.IS_ANDROID,
       startNextVideoInFullscreen: false,
       startNextVideoInFullwindow: false,
       startNextVideoInPip: false,
@@ -153,6 +246,8 @@ export default defineComponent({
       /** @type {SabrData | null} */
       sabrData: null,
       legacyFormats: [],
+      downloadFormats: [],
+      downloadDialogVisible: false,
       captions: [],
       /** @type {'EQUIRECTANGULAR' | 'EQUIRECTANGULAR_THREED_TOP_BOTTOM' | 'MESH'| null} */
       vrProjection: null,
@@ -188,6 +283,8 @@ export default defineComponent({
       /** @type {Date|null} */
       streamingDataExpiryDate: null,
       currentPlaybackRate: null,
+      downloadedMission: null,
+      refreshMissionId: '',
     }
   },
   computed: {
@@ -349,6 +446,11 @@ export default defineComponent({
       return !this.isLoading
     },
 
+    refreshMission() {
+      if (!this.refreshMissionId) return null
+      return getDownloads().find(mission => mission.id === this.refreshMissionId) || null
+    },
+
     chaptersSrc() {
       if (this.videoChapters.length > 0) {
         const vttText = buildChaptersVttFile(this.videoChapters)
@@ -361,9 +463,11 @@ export default defineComponent({
   },
   watch: {
     async $route() {
+      console.warn('[Downloads] Watch route changed')
       await this.reloadView()
     },
     userPlaylistsReady() {
+      console.warn('[Downloads] userPlaylistsReady changed ' + JSON.stringify({ value: this.userPlaylistsReady }))
       this.onMountedDependOnLocalStateLoading()
     },
     thumbnail() {
@@ -371,7 +475,9 @@ export default defineComponent({
     }
   },
   created: function () {
+    console.warn('[Downloads] Watch created ' + JSON.stringify({ videoId: this.$route.params.id }))
     this.videoId = this.$route.params.id
+    this.refreshMissionId = this.$route.query.refreshDownloadId || ''
     this.activeFormat = this.defaultVideoFormat
     // So that the value for this session remains unchanged even if setting changed
     this.autoplayNextRecommendedVideo = this.autoplayNextRecommendedVideoByDefault
@@ -381,6 +487,7 @@ export default defineComponent({
     this.currentPlaybackRate = this.$store.getters.getDefaultPlayback
   },
   mounted: function () {
+    console.warn('[Downloads] Watch mounted ' + JSON.stringify({ videoId: this.videoId, userPlaylistsReady: this.userPlaylistsReady }))
     if (process.env.IS_ANDROID) {
       window.addEventListener('media-next', this.handleSkipToNext)
       window.addEventListener('media-previous', this.handleSkipToPrev)
@@ -398,6 +505,7 @@ export default defineComponent({
   },
   methods: {
     async reloadView() {
+      console.warn('[Downloads] reloadView start ' + JSON.stringify({ routeId: this.$route.params.id, backendPreference: this.backendPreference }))
       await this.handleRouteChange()
 
       if (this.$refs.player) {
@@ -464,7 +572,11 @@ export default defineComponent({
       this.manifestMimeType = MANIFEST_TYPE_DASH
       this.sabrData = null
       this.legacyFormats = []
+      this.downloadFormats = []
+      this.downloadDialogVisible = false
       this.captions = []
+      this.downloadedMission = null
+      this.refreshMissionId = this.$route.query.refreshDownloadId || ''
       this.vrProjection = null
       this.recommendedVideos = []
       this.playabilityStatus = ''
@@ -476,19 +588,30 @@ export default defineComponent({
       this.updateTitle()
     },
 
-    onMountedDependOnLocalStateLoading() {
+    async onMountedDependOnLocalStateLoading() {
+      console.warn('[Downloads] onMounted state ' + JSON.stringify({ onMountedRun: this.onMountedRun, userPlaylistsReady: this.userPlaylistsReady, isUserPlaylistRequested: this.isUserPlaylistRequested, videoId: this.videoId }))
       // Prevent running twice
       if (this.onMountedRun) { return }
       // Stuff that require user playlists to be ready
-      if (this.isUserPlaylistRequested && !this.userPlaylistsReady) { return }
+      if (this.isUserPlaylistRequested && !this.userPlaylistsReady) {
+        console.warn('[Downloads] onMounted waiting for user playlists')
+        return
+      }
 
       this.onMountedRun = true
 
       this.checkIfPlaylist()
 
+      if (await this.loadDownloadedMission()) return
+
       // this has to be below checkIfPlaylist() as theatrePossible needs to know if there is a playlist or not
       this.setViewingModeOnFirstLoad()
 
+      console.warn('[Downloads] Watch backend branch ' + JSON.stringify({
+        supportsLocalApi: Boolean(process.env.SUPPORTS_LOCAL_API),
+        backendPreference: this.backendPreference,
+        videoId: this.videoId
+      }))
       if (!process.env.SUPPORTS_LOCAL_API || this.backendPreference === 'invidious') {
         this.getVideoInformationInvidious()
       } else {
@@ -503,6 +626,35 @@ export default defineComponent({
       window.addEventListener('beforeunload', this.handleWatchProgressAutoSave)
       window.addEventListener('app-pause', this.handleWatchProgressAutoSave)
       this.resetAutoplayInterruptionTimeout()
+    },
+
+    async loadDownloadedMission() {
+      if (!process.env.IS_ANDROID) return false
+
+      const mission = getDownloads().find(item =>
+        item.status === 'completed' && item.kind === 'video' && item.video?.id === this.videoId && item.outputUri
+      )
+      if (!mission || this.playlistType !== 'downloaded') return false
+
+      this.downloadedMission = mission
+      this.videoTitle = mission.video.title || this.videoId
+      this.channelName = mission.video.author || ''
+      this.videoLengthSeconds = Number(mission.video.duration) || 0
+      this.thumbnail = mission.video.thumbnail || ''
+      this.legacyFormats = [{
+        url: mission.outputUri,
+        mimeType: mission.mimeType || 'video/mp4',
+        quality: 'Downloaded',
+        width: 0,
+        height: 0,
+        bitrate: 0
+      }]
+      this.manifestSrc = null
+      this.activeFormat = 'legacy'
+      this.isLoading = false
+      this.firstLoad = false
+      this.updateTitle()
+      return true
     },
 
     setViewingModeOnFirstLoad: function () {
@@ -542,7 +694,30 @@ export default defineComponent({
       }
     },
 
+    openDownloadDialog: function () {
+      console.warn('[Downloads] Open dialog ' + JSON.stringify({
+        backendPreference: this.backendPreference,
+        downloadFormats: this.downloadFormats.length,
+        videoId: this.videoId
+      }))
+      this.downloadDialogVisible = true
+    },
+
+    refreshDownloadFormats: async function () {
+      console.warn('[Downloads] Refresh download formats ' + JSON.stringify({ videoId: this.videoId }))
+      const { info } = await getLocalVideoInfo(this.videoId, true)
+      const streamingData = info.streaming_data
+      if (!streamingData) return []
+      this.downloadFormats = normalizeDownloadFormats(
+        streamingData.formats,
+        streamingData.adaptive_formats,
+        format => format.mime_type.startsWith('video/') ? 'video' : 'audio'
+      )
+      return this.downloadFormats
+    },
+
     getVideoInformationLocal: async function () {
+      console.warn('[Downloads] Local information request ' + JSON.stringify({ videoId: this.videoId }))
       if (this.firstLoad) {
         this.isLoading = true
       }
@@ -679,7 +854,7 @@ export default defineComponent({
               const start = chapter.time_range_start_millis / 1000
 
               chapters.push({
-                title: chapter.title.text,
+                title: chapter.title?.text ?? '',
                 timestamp: formatDurationAsTimestamp(start),
                 startSeconds: start,
                 endSeconds: 0,
@@ -694,10 +869,11 @@ export default defineComponent({
             if (macroMarkersList) {
               for (const item of macroMarkersList.contents) {
                 if (item instanceof YTNodes.MacroMarkersListItem) {
+                  const timestamp = item.time_description?.text ?? '0:00'
                   chapters.push({
-                    title: item.title.text,
-                    timestamp: item.time_description.text,
-                    startSeconds: Utils.timeToSeconds(item.time_description.text),
+                    title: item.title?.text ?? '',
+                    timestamp,
+                    startSeconds: Utils.timeToSeconds(timestamp),
                     endSeconds: 0,
                     thumbnail: item.thumbnail[0]
                   })
@@ -881,9 +1057,17 @@ export default defineComponent({
           if (result.streaming_data) {
             this.streamingDataExpiryDate = result.streaming_data.expires
 
-            if (result.streaming_data.formats.length > 0) {
-              this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
-            }
+            this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
+            this.downloadFormats = normalizeDownloadFormats(
+              result.streaming_data.formats,
+              result.streaming_data.adaptive_formats,
+              format => format.mime_type.startsWith('video/') ? 'video' : 'audio'
+            )
+            console.warn('[Downloads] Local normalized formats ' + JSON.stringify({
+              progressive: result.streaming_data.formats.length,
+              adaptive: result.streaming_data.adaptive_formats.length,
+              downloadable: this.downloadFormats.length
+            }))
 
             if (result.captions) {
               const androidCaptions = process.env.IS_ANDROID
@@ -896,7 +1080,6 @@ export default defineComponent({
                 return {
                   id: caption.vss_id,
                   url: url.toString(),
-                  label: caption.name.text,
                   language: caption.language_code,
                   mimeType: captionMimeType
                 }
@@ -974,6 +1157,7 @@ export default defineComponent({
             })
 
             if (
+              !result.streaming_data.adaptive_formats.some(format => format.url || format.signature_cipher || format.cipher) &&
               videoInfo.info.streaming_data?.server_abr_streaming_url &&
               videoInfo.info.player_config.media_common_config.media_ustreamer_request_config
             ) {
@@ -1014,12 +1198,17 @@ export default defineComponent({
 
         if (this.activeFormat === 'legacy' && (this.isLive || this.isPostLiveDvr || this.legacyFormats.length === 0)) {
           // Legacy wanted as default but unavailable
-          showToast(this.t('Change Format.Legacy formats are not available for this video'))
-          this.handleActiveFormatUnavailable()
+          if (this.manifestSrc !== null) {
+            this.enableDashFormat()
+          } else {
+            showToast(this.t('Change Format.Legacy formats are not available for this video'))
+            this.handleActiveFormatUnavailable()
+          }
         }
 
         this.isLoading = false
         this.updateTitle()
+        if (this.refreshMission) this.downloadDialogVisible = true
       } catch (err) {
         console.error(err)
         if (this.backendPreference === 'local' && this.backendFallback && !err.toString().includes('private') && !err.toString().includes('unavailable')) {
@@ -1041,6 +1230,7 @@ export default defineComponent({
     },
 
     getVideoInformationInvidious: function () {
+      console.warn('[Downloads] Invidious information request ' + JSON.stringify({ videoId: this.videoId }))
       if (this.firstLoad) {
         this.isLoading = true
       }
@@ -1108,8 +1298,11 @@ export default defineComponent({
           this.captions = sortCaptions(result.captions.map(caption => {
             return {
               url: this.currentInvidiousInstanceUrl + caption.url,
-              label: caption.label,
               language: caption.language_code,
+              container: 'vtt',
+              quality: caption.label,
+              label: `${caption.language_code} · ${caption.label}`,
+              autoGenerated: false,
               mimeType: 'text/vtt'
             }
           }))
@@ -1193,6 +1386,16 @@ export default defineComponent({
             this.streamingDataExpiryDate = this.extractExpiryDateFromStreamingUrl(result.adaptiveFormats[0].url)
 
             this.legacyFormats = result.formatStreams.map(mapInvidiousLegacyFormat)
+            this.downloadFormats = normalizeDownloadFormats(
+              result.formatStreams,
+              result.adaptiveFormats,
+              format => format.type.startsWith('video/') ? 'video' : 'audio'
+            )
+            console.warn('[Downloads] Invidious normalized formats ' + JSON.stringify({
+              progressive: result.formatStreams.length,
+              adaptive: result.adaptiveFormats.length,
+              downloadable: this.downloadFormats.length
+            }))
 
             if (!process.env.SUPPORTS_LOCAL_API || this.proxyVideos) {
               this.legacyFormats.forEach(format => {
@@ -1436,6 +1639,14 @@ export default defineComponent({
       this.playlistId = this.$route.query.playlistId
       this.playlistItemId = this.$route.query.playlistItemId
 
+      if (this.$route.query.playlistType === 'downloaded') {
+        this.playlistId = 'downloads'
+        this.playlistType = 'downloaded'
+        this.playlistItemId = null
+        this.watchingPlaylist = true
+        return
+      }
+
       if (this.playlistId == null || this.playlistId.length === 0) {
         this.playlistType = ''
         this.playlistItemId = null
@@ -1565,6 +1776,11 @@ export default defineComponent({
         return
       }
 
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(1)
+        return
+      }
+
       if (this.watchingPlaylist && this.$refs.watchVideoPlaylist?.shouldStopDueToPlaylistEnd) {
         // Let `watchVideoPlaylist` handle end of playlist, no countdown needed
         this.$refs.watchVideoPlaylist.playNextVideo()
@@ -1610,10 +1826,31 @@ export default defineComponent({
       }
     },
 
+    getDownloadedPlaylist: function () {
+      return getDownloads()
+        .filter(mission => mission.status === 'completed' && mission.kind === 'video' && mission.video?.id && mission.outputUri)
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    },
+
+    playDownloadedVideo: function (direction) {
+      const playlist = this.getDownloadedPlaylist()
+      const index = playlist.findIndex(mission => mission.video.id === this.videoId)
+      const next = index < 0
+        ? (direction > 0 ? playlist[0] : playlist.at(-1))
+        : playlist[index + direction]
+      if (!next) return
+      this.$router.push({
+        path: `/watch/${next.video.id}`,
+        query: { playlistId: 'downloads', playlistType: 'downloaded' }
+      })
+    },
+
     // Skip to the next video if in a playlist
     // else next recommended video if autoplay enabled
     handleSkipToNext: function () {
-      if (this.watchingPlaylist) {
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(1)
+      } else if (this.watchingPlaylist) {
         this.$refs.watchVideoPlaylist?.playNextVideo()
       } else if (!this.hideRecommendedVideos && this.nextRecommendedVideo) {
         this.$router.push({
@@ -1625,7 +1862,11 @@ export default defineComponent({
 
     // Skip to the previous video in a playlist
     handleSkipToPrev: function () {
-      this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(-1)
+      } else {
+        this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      }
     },
 
     abortAutoplayCountdown: function (hideToast = false) {
@@ -1938,7 +2179,7 @@ export default defineComponent({
         translationName = this.t('Locale Name')
         translationCode = userLanguages.values().next().value
       } else {
-        translationName = translationLanguage.language_name.text
+        translationName = translationLanguage.language_name?.text ?? this.t('Locale Name')
         translationCode = translationLanguage.language_code
       }
 
@@ -1963,7 +2204,7 @@ export default defineComponent({
 
       const label = this.t('Video.Player.TranslatedCaptionTemplate', {
         language: translationName,
-        originalLanguage: trackToTranslate.name.text
+        originalLanguage: trackToTranslate.name?.text ?? trackToTranslate.language_code
       })
 
       return {

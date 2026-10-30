@@ -10,6 +10,7 @@ import {
   calculatePublishedDate,
   deepCopy,
   escapeHTML,
+  fetchWithTimeout,
   extractNumberFromString,
   getChannelPlaylistId,
   getRelativeTimeFromDate,
@@ -113,7 +114,7 @@ async function createSession({ withPlayer = false, location = undefined, safetyM
     client_type: clientType,
 
     // use browser fetch
-    fetch: (fetchFunc ?? ((input, init) => fetch(input, init))),
+    fetch: (fetchFunc ?? ((input, init) => fetchWithTimeout(15_000, input, init))),
     cache,
     generate_session_locally: !!generateSessionLocally
   })
@@ -662,10 +663,10 @@ async function getLocalVideoInfoUncached(id) {
 
   const fetchFunc = async (input, init) => {
     if (!(input.url?.startsWith('https://www.youtube.com/youtubei/v1/player'))) {
-      return fetch(input, init)
+      return fetchWithTimeout(15_000, input, init)
     }
 
-    const response = await fetch(input, init)
+    const response = await fetchWithTimeout(15_000, input, init)
     const responseText = await response.text()
 
     responseTime = Date.now()
@@ -2047,7 +2048,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
         type: 'playlist',
         dataSource: 'local',
         playlistId,
-        title: lockupView.metadata.title.text,
+        title: lockupView.metadata.title?.text ?? '',
         thumbnail: lockupView.content_image.primary_thumbnail.image[0].url,
         channelName,
         channelId,
@@ -2156,7 +2157,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
       return {
         type: 'video',
         videoId: lockupView.content_id,
-        title: lockupView.metadata.title.text?.trim(),
+        title: lockupView.metadata.title?.text?.trim() ?? '',
         author,
         authorId: lockupView.metadata.image?.renderer_context?.command_context?.on_tap?.payload.browseId ?? channelId,
         collaborators,
@@ -2300,7 +2301,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       collaborators: parseLocalCollaborators(video.author.collaborators),
@@ -2320,7 +2321,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.video_id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       collaborators: parseLocalCollaborators(video.author.collaborators),
