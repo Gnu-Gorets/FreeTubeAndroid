@@ -280,6 +280,7 @@ const emit = defineEmits([
   'pause-player',
   'save-watched-progress',
   'reload-player',
+  'download',
 ])
 
 const USING_ELECTRON = process.env.IS_ELECTRON
