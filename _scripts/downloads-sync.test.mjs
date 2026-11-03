@@ -7,6 +7,7 @@ const storage = await readFile(new URL('../android/app/src/main/java/io/freetube
 const bridge = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', import.meta.url), 'utf8')
 const activity = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
 const service = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
+const manifest = await readFile(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8')
 
 test('external output deletion removes mission on every downloads snapshot', () => {
   assert.match(manager, /fun snapshot\(\): JSONArray = synchronized\(lock\) \{\s*val reconciled = reconcileMissingOutputsLocked\(\)\s*if \(reconciled\) persistLocked\(\)/s)
@@ -39,6 +40,11 @@ test('download notification uses video title and low-importance channel', () => 
   assert.match(service, /addAction\(action\("Pause", ACTION_PAUSE, id\)\)/)
   assert.match(service, /addAction\(action\("Cancel", ACTION_CANCEL, id\)\)/)
   assert.match(service, /addAction\(action\("Delete", ACTION_DELETE, id\)\)/)
+})
+
+test('download foreground service is declared with required permissions', () => {
+  assert.match(manifest, /uses-permission android:name="android\.permission\.FOREGROUND_SERVICE_DATA_SYNC"/)
+  assert.match(manifest, /service\s+android:name="\.DownloadService"[\s\S]*?android:foregroundServiceType="dataSync"/)
 })
 
 test('download service starts after mission enqueue', () => {

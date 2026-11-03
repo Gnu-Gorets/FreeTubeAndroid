@@ -962,13 +962,6 @@ export default defineComponent({
         }
 
         if ((this.isLive || this.isPostLiveDvr) && !this.isUpcoming) {
-          if (result.streaming_data.dash_manifest_url) {
-            this.manifestSrc = result.streaming_data.dash_manifest_url
-            this.manifestMimeType = MANIFEST_TYPE_DASH
-          } else {
-            this.manifestSrc = result.streaming_data.hls_manifest_url
-            this.manifestMimeType = MANIFEST_TYPE_HLS
-
           let useRemoteManifest = true
 
           if (this.isPostLiveDvr) {
@@ -999,7 +992,6 @@ export default defineComponent({
               this.hlsAudioMetadata = result.streaming_data.adaptive_formats
                 .filter((format) => format.mime_type.startsWith('audio/mp4'))
             }
-          }
           }
 
           this.streamingDataExpiryDate = result.streaming_data.expires
