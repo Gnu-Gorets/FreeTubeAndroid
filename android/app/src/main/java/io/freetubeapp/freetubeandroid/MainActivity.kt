@@ -36,6 +36,7 @@ class MainActivity : Activity() {
         const val CREATE_FILE_REQUEST = 1001
         const val OPEN_FILE_REQUEST = 1002
         const val DIRECTORY_REQUEST = 1003
+        const val OPEN_DOWNLOADS_EXTRA = "open_downloads"
         const val ENTER_PIP_SCRIPT = """
             (() => {
               const player = document.querySelector('.ftVideoPlayer');
@@ -216,6 +217,10 @@ class MainActivity : Activity() {
     fun onWebAppReady() {
         runOnUiThread {
             webAppReady = true
+            if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) {
+                intent?.removeExtra(OPEN_DOWNLOADS_EXTRA)
+                webView.evaluateJavascript("window.location.hash = '#/downloads'", null)
+            }
             pendingDeepLink?.let {
                 dispatchDeepLink(it)
                 pendingDeepLink = null
@@ -321,6 +326,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         Log.i("FreeTubeLifecycle", "onDestroy finishing=$isFinishing changingConfigurations=$isChangingConfigurations")
+        androidBridge.dispose()
         androidBridge.cancelMediaNotification()
         androidBridge.closeCaptionTransport()
         webView.destroy()
@@ -329,6 +335,10 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) {
+            setIntent(intent)
+            if (webAppReady) onWebAppReady()
+        }
         when (intent?.action) {
             "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
             "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)

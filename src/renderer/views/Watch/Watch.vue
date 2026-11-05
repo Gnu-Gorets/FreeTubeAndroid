@@ -152,6 +152,7 @@
         :get-playlist-state="getPlaylistState"
         :length-seconds="videoLengthSeconds"
         :video-thumbnail="thumbnail"
+        :download-available="usingAndroid && !isUpcoming && !isLive && !downloadedMission"
         :in-user-playlist="!!selectedUserPlaylist"
         :is-unlisted="isUnlisted"
         :content-disclosures="contentDisclosures"
@@ -207,7 +208,7 @@
         :class="{ theatrePlaylist: useTheatreMode }"
       />
       <watch-video-playlist
-        v-if="watchingPlaylist"
+        v-if="watchingPlaylist && playlistType !== 'downloaded'"
         v-show="!isLoading"
         ref="watchVideoPlaylist"
         :watch-view-loading="isLoading"
@@ -231,6 +232,16 @@
         @pause-player="pausePlayer"
       />
     </div>
+    <DownloadDialog
+      :visible="downloadDialogVisible"
+      :video="{ id: videoId, title: videoTitle, author: channelName, duration: videoLengthSeconds, thumbnail }"
+      :formats="downloadFormats"
+      :captions="captions"
+      :refresh-formats="refreshDownloadFormats"
+      :refresh-mission="refreshMission"
+      @close="downloadDialogVisible = false"
+      @queued="downloadDialogVisible = false"
+    />
   </div>
 </template>
 
