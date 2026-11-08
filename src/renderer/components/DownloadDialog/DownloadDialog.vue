@@ -39,7 +39,7 @@
             :key="format.id"
             :value="format.id"
           >
-            {{ format.label }}
+            {{ formatOptionLabel(format) }}
           </option>
         </select>
       </label>
@@ -102,7 +102,7 @@ import FtButton from '../FtButton/FtButton.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import { selectDownloadDirectory, validateDownloadUrls } from '../../helpers/android/downloads'
 import { compareLabels, compareVideoFormats, getAudioFormatsForTrack, selectDefaultAudioTrack, selectDefaultVideoFormat } from '../../helpers/download-selection.mjs'
-import { normalizeDownloadSize } from '../../helpers/download-size.mjs'
+import { formatDownloadSize, normalizeDownloadSize, sumDownloadSizes } from '../../helpers/download-size.mjs'
 import store from '../../store'
 
 const props = defineProps({
@@ -204,6 +204,14 @@ watch([availableFormats, () => props.visible], () => {
   fileName.value = sanitize(props.video.title)
   error.value = ''
 }, { immediate: true })
+
+function formatOptionLabel(format) {
+  if (mode.value !== 'video' || format.kind !== 'video') return format.label
+  const parts = format.label.split(' · ')
+  if (parts.at(-1) === formatDownloadSize(format.size)) parts.pop()
+  const audio = selectedAudioFormats.value.find(item => item.id === selectedAudioId.value)
+  return [...parts, formatDownloadSize(sumDownloadSizes(format.size, audio?.size))].join(' · ')
+}
 
 function close() {
   emit('close')
