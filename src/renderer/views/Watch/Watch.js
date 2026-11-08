@@ -44,6 +44,7 @@ import {
   youtubeImageUrlToInvidious
 } from '../../helpers/api/invidious'
 import { sortCaptions } from '../../helpers/player/utils'
+import { getDownloadQualityLabel } from '../../helpers/download-quality.mjs'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
 import android from 'android'
@@ -95,6 +96,7 @@ function formatDownloadSize(value) {
 function normalizeDownloadFormat(format, kind, index) {
   const mimeType = format.mime_type || format.mimeType || format.type || ''
   const [container, codecs] = mimeType.split(';')
+  const qualityLabel = getDownloadQualityLabel(format)
   const size = [format.content_length, format.clen].find(value => Number(value) > 0) || ''
   const hasVideo = container.startsWith('video/')
   const hasAudio = container.startsWith('audio/')
@@ -116,6 +118,7 @@ function normalizeDownloadFormat(format, kind, index) {
     codecs: codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
     extension: format.container || container.split('/')[1],
     quality: format.qualityLabel || format.quality || '',
+    qualityLabel,
     container: format.container || container.split('/')[1],
     bitrateLabel: format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : '',
     label: kind === 'audio'
@@ -643,12 +646,15 @@ export default defineComponent({
       this.channelName = mission.video.author || ''
       this.videoLengthSeconds = Number(mission.video.duration) || 0
       this.thumbnail = mission.video.thumbnail || ''
+      const width = Number(mission.streamSelection?.width) || 0
+      const height = Number(mission.streamSelection?.height) || 0
       this.legacyFormats = [{
         url: mission.outputUri,
         mimeType: mission.mimeType || 'video/mp4',
         quality: 'Downloaded',
-        width: 0,
-        height: 0,
+        qualityLabel: mission.streamSelection?.qualityLabel || '',
+        width,
+        height,
         bitrate: 0
       }]
       this.manifestSrc = null

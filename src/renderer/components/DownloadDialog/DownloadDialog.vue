@@ -248,6 +248,7 @@ async function enqueueCandidates(formats, audios, directoryUri) {
           kind: format.kind,
           mimeType: format.mimeType,
           quality: format.quality,
+          qualityLabel: format.qualityLabel,
           width: format.width,
           height: format.height,
           bitrate: format.bitrate,

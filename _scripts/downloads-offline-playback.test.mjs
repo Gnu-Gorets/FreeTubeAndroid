@@ -7,6 +7,8 @@ const settings = await readFile(new URL('../src/renderer/store/modules/settings.
 const downloadsSettings = await readFile(new URL('../src/renderer/components/DownloadsSettings/DownloadsSettings.vue', import.meta.url), 'utf8')
 const downloadsView = await readFile(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
 const localApi = await readFile(new URL('../src/renderer/helpers/api/local.js', import.meta.url), 'utf8')
+const player = await readFile(new URL('../src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.js', import.meta.url), 'utf8')
+const downloadDialog = await readFile(new URL('../src/renderer/components/DownloadDialog/DownloadDialog.vue', import.meta.url), 'utf8')
 
 const loadDownloadedMission = watch.match(/async loadDownloadedMission\(\) \{[\s\S]*?\n\s{4}\},\n\n\s{4}setViewingModeOnFirstLoad/)[0]
 
@@ -17,6 +19,15 @@ test('offline playback is limited to Downloads playlist', () => {
   assert.match(loadDownloadedMission, /item\.outputUri/)
   assert.match(loadDownloadedMission, /this\.playlistType !== 'downloaded'/)
   assert.doesNotMatch(loadDownloadedMission, /preferLocalDownloads|getDownloadsPreferLocal/)
+})
+
+test('offline playback restores saved video dimensions', () => {
+  assert.match(loadDownloadedMission, /const width = Number\(mission\.streamSelection\?\.width\) \|\| 0/)
+  assert.match(loadDownloadedMission, /const height = Number\(mission\.streamSelection\?\.height\) \|\| 0/)
+  assert.match(loadDownloadedMission, /qualityLabel: mission\.streamSelection\?\.qualityLabel \|\| ''/)
+  assert.match(downloadDialog, /qualityLabel: format\.qualityLabel/)
+  assert.match(player, /codecsMatch\?\.groups\?\.audioCodec \|\| ''/)
+  assert.match(player, /codecsMatch\?\.groups\?\.videoCodec \|\| ''/)
 })
 
 test('Local watch-next metadata tolerates missing title text', () => {
