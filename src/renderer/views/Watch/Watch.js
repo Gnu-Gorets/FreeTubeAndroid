@@ -529,6 +529,8 @@ export default defineComponent({
       this.checkIfPlaylist()
       this.setViewingModeOnRouteChange()
 
+      if (await this.loadDownloadedMission()) return
+
       switch (this.backendPreference) {
         case 'local':
           await this.getVideoInformationLocal()
