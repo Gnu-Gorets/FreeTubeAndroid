@@ -708,6 +708,9 @@ async function getLocalVideoInfoUncached(id) {
     htmlExtracts.playerId
   )
 
+  // VideoInfo.toDash() reads its player from the Actions session.
+  htmlExtracts.session.player = player
+
   // based on the videoId
   let contentPoToken
 
