@@ -708,6 +708,9 @@ async function getLocalVideoInfoUncached(id) {
     htmlExtracts.playerId
   )
 
+  // VideoInfo.toDash() reads its player from the Actions session.
+  htmlExtracts.session.player = player
+
   // based on the videoId
   let contentPoToken
 
@@ -2129,7 +2132,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
         type: 'playlist',
         dataSource: 'local',
         playlistId,
-        title: lockupView.metadata.title.text,
+        title: lockupView.metadata.title?.text ?? '',
         thumbnail: lockupView.content_image.primary_thumbnail.image[0].url,
         channelName,
         channelId,
@@ -2238,7 +2241,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
       return {
         type: 'video',
         videoId: lockupView.content_id,
-        title: lockupView.metadata.title.text?.trim(),
+        title: lockupView.metadata.title?.text?.trim() ?? '',
         author,
         authorId: lockupView.metadata.image?.renderer_context?.command_context?.on_tap?.payload.browseId ?? channelId,
         collaborators,
@@ -2382,7 +2385,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       collaborators: parseLocalCollaborators(video.author.collaborators),
@@ -2402,7 +2405,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.video_id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       collaborators: parseLocalCollaborators(video.author.collaborators),
