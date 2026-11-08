@@ -15,7 +15,7 @@
       preload="auto"
       crossorigin="anonymous"
       playsinline
-      :autoplay="autoplayVideos ? true : null"
+      :autoplay="autoplayVideos || autoplayOnLoad ? true : null"
       :poster="thumbnail"
       @play="handlePlay"
       @pause="handlePause"
