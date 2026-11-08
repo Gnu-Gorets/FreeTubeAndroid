@@ -278,6 +278,8 @@ app
   .use(store)
   .use(i18n)
 
+store.dispatch('startDownloadUpdates')
+
 Promise.all([loadLocale('en-US'), router.isReady()]).then(() => {
   app.mount('#app')
 })
