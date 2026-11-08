@@ -156,6 +156,10 @@ export default defineComponent({
       type: Boolean,
       default: false
     },
+    autoplayOnLoad: {
+      type: Boolean,
+      default: false
+    },
     watchingPlaylist: {
       type: Boolean,
       default: false
@@ -188,6 +192,7 @@ export default defineComponent({
   emits: [
     'error',
     'loaded',
+    'play',
     'ended',
     'timeupdate',
     'toggle-autoplay',
@@ -1306,6 +1311,7 @@ export default defineComponent({
     // #region video event handlers
 
     function handlePlay() {
+      emit('play')
       startPowerSaveBlocker()
 
       if ('mediaSession' in navigator) {
@@ -1342,6 +1348,10 @@ export default defineComponent({
 
     function handleCanPlay() {
       isBuffering.value = false
+
+      if (props.autoplayOnLoad && video.value.paused) {
+        video.value.play().catch(error => console.warn('[Player] Downloaded next autoplay failed', error))
+      }
 
       // PiP can only be activated once the video's readState and video track are populated
       if (startInPip && props.format !== 'audio' && ui.getControls().isPiPAllowed() && process.env.IS_ELECTRON) {

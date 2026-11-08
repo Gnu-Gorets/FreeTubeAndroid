@@ -272,6 +272,7 @@ export default defineComponent({
       playNextTimeout: null,
       playNextCountDownIntervalId: null,
       blockVideoAutoplay: false,
+      resumeDownloadedPlayback: false,
       autoplayInterruptionTimeout: null,
       playabilityStatus: '',
       totalAdTimeSeconds: 0,
@@ -521,6 +522,7 @@ export default defineComponent({
       // react to route changes...
       this.videoId = this.$route.params.id
       this.resetVideoState()
+      await this.$nextTick()
 
       this.firstLoad = true
       this.videoPlayerLoaded = false
@@ -1618,6 +1620,10 @@ export default defineComponent({
       return Object.hasOwn(this.$store.getters.getHistoryCacheById, videoId)
     },
 
+    handleDownloadedPlaybackStarted: function () {
+      this.resumeDownloadedPlayback = false
+    },
+
     handleVideoLoaded: function () {
       // Only used one time = remove after use
       this.oneTimeTimestamp = null
@@ -1792,7 +1798,7 @@ export default defineComponent({
       }
 
       if (this.playlistType === 'downloaded') {
-        this.playDownloadedVideo(1)
+        this.playDownloadedVideo(1, true)
         return
       }
 
@@ -1847,13 +1853,15 @@ export default defineComponent({
         .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
     },
 
-    playDownloadedVideo: function (direction) {
+    playDownloadedVideo: function (direction, shouldResume = false) {
+      const wasPlaying = shouldResume || (this.$refs.player ? !this.$refs.player.isPaused() : false)
       const playlist = this.getDownloadedPlaylist()
       const index = playlist.findIndex(mission => mission.video.id === this.videoId)
       const next = index < 0
         ? (direction > 0 ? playlist[0] : playlist.at(-1))
         : playlist[index + direction]
       if (!next) return
+      this.resumeDownloadedPlayback = wasPlaying
       this.$router.push({
         path: `/watch/${next.video.id}`,
         query: { playlistId: 'downloads', playlistType: 'downloaded' }
