@@ -102,6 +102,14 @@ class AndroidBridge(
     }
 
     @JavascriptInterface
+    fun validateDownloadUrls(requestJson: String): String = try {
+        DownloadMission.validateRequest(JSONObject(requestJson))
+        JSONObject().put("ok", true).toString()
+    } catch (error: Exception) {
+        JSONObject().put("ok", false).put("error", error.message ?: "Invalid download request").toString()
+    }
+
+    @JavascriptInterface
     fun getDownloads(): String = downloadManager.snapshot().toString()
 
     @JavascriptInterface

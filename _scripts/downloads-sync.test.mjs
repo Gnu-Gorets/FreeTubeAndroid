@@ -51,6 +51,14 @@ test('download service starts after mission enqueue', () => {
   assert.match(bridge, /val id = downloadManager\.enqueue\(JSONObject\(requestJson\)\)\s*DownloadService\.start\(activity\)\s*return id\.toString\(\)/)
 })
 
+test('download URL validation bridge matches renderer contract', async () => {
+  const helper = await readFile(new URL('../src/renderer/helpers/android/downloads.js', import.meta.url), 'utf8')
+  assert.match(helper, /android\.validateDownloadUrls\(JSON\.stringify\(request\)\)/)
+  assert.match(bridge, /@JavascriptInterface\s+fun validateDownloadUrls\(requestJson: String\): String = try \{\s*DownloadMission\.validateRequest\(JSONObject\(requestJson\)\)/)
+  assert.match(bridge, /JSONObject\(\)\.put\("ok", true\)\.toString\(\)/)
+  assert.match(bridge, /JSONObject\(\)\.put\("ok", false\)\.put\("error", error\.message \?: "Invalid download request"\)/)
+})
+
 test('bridge listener is disposed before WebView destruction', () => {
   assert.match(activity, /androidBridge\.dispose\(\)\s*androidBridge\.cancelMediaNotification\(\)\s*androidBridge\.closeCaptionTransport\(\)\s*webView\.destroy\(\)/)
 })
