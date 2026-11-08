@@ -126,6 +126,12 @@
             @click="handleExternalPlayer"
           />
           <FtIconButton
+            v-if="downloadAvailable"
+            :title="t('Downloads.Download')"
+            :icon="['fas', 'download']"
+            @click="emit('download')"
+          />
+          <FtIconButton
             v-if="!isUpcoming"
             :title="t('Change Format.Change Media Formats')"
             theme="secondary"
@@ -247,6 +253,10 @@ const props = defineProps({
     type: String,
     required: true
   },
+  downloadAvailable: {
+    type: Boolean,
+    default: false
+  },
   inUserPlaylist: {
     type: Boolean,
     required: true
@@ -270,6 +280,7 @@ const emit = defineEmits([
   'pause-player',
   'save-watched-progress',
   'reload-player',
+  'download',
 ])
 
 const USING_ELECTRON = process.env.IS_ELECTRON
