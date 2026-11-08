@@ -43,11 +43,18 @@ test('video defaults to 1080p MP4, then best MP4, then WebM', () => {
   assert.equal(selectDefaultVideoFormat(formats.filter(format => format.mimeType !== 'video/mp4')).id, 'webm-2160')
 })
 
-test('audio defaults to English track', () => {
+test('audio defaults to original track regardless of language or order', () => {
   assert.equal(selectDefaultAudioTrack([
-    { id: 'de', label: 'German', language: 'de' },
+    { id: 'en-US', label: 'English (US)', language: 'en-US' },
+    { id: 'ru.4', label: 'Russian original', language: 'ru', isOriginal: true }
+  ]).id, 'ru.4')
+})
+
+test('audio falls back to first track when original is unknown', () => {
+  assert.equal(selectDefaultAudioTrack([
+    { id: 'ru', label: 'Russian', language: 'ru' },
     { id: 'en-US', label: 'English (US)', language: 'en-US' }
-  ]).id, 'en-US')
+  ]).id, 'ru')
 })
 
 test('video selects compatible highest bitrate audio', () => {

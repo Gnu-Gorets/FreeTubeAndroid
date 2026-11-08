@@ -139,6 +139,7 @@ function normalizeDownloadFormat(format, kind, index) {
     language,
     audioTrackId,
     audioTrackLabel,
+    isOriginal: format.is_original === true || format.audio_track?.audio_is_default === true,
     hasVideo,
     hasAudio
   }

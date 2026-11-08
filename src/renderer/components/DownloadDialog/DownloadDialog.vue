@@ -143,11 +143,15 @@ const audioFormats = computed(() => props.formats.filter(format => format.kind =
 const audioTracks = computed(() => {
   const tracks = new Map()
   for (const format of audioFormats.value) {
-    if (!tracks.has(format.audioTrackId)) {
+    const track = tracks.get(format.audioTrackId)
+    if (track) {
+      track.isOriginal ||= format.isOriginal
+    } else {
       tracks.set(format.audioTrackId, {
         id: format.audioTrackId,
         label: format.audioTrackLabel || format.language || t('Downloads.Original audio'),
-        language: format.language
+        language: format.language,
+        isOriginal: format.isOriginal
       })
     }
   }

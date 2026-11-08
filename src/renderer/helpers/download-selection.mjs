@@ -25,8 +25,7 @@ export function selectDefaultVideoFormat (formats, preferred = 'auto') {
 }
 
 export function selectDefaultAudioTrack (tracks) {
-  return tracks.find(track => [track.language, track.id, track.label]
-    .some(value => String(value || '').toLowerCase().startsWith('en') || String(value || '').toLowerCase().includes('english'))) || tracks[0]
+  return tracks.find(track => track.isOriginal) || tracks[0]
 }
 
 export function compareVideoFormats (left, right) {
