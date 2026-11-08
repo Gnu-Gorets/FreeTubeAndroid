@@ -11,6 +11,8 @@ import java.io.File
 import java.io.FileDescriptor
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
@@ -18,6 +20,42 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+
+private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
+
+private class DownloadResponseTooLongException : IOException("Download response exceeded expected length")
+
+internal fun copyDownloadResponse(
+    input: InputStream,
+    output: OutputStream,
+    expectedBytes: Long,
+    checkInterrupted: () -> Unit,
+    onProgress: (Long) -> Unit = {}
+): Long {
+    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
+    var copiedBytes = 0L
+    while (true) {
+        checkInterrupted()
+        val readLimit = if (expectedBytes >= 0) {
+            val remaining = expectedBytes - copiedBytes
+            if (remaining >= buffer.size.toLong()) buffer.size else remaining.toInt() + 1
+        } else {
+            buffer.size
+        }
+        val count = input.read(buffer, 0, readLimit)
+        if (count == -1) break
+        if (expectedBytes >= 0 && copiedBytes + count > expectedBytes) {
+            throw DownloadResponseTooLongException()
+        }
+        output.write(buffer, 0, count)
+        copiedBytes += count
+        onProgress(copiedBytes)
+    }
+    if (expectedBytes >= 0 && copiedBytes != expectedBytes) {
+        throw IOException("Download response ended before expected length")
+    }
+    return copiedBytes
+}
 
 internal class DownloadMission(
     private val storage: DownloadStorage,
@@ -277,16 +315,17 @@ internal class DownloadMission(
             if (!contentRange.startsWith("bytes $rangeStart-$end/")) throw RangeUnsupported("Invalid Content-Range")
             RandomAccessFile(file, "rw").use { output ->
                 output.seek(start + offset)
-                var downloaded = offset
-                http.inputStream.use { input ->
-                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-                    while (true) {
-                        checkInterrupted()
-                        val count = input.read(buffer)
-                        if (count == -1) break
-                        output.write(buffer, 0, count)
-                        downloaded += count
-                    }
+                val outputStream = object : OutputStream() {
+                    override fun write(value: Int) = output.write(value)
+                    override fun write(buffer: ByteArray, offset: Int, length: Int) = output.write(buffer, offset, length)
+                }
+                val downloaded = http.inputStream.use { input ->
+                    offset + copyDownloadResponse(
+                        input,
+                        outputStream,
+                        end - rangeStart + 1,
+                        ::checkInterrupted
+                    )
                 }
                 synchronized(data) {
                     offsets.put(index, downloaded)
@@ -364,7 +403,11 @@ internal class DownloadMission(
             val append = offset > 0 && responseCode == HttpURLConnection.HTTP_PARTIAL
             val start = if (append) offset else 0L
             if (!append && offset > 0) temporaryFile.delete()
-            val total = if (http.contentLengthLong >= 0) start + http.contentLengthLong else part.optLong("totalBytes", -1L)
+            val responseLength = http.contentLengthLong
+            val total = if (responseLength >= 0) start + responseLength else part.optLong("totalBytes", -1L)
+            val expectedResponseBytes = responseLength.takeIf { it >= 0 }
+                ?: (total - start).takeIf { total >= start }
+                ?: -1L
             synchronized(data) {
                 part.put("totalBytes", total)
                 part.put("downloadedBytes", start)
@@ -376,23 +419,21 @@ internal class DownloadMission(
             }
             progressStartedAt = System.currentTimeMillis()
             progressStartBytes = aggregateDownloaded()
-            FileOutputStream(temporaryFile, append).use { output ->
-                http.inputStream.use { input ->
-                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-                    var downloaded = start
-                    while (true) {
-                        checkInterrupted()
-                        val count = input.read(buffer)
-                        if (count == -1) break
-                        output.write(buffer, 0, count)
-                        downloaded += count
-                        synchronized(data) {
-                            part.put("downloadedBytes", downloaded)
-                            updateProgressMetrics()
+            try {
+                FileOutputStream(temporaryFile, append).use { output ->
+                    http.inputStream.use { input ->
+                        copyDownloadResponse(input, output, expectedResponseBytes, ::checkInterrupted) { copied ->
+                            synchronized(data) {
+                                part.put("downloadedBytes", start + copied)
+                                updateProgressMetrics()
+                            }
+                            onChanged(data)
                         }
-                        onChanged(data)
                     }
                 }
+            } catch (error: DownloadResponseTooLongException) {
+                RandomAccessFile(temporaryFile, "rw").use { it.setLength(start) }
+                throw error
             }
         } finally {
             connections.remove(http)
@@ -541,7 +582,6 @@ internal class DownloadMission(
         const val STATUS_MISSING = "missing"
         const val STATUS_CANCELED = "canceled"
         private const val CONNECT_TIMEOUT_MS = 15_000
-        private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
         private const val BLOCK_SIZE = 512 * 1024L
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_RETRIES = 3
