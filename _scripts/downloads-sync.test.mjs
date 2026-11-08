@@ -9,6 +9,8 @@ const activity = await readFile(new URL('../android/app/src/main/java/io/freetub
 const service = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
 const manifest = await readFile(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8')
 const watch = await readFile(new URL('../src/renderer/views/Watch/Watch.js', import.meta.url), 'utf8')
+const renderer = await readFile(new URL('../src/renderer/main.js', import.meta.url), 'utf8')
+const downloadsStore = await readFile(new URL('../src/renderer/store/modules/downloads.js', import.meta.url), 'utf8')
 
 test('external output deletion removes mission on every downloads snapshot', () => {
   assert.match(manager, /fun snapshot\(\): JSONArray = synchronized\(lock\) \{\s*val reconciled = reconcileMissingOutputsLocked\(\)\s*if \(reconciled\) persistLocked\(\)/s)
@@ -90,6 +92,13 @@ test('download notification opens Downloads route', () => {
 test('download progress persistence is throttled', () => {
   assert.match(manager, /PROGRESS_PERSIST_INTERVAL_MS = 1000L/)
   assert.match(manager, /if \(!isActive \|\| now - lastProgressPersistAt >= PROGRESS_PERSIST_INTERVAL_MS\) \{\s*lastProgressPersistAt = now\s*\n\s*persistLocked\(\)/s)
+})
+
+test('renderer subscribes to native download updates before mounting', () => {
+  const subscribeAt = renderer.indexOf("store.dispatch('startDownloadUpdates')")
+  const mountAt = renderer.indexOf("app.mount('#app')")
+  assert.ok(subscribeAt >= 0 && subscribeAt < mountAt)
+  assert.match(downloadsStore, /window\.addEventListener\('download-update', \(\{ detail \}\) => \{\s*commit\('setDownloadMissions', detail\)/)
 })
 
 test('FreeTube deletion removes both MediaStore and SAF outputs', () => {
