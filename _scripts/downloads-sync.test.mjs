@@ -8,6 +8,7 @@ const bridge = await readFile(new URL('../android/app/src/main/java/io/freetubea
 const activity = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', import.meta.url), 'utf8')
 const service = await readFile(new URL('../android/app/src/main/java/io/freetubeapp/freetubeandroid/DownloadService.kt', import.meta.url), 'utf8')
 const manifest = await readFile(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8')
+const watch = await readFile(new URL('../src/renderer/views/Watch/Watch.js', import.meta.url), 'utf8')
 
 test('external output deletion removes mission on every downloads snapshot', () => {
   assert.match(manager, /fun snapshot\(\): JSONArray = synchronized\(lock\) \{\s*val reconciled = reconcileMissingOutputsLocked\(\)\s*if \(reconciled\) persistLocked\(\)/s)
@@ -57,6 +58,24 @@ test('download URL validation bridge matches renderer contract', async () => {
   assert.match(bridge, /@JavascriptInterface\s+fun validateDownloadUrls\(requestJson: String\): String = try \{\s*DownloadMission\.validateRequest\(JSONObject\(requestJson\)\)/)
   assert.match(bridge, /JSONObject\(\)\.put\("ok", true\)\.toString\(\)/)
   assert.match(bridge, /JSONObject\(\)\.put\("ok", false\)\.put\("error", error\.message \?: "Invalid download request"\)/)
+})
+
+test('video download button opens the download dialog', async () => {
+  const watchView = await readFile(new URL('../src/renderer/views/Watch/Watch.vue', import.meta.url), 'utf8')
+  const videoInfo = await readFile(new URL('../src/renderer/components/WatchVideoInfo/WatchVideoInfo.vue', import.meta.url), 'utf8')
+  const videoInfoInstance = watchView.match(/<watch-video-info[\s\S]*?\/>/)?.[0]
+  assert.ok(videoInfoInstance)
+  assert.match(videoInfo, /@click="emit\('download'\)"/)
+  assert.match(videoInfoInstance, /@download="openDownloadDialog"/)
+  assert.match(watchView, /:visible="downloadDialogVisible"/)
+  assert.match(watch, /openDownloadDialog: function \(\) \{[\s\S]*?this\.downloadDialogVisible = true/)
+})
+
+test('deciphered adaptive streams remain available for downloads', async () => {
+  const localApi = await readFile(new URL('../src/renderer/helpers/api/local.js', import.meta.url), 'utf8')
+  assert.match(localApi, /format\.freeTubeUrl = await format\.decipher\(player\)/)
+  assert.match(watch, /\.filter\(format => format\.freeTubeUrl \|\| format\.url\)/)
+  assert.match(watch, /url: format\.freeTubeUrl \|\| format\.url/)
 })
 
 test('bridge listener is disposed before WebView destruction', () => {

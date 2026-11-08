@@ -145,7 +145,7 @@ function normalizeDownloadFormats(progressiveFormats, adaptiveFormats, getAdapti
   return progressiveFormats
     .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
     .concat(adaptiveFormats
-      .filter(format => format.url)
+      .filter(format => format.freeTubeUrl || format.url)
       .map((format, index) => normalizeDownloadFormat(format, getAdaptiveKind(format), index)))
 }
 

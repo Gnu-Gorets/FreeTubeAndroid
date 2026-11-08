@@ -163,6 +163,7 @@
         @pause-player="pausePlayer"
         @save-watched-progress="handleWatchProgressManualSave"
         @reload-player="onManualReloadRequested"
+        @download="openDownloadDialog"
       />
       <watch-video-chapters
         v-if="!hideChapters && !isLoading && videoChapters.length > 0"
