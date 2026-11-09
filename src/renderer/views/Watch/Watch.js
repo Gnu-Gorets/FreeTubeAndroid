@@ -44,6 +44,7 @@ import {
   youtubeImageUrlToInvidious
 } from '../../helpers/api/invidious'
 import { sortCaptions } from '../../helpers/player/utils'
+import { getLocalCaptionLabel } from '../../helpers/player/local-caption-label.mjs'
 import { getDownloadQualityLabel } from '../../helpers/download-quality.mjs'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
@@ -1098,6 +1099,7 @@ export default defineComponent({
                   id: caption.vss_id,
                   url: url.toString(),
                   language: caption.language_code,
+                  label: getLocalCaptionLabel(caption),
                   mimeType: captionMimeType
                 }
               }) ?? []
