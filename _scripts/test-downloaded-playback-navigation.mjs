@@ -21,7 +21,7 @@ assert.match(watch, /handleDownloadedPlaybackStarted: function \(\)[\s\S]*?this\
 assert.match(watch, /playDownloadedVideo\(1, true\)/)
 assert.match(await readFile('src/renderer/views/Watch/Watch.vue', 'utf8'), /:autoplay-on-load="resumeDownloadedPlayback"/)
 assert.match(await readFile('src/renderer/views/Watch/Watch.vue', 'utf8'), /@play="handleDownloadedPlaybackStarted"/)
-assert.match(await readFile('src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.vue', 'utf8'), /autoplayVideos \|\| autoplayOnLoad/)
-assert.match(await readFile('src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.js', 'utf8'), /if \(props\.autoplayOnLoad && video\.value\.paused\)[\s\S]*?video\.value\.play\(\)\.catch/)
+assert.match(await readFile('src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.vue', 'utf8'), /autoplayVideos \|\| autoplayOnLoad/)
+assert.match(await readFile('src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.vue', 'utf8'), /if \(props\.autoplayOnLoad && video\.value\.paused\)[\s\S]*?video\.value\.play\(\)\.catch/)
 
 console.log('downloaded playback navigation: PASS')
