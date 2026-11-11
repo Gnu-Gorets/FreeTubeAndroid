@@ -4,6 +4,7 @@
     class="ftVideoPlayer shaka-video-container"
     :class="{
       fullWindow: fullWindowEnabled,
+      fitScreen: fitVideoToFullscreen && fullscreenLandscape,
       sixteenByNine: forceAspectRatio && !fullWindowEnabled
     }"
   >
@@ -14,7 +15,7 @@
       preload="auto"
       crossorigin="anonymous"
       playsinline
-      :autoplay="autoplayVideos ? true : null"
+      :autoplay="autoplayVideos || autoplayOnLoad ? true : null"
       :poster="thumbnail"
       @play="handlePlay"
       @pause="handlePause"
@@ -141,6 +142,8 @@ import { ScreenshotButton } from './player-components/ScreenshotButton.js'
 import { StatsButton } from './player-components/StatsButton.js'
 import { TheatreModeButton } from './player-components/TheatreModeButton.js'
 import { AutoplayToggle } from './player-components/AutoplayToggle.js'
+import { FitScreenButton } from './player-components/FitScreenButton.js'
+import { PictureInPictureButton } from './player-components/PictureInPictureButton.js'
 import { SkipButton } from './player-components/SkipButton.js'
 
 import { KeyboardShortcuts } from '../../../constants.js'
@@ -169,7 +172,11 @@ import {
 } from '../../helpers/utils.js'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser.js'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin.js'
-import { STATE_BUFFERING, STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session.js'
+import { getNetworkType } from '../../helpers/android/network.js'
+import { STATE_BUFFERING, STATE_NONE, STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session.js'
+import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
+import { isPlayerMenuOpen } from '../../helpers/player/player-menu.mjs'
+import { addAndroidDoubleTapSeeking } from '../../helpers/player/android-double-tap.mjs'
 import android from 'android'
 
 const props = defineProps({
@@ -254,6 +261,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  autoplayOnLoad: {
+    type: Boolean,
+    default: false
+  },
   watchingPlaylist: {
     type: Boolean,
     default: false
@@ -287,6 +298,7 @@ const props = defineProps({
 const emit = defineEmits([
   'error',
   'loaded',
+  'play',
   'ended',
   'timeupdate',
   'toggle-autoplay',
@@ -330,6 +342,7 @@ const isLive = ref(false)
 
 const onlyUseOverFlowMenu = ref(false)
 const forceAspectRatio = ref(false)
+const fullscreenLandscape = ref(false)
 
 const activeLegacyFormat = shallowRef(null)
 
@@ -404,14 +417,27 @@ watch(defaultSkipInterval, (newValue) => {
 })
 
 /** @type {import('vue').ComputedRef<number | 'auto'>} */
+const wifiDefaultQuality = computed(() => parseInt(store.getters.getWifiDefaultQuality))
+const mobileDefaultQuality = computed(() => parseInt(store.getters.getMobileDefaultQuality))
+
 const defaultQuality = computed(() => {
+  if (process.env.IS_ANDROID) {
+    return getDefaultQualityForNetwork(
+      getNetworkType(),
+      wifiDefaultQuality.value,
+      mobileDefaultQuality.value,
+      720
+    )
+  }
+
   const value = store.getters.getDefaultQuality
+  return value === 'auto' ? 720 : parseInt(value)
+})
 
-  // TODO: Revert when auto is fixed (720 is the default setttings value)
-  if (value === 'auto') { return 720 }
-  // if (value === 'auto') { return value }
+const fitVideoToFullscreen = computed(() => store.getters.getFitVideoToFullscreen)
 
-  return parseInt(value)
+watch(fitVideoToFullscreen, (newValue) => {
+  events.dispatchEvent(new CustomEvent('setFitScreen', { detail: newValue }))
 })
 
 /** @type {import('vue').ComputedRef<boolean>} */
@@ -787,13 +813,15 @@ const useVrMode = computed(() => {
 })
 
 const uiConfig = computed(() => {
+  const pictureInPictureButton = process.env.IS_ANDROID ? 'ft_picture_in_picture' : 'picture_in_picture'
   const controlPanelElements = [
     'ft_skip_previous',
     'play_pause',
     'ft_skip_next',
     'mute_volume',
     'time_and_duration',
-    'spacer'
+    'spacer',
+    'ft_fit_screen'
   ]
 
   /** @type {shaka.extern.UIConfiguration} */
@@ -823,7 +851,7 @@ const uiConfig = computed(() => {
       'chapter',
       'loop',
       'ft_screenshot',
-      'picture_in_picture',
+      pictureInPictureButton,
       'ft_full_window',
       'recenter_vr',
       'toggle_stereoscopic',
@@ -831,13 +859,17 @@ const uiConfig = computed(() => {
 
     elementList = uiConfig.overflowMenuButtons
 
-    uiConfig.controlPanelElements.push('overflow_menu', 'fullscreen')
+    uiConfig.controlPanelElements.push('overflow_menu')
+    if (process.env.IS_ANDROID && props.format !== 'audio') {
+      uiConfig.controlPanelElements.push(pictureInPictureButton, 'ft_full_window')
+    }
+    uiConfig.controlPanelElements.push('fullscreen')
   } else {
     uiConfig.controlPanelElements.push(
       'ft_screenshot',
       'ft_autoplay_toggle',
       'overflow_menu',
-      'picture_in_picture',
+      pictureInPictureButton,
       'ft_theatre_mode',
       'ft_full_window',
       'fullscreen'
@@ -870,7 +902,18 @@ const uiConfig = computed(() => {
   }
 
   if (props.format === 'audio') {
-    removeFromArrayIfExists(elementList, 'picture_in_picture')
+    removeFromArrayIfExists(elementList, pictureInPictureButton)
+    removeFromArrayIfExists(uiConfig.controlPanelElements, 'ft_fit_screen')
+  }
+
+  if (process.env.IS_ANDROID) {
+    removeFromArrayIfExists(uiConfig.overflowMenuButtons, pictureInPictureButton)
+    removeFromArrayIfExists(uiConfig.controlPanelElements, 'ft_full_window')
+    removeFromArrayIfExists(uiConfig.overflowMenuButtons, 'ft_full_window')
+    if (props.format !== 'audio' && !uiConfig.controlPanelElements.includes(pictureInPictureButton)) {
+      uiConfig.controlPanelElements.push(pictureInPictureButton)
+    }
+    uiConfig.overflowMenuButtons.push('ft_full_window', 'ft_stats')
   }
 
   if (isLive.value) {
@@ -911,8 +954,8 @@ function configureUI(firstTime = false) {
     /** @type {shaka.extern.UIConfiguration} */
     const firstTimeConfig = {
       addSeekBar: seekingIsPossible.value,
-      customContextMenu: true,
-      contextMenuElements: ['ft_stats'],
+      customContextMenu: !process.env.IS_ANDROID,
+      contextMenuElements: process.env.IS_ANDROID ? [] : ['ft_stats'],
       enableTooltips: true,
       seekBarColors: {
         // shaka-player's chapter markers only show up part of the time for the DASH and audio formats
@@ -959,6 +1002,10 @@ function configureUI(firstTime = false) {
       documentPictureInPicture: {
         enabled: false
       }
+    }
+
+    if (process.env.IS_ANDROID) {
+      firstTimeConfig.seekOnTaps = true
     }
 
     if (document.pictureInPictureEnabled) {
@@ -1019,9 +1066,64 @@ function handleControlsContainerClick(event) {
   }
 }
 
+let longPressTimer
+let longPressPlaybackRate
+let longPressControlsContainer
+let removeDoubleTapSeeking
+
+function startLongPressPlayback(event) {
+  if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+  if (event.target.closest?.('button, input, .shaka-seek-bar-container')) return
+
+  clearTimeout(longPressTimer)
+  longPressTimer = setTimeout(() => {
+    longPressPlaybackRate = video.value.playbackRate
+    video.value.playbackRate = Math.min(2, maxVideoPlaybackRate.value)
+    showValueChange(`${video.value.playbackRate.toFixed(2)}x`)
+  }, 500)
+}
+
+function stopLongPressPlayback() {
+  clearTimeout(longPressTimer)
+  longPressTimer = null
+  if (longPressPlaybackRate !== undefined) {
+    video.value.playbackRate = longPressPlaybackRate
+    longPressPlaybackRate = undefined
+  }
+}
+
+function addLongPressPlaybackListeners(controlsContainer) {
+  if (!process.env.IS_ANDROID) return
+  removeLongPressPlaybackListeners()
+  longPressControlsContainer = controlsContainer
+  removeDoubleTapSeeking = addAndroidDoubleTapSeeking(controlsContainer, ui.getControls(), direction => {
+    if (!canSeek()) return 0
+    const seconds = direction * defaultSkipInterval.value
+    seekBySeconds(seconds, true)
+    return seconds
+  })
+  controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
+  controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
+  controlsContainer.addEventListener('pointercancel', stopLongPressPlayback)
+  controlsContainer.addEventListener('pointerleave', stopLongPressPlayback)
+}
+
+function removeLongPressPlaybackListeners() {
+  if (!longPressControlsContainer) return
+  removeDoubleTapSeeking?.()
+  removeDoubleTapSeeking = null
+  longPressControlsContainer.removeEventListener('pointerdown', startLongPressPlayback)
+  longPressControlsContainer.removeEventListener('pointerup', stopLongPressPlayback)
+  longPressControlsContainer.removeEventListener('pointercancel', stopLongPressPlayback)
+  longPressControlsContainer.removeEventListener('pointerleave', stopLongPressPlayback)
+  stopLongPressPlayback()
+  longPressControlsContainer = null
+}
+
 function addUICustomizations() {
   /** @type {HTMLDivElement} */
   const controlsContainer = ui.getControls().getControlsContainer()
+  addLongPressPlaybackListeners(controlsContainer)
 
   controlsContainer.removeEventListener('wheel', handleControlsContainerWheel)
   controlsContainer.removeEventListener('click', handleControlsContainerClick, true)
@@ -1165,6 +1267,8 @@ watch(locale, setLocale)
 // #region video event handlers
 
 function handlePlay() {
+  emit('play')
+
   if (process.env.IS_ELECTRON) {
     window.ftElectron.startPowerSaveBlocker()
   }
@@ -1199,10 +1303,20 @@ function handleEnded() {
     navigator.mediaSession.playbackState = 'none'
   }
 
+  if (process.env.IS_ANDROID) {
+    updateMediaSessionState(STATE_NONE, Math.floor(video.value.currentTime * 1000))
+  }
+
   emit('ended')
 }
 
 function handleCanPlay() {
+  isBuffering.value = false
+
+  if (props.autoplayOnLoad && video.value.paused) {
+    video.value.play().catch(error => console.warn('[Player] Downloaded next autoplay failed', error))
+  }
+
   // PiP can only be activated once the video's readState and video track are populated
   if (startInPip && props.format !== 'audio' && ui.getControls().isPiPAllowed() && process.env.IS_ELECTRON) {
     startInPip = false
@@ -1216,6 +1330,41 @@ function handleMediaPlay() {
 
 function handleMediaPause() {
   video.value?.pause()
+}
+
+function handleMediaSeek(event) {
+  if (video.value && canSeek() && Number.isFinite(event.detail?.position)) {
+    video.value.currentTime = event.detail.position / 1000
+  }
+}
+
+let mediaSeekInterval
+
+function startMediaSeek(direction) {
+  clearInterval(mediaSeekInterval)
+  if (!canSeek()) return
+  seekBySeconds(direction * defaultSkipInterval.value, true)
+  mediaSeekInterval = setInterval(() => seekBySeconds(direction, true), 250)
+}
+
+function handleMediaSeekForward() {
+  if (canSeek()) seekBySeconds(defaultSkipInterval.value, true)
+}
+
+function handleMediaSeekBackward() {
+  if (canSeek()) seekBySeconds(-defaultSkipInterval.value, true)
+}
+
+function handleMediaSeekForwardStart() {
+  startMediaSeek(1)
+}
+
+function handleMediaSeekBackwardStart() {
+  startMediaSeek(-1)
+}
+
+function handleMediaSeekStop() {
+  clearInterval(mediaSeekInterval)
 }
 
 function handleAppPause() {
@@ -1618,10 +1767,10 @@ function updateLegacyQualityStats(newFormat) {
   const codecsMatch = mimeType.match(/codecs="(?<videoCodec>.+), ?(?<audioCodec>.+)"/)
 
   stats.codecs.audioItag = itag
-  stats.codecs.audioCodec = codecsMatch.groups.audioCodec
+  stats.codecs.audioCodec = codecsMatch?.groups?.audioCodec || ''
 
   stats.codecs.videoItag = itag
-  stats.codecs.videoCodec = codecsMatch.groups.videoCodec
+  stats.codecs.videoCodec = codecsMatch?.groups?.videoCodec || ''
 
   stats.resolution.frameRate = fps
 
@@ -1822,6 +1971,33 @@ function registerTheatreModeButton() {
   shakaOverflowMenu.registerElement('ft_theatre_mode', new TheatreModeButtonFactory())
 }
 
+function registerFitScreenButton() {
+  events.addEventListener('toggleFitScreen', event => {
+    store.dispatch('updateFitVideoToFullscreen', event.detail)
+  })
+
+  class FitScreenButtonFactory {
+    create(rootElement, controls) {
+      return new FitScreenButton(fitVideoToFullscreen.value, events, rootElement, controls)
+    }
+  }
+
+  shakaControls.registerElement('ft_fit_screen', new FitScreenButtonFactory())
+}
+
+function registerPictureInPictureButton() {
+  if (!process.env.IS_ANDROID) return
+
+  class PictureInPictureButtonFactory {
+    create(rootElement, controls) {
+      return new PictureInPictureButton(events, rootElement, controls)
+    }
+  }
+
+  shakaControls.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
+  shakaOverflowMenu.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
+}
+
 function registerFullWindowButton() {
   events.addEventListener('setFullWindow', (/** @type {CustomEvent} */ event) => {
     if (event.detail) {
@@ -1909,7 +2085,10 @@ function registerStatsButton() {
     }
   }
 
-  shakaContextMenu.registerElement('ft_stats', new StatsButtonFactory())
+  if (!process.env.IS_ANDROID) {
+    shakaContextMenu.registerElement('ft_stats', new StatsButtonFactory())
+  }
+  shakaOverflowMenu.registerElement('ft_stats', new StatsButtonFactory())
 }
 
 function registerScreenshotButton() {
@@ -1978,10 +2157,15 @@ function cleanUpCustomPlayerControls() {
   shakaControls.registerElement('ft_full_window', null)
   shakaOverflowMenu.registerElement('ft_full_window', null)
 
+  shakaControls.registerElement('ft_fit_screen', null)
+  shakaControls.registerElement('ft_picture_in_picture', null)
+  shakaOverflowMenu.registerElement('ft_picture_in_picture', null)
+
   shakaControls.registerElement('ft_legacy_quality', null)
   shakaOverflowMenu.registerElement('ft_legacy_quality', null)
 
   shakaContextMenu.registerElement('ft_stats', null)
+  shakaOverflowMenu.registerElement('ft_stats', null)
 
   shakaControls.registerElement('ft_screenshot', null)
   shakaOverflowMenu.registerElement('ft_screenshot', null)
@@ -2482,7 +2666,9 @@ function keyboardShortcutHandler(event) {
       // Toggle picture in picture
       if (props.format !== 'audio') {
         const controls = ui.getControls()
-        if (controls.isPiPAllowed()) {
+        if (process.env.IS_ANDROID) {
+          android?.enterPictureInPicture?.(!video_.paused)
+        } else if (controls.isPiPAllowed()) {
           controls.togglePiP()
         }
       }
@@ -2701,6 +2887,7 @@ function addMarkers(markers) {
 
 const isOffline = ref(!navigator.onLine)
 const isBuffering = ref(false)
+let playerMenuObserver = null
 
 function onlineHandler() {
   isOffline.value = false
@@ -2710,8 +2897,30 @@ function offlineHandler() {
   isOffline.value = true
 }
 
+function updateFullscreenOrientation() {
+  const fullscreenElement = document.fullscreenElement
+  const playerBounds = container.value?.getBoundingClientRect()
+  const orientationAngle = screen.orientation?.angle
+  let isLandscape = orientationAngle === 90 || orientationAngle === 270
+
+  if (process.env.IS_ANDROID) {
+    isLandscape = android?.isLandscape?.() === true
+  } else if (orientationAngle === undefined) {
+    isLandscape = playerBounds !== undefined && playerBounds.width > playerBounds.height
+  }
+
+  fullscreenLandscape.value = fullscreenElement === container.value && isLandscape
+}
+
 function fullscreenChangeHandler() {
-  nextTick(showOverlayControls)
+  nextTick(() => {
+    updateFullscreenOrientation()
+    showOverlayControls()
+  })
+}
+
+function fullscreenResizeHandler() {
+  updateFullscreenOrientation()
 }
 
 window.addEventListener('online', onlineHandler)
@@ -2735,6 +2944,12 @@ onMounted(async () => {
   if (process.env.IS_ANDROID) {
     window.addEventListener('media-play', handleMediaPlay)
     window.addEventListener('media-pause', handleMediaPause)
+    window.addEventListener('media-seek', handleMediaSeek)
+    window.addEventListener('media-seek-forward', handleMediaSeekForward)
+    window.addEventListener('media-seek-backward', handleMediaSeekBackward)
+    window.addEventListener('media-seek-forward-start', handleMediaSeekForwardStart)
+    window.addEventListener('media-seek-backward-start', handleMediaSeekBackwardStart)
+    window.addEventListener('media-seek-stop', handleMediaSeekStop)
     window.addEventListener('app-pause', handleAppPause)
     window.addEventListener('app-resume', handleAppResume)
   }
@@ -2808,6 +3023,8 @@ onMounted(async () => {
 
   registerTheatreModeButton()
   registerFullWindowButton()
+  registerFitScreenButton()
+  registerPictureInPictureButton()
   registerLegacyQualitySelection()
   registerStatsButton()
   registerSkipButtons()
@@ -2824,9 +3041,22 @@ onMounted(async () => {
   controls.addEventListener('uiupdated', addUICustomizations)
   configureUI(true)
 
+  if (process.env.IS_ANDROID) {
+    playerMenuObserver = new MutationObserver(() => {
+      android?.setSwipeRefreshEnabled?.(!isPlayerMenuOpen(container.value))
+    })
+    playerMenuObserver.observe(container.value, {
+      attributes: true,
+      attributeFilter: ['class'],
+      subtree: true
+    })
+  }
+
   document.removeEventListener('keydown', keyboardShortcutHandler)
   document.addEventListener('keydown', keyboardShortcutHandler)
   document.addEventListener('fullscreenchange', fullscreenChangeHandler)
+  window.addEventListener('resize', fullscreenResizeHandler)
+  window.addEventListener('orientationchange', fullscreenResizeHandler)
 
   player.addEventListener('loading', () => {
     hasLoaded.value = false
@@ -3235,6 +3465,15 @@ onBeforeUnmount(() => {
 
   document.removeEventListener('keydown', keyboardShortcutHandler)
   document.removeEventListener('fullscreenchange', fullscreenChangeHandler)
+  window.removeEventListener('resize', fullscreenResizeHandler)
+  window.removeEventListener('orientationchange', fullscreenResizeHandler)
+
+  playerMenuObserver?.disconnect()
+  playerMenuObserver = null
+  if (process.env.IS_ANDROID) {
+    android?.setSwipeRefreshEnabled?.(true)
+  }
+  removeLongPressPlaybackListeners()
 
   if (containerResizeObserver) {
     containerResizeObserver.disconnect()
@@ -3257,6 +3496,13 @@ onBeforeUnmount(() => {
   if (process.env.IS_ANDROID) {
     window.removeEventListener('media-play', handleMediaPlay)
     window.removeEventListener('media-pause', handleMediaPause)
+    window.removeEventListener('media-seek', handleMediaSeek)
+    window.removeEventListener('media-seek-forward', handleMediaSeekForward)
+    window.removeEventListener('media-seek-backward', handleMediaSeekBackward)
+    window.removeEventListener('media-seek-forward-start', handleMediaSeekForwardStart)
+    window.removeEventListener('media-seek-backward-start', handleMediaSeekBackwardStart)
+    window.removeEventListener('media-seek-stop', handleMediaSeekStop)
+    clearInterval(mediaSeekInterval)
     window.removeEventListener('app-pause', handleAppPause)
     window.removeEventListener('app-resume', handleAppResume)
   }
