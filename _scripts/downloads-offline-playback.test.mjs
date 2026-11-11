@@ -7,7 +7,7 @@ const settings = await readFile(new URL('../src/renderer/store/modules/settings.
 const downloadsSettings = await readFile(new URL('../src/renderer/components/DownloadsSettings/DownloadsSettings.vue', import.meta.url), 'utf8')
 const downloadsView = await readFile(new URL('../src/renderer/views/Downloads/Downloads.vue', import.meta.url), 'utf8')
 const localApi = await readFile(new URL('../src/renderer/helpers/api/local.js', import.meta.url), 'utf8')
-const player = await readFile(new URL('../src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.js', import.meta.url), 'utf8')
+const player = await readFile(new URL('../src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.vue', import.meta.url), 'utf8')
 const downloadDialog = await readFile(new URL('../src/renderer/components/DownloadDialog/DownloadDialog.vue', import.meta.url), 'utf8')
 
 const loadDownloadedMission = watch.match(/async loadDownloadedMission\(\) \{[\s\S]*?\n\s{4}\},\n\n\s{4}setViewingModeOnFirstLoad/)[0]
