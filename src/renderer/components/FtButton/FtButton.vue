@@ -2,6 +2,7 @@
   <button
     class="btn ripple"
     :data-test="testId"
+    :data-settings-search-label="label"
     :style="{
       color: textColor,
       backgroundColor: backgroundColor,
