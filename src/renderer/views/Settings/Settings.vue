@@ -537,6 +537,7 @@ async function selectSearchResult(result) {
   searchStartScrollY = null
   updateSearchQuery('')
   if (!isInDesktopView.value) {
+    pushState(`#${result.sectionType}`)
     settingsSectionTypeOpenInMobile.value = result.sectionType
   }
   await nextTick()
