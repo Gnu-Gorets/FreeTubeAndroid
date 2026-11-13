@@ -1,6 +1,7 @@
 import shaka from 'shaka-player'
 
 import { PlayerIcons } from '../../../../constants'
+import { getUniqueLegacyFormats } from './legacy-quality.mjs'
 
 export class LegacyQualitySelection extends shaka.ui.SettingsMenu {
   /**
@@ -29,12 +30,7 @@ export class LegacyQualitySelection extends shaka.ui.SettingsMenu {
     /** @private */
     this.activeLegacyFormat_ = activeLegacyFormat
 
-    const sortedLegacyFormats = [...legacyFormats]
-
-    if (legacyFormats.length > 0) {
-      const isPortrait = legacyFormats[0].height > legacyFormats[0].width
-      sortedLegacyFormats.sort((a, b) => isPortrait ? b.width - a.width : b.height - a.height)
-    }
+    const sortedLegacyFormats = getUniqueLegacyFormats(legacyFormats)
 
     /** @private */
     this.legacyFormats_ = sortedLegacyFormats
@@ -98,7 +94,7 @@ export class LegacyQualitySelection extends shaka.ui.SettingsMenu {
 
     // current selection
 
-    const index = this.legacyFormats_.indexOf(this.activeLegacyFormat_)
+    const index = this.legacyFormats_.findIndex(format => format.qualityLabel === this.activeLegacyFormat_.qualityLabel)
 
     const button = this.menu.querySelectorAll('.legacy-resolution')[index]
     const span = button.querySelector('span')
