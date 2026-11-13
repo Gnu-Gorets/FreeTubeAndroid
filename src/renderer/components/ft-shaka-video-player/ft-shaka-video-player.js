@@ -8,6 +8,7 @@ import { AudioTrackSelection } from './player-components/AudioTrackSelection'
 import { FullWindowButton } from './player-components/FullWindowButton'
 import { FitScreenButton } from './player-components/FitScreenButton'
 import { LegacyQualitySelection } from './player-components/LegacyQualitySelection'
+import { DashQualitySelection } from './player-components/DashQualitySelection'
 import { ScreenshotButton } from './player-components/ScreenshotButton'
 import { PictureInPictureButton } from './player-components/PictureInPictureButton'
 import { StatsButton } from './player-components/StatsButton'
@@ -856,6 +857,10 @@ export default defineComponent({
         'ft_fit_screen'
       ]
 
+      const qualitySelectionElement = props.format === 'legacy'
+        ? 'ft_legacy_quality'
+        : props.format === 'dash' ? 'ft_dash_quality' : 'quality'
+
       /** @type {shaka.extern.UIConfiguration} */
       const uiConfig = {
         controlPanelElements: controlPanelElements,
@@ -876,7 +881,7 @@ export default defineComponent({
       if (onlyUseOverFlowMenu.value) {
         uiConfig.overflowMenuButtons = [
           'ft_autoplay_toggle',
-          props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+          qualitySelectionElement,
           'playback_rate',
           'captions-settings',
           'ft_audio_tracks',
@@ -911,7 +916,7 @@ export default defineComponent({
           'ft_audio_tracks',
           'captions-settings',
           'playback_rate',
-          props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+          qualitySelectionElement,
           'chapter',
           'loop',
           'recenter_vr',
@@ -2086,6 +2091,17 @@ export default defineComponent({
       shakaOverflowMenu.registerElement('ft_legacy_quality', new LegacyQualitySelectionFactory())
     }
 
+    function registerDashQualitySelection() {
+      class DashQualitySelectionFactory {
+        create(rootElement, controls) {
+          return new DashQualitySelection(rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+      shakaOverflowMenu.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+    }
+
     function registerStatsButton() {
       events.addEventListener('setStatsVisibility', (/** @type {CustomEvent} */ event) => {
         showStats.value = event.detail
@@ -2193,6 +2209,8 @@ export default defineComponent({
 
       shakaControls.registerElement('ft_legacy_quality', null)
       shakaOverflowMenu.registerElement('ft_legacy_quality', null)
+      shakaControls.registerElement('ft_dash_quality', null)
+      shakaOverflowMenu.registerElement('ft_dash_quality', null)
 
       if (!process.env.IS_ANDROID) {
         shakaContextMenu.registerElement('ft_stats', null)
@@ -3073,6 +3091,7 @@ export default defineComponent({
       registerFullWindowButton()
       registerFitScreenButton()
       registerLegacyQualitySelection()
+      registerDashQualitySelection()
       registerStatsButton()
       registerSkipButtons()
 
