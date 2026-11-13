@@ -9,6 +9,7 @@ export class DashQualitySelection extends shaka.ui.SettingsMenu {
 
     this.button.classList.add('shaka-resolution-button', 'shaka-tooltip-status')
     this.menu.classList.add('shaka-resolutions')
+    this.overflowQualityMark = parent.parentElement?.querySelector('.shaka-overflow-quality-mark')
 
     this.eventManager.listenMulti(this.player, [
       'loading',
@@ -28,8 +29,17 @@ export class DashQualitySelection extends shaka.ui.SettingsMenu {
       if (child !== this.backButton) child.remove()
     }
 
-    const tracks = getUniqueVideoTracks(this.player.getVideoTracks() || [])
+    const videoTracks = this.player.getVideoTracks() || []
+    const tracks = getUniqueVideoTracks(videoTracks)
     const abrEnabled = this.player.getConfiguration().abr.enabled
+    const activeTrack = videoTracks.find(track => track.active)
+    const { width, height } = activeTrack || this.player.getStats()
+    const currentQualityMark = getQualityMark(width, height, this.controls.getConfig().qualityMarks)
+
+    if (this.overflowQualityMark) {
+      this.overflowQualityMark.textContent = currentQualityMark
+      this.overflowQualityMark.style.display = currentQualityMark ? '' : 'none'
+    }
     for (const { label, track, selected } of tracks) {
       const button = document.createElement('button')
       button.role = 'menuitemradio'
