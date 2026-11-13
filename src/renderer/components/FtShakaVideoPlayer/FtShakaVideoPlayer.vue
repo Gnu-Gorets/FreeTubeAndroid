@@ -138,6 +138,7 @@ import store from '../../store/index.js'
 import { AudioTrackSelection } from './player-components/AudioTrackSelection.js'
 import { FullWindowButton } from './player-components/FullWindowButton.js'
 import { LegacyQualitySelection } from './player-components/LegacyQualitySelection.js'
+import { DashQualitySelection } from './player-components/DashQualitySelection.js'
 import { ScreenshotButton } from './player-components/ScreenshotButton.js'
 import { StatsButton } from './player-components/StatsButton.js'
 import { TheatreModeButton } from './player-components/TheatreModeButton.js'
@@ -824,6 +825,10 @@ const uiConfig = computed(() => {
     'ft_fit_screen'
   ]
 
+  const qualitySelectionElement = props.format === 'legacy'
+    ? 'ft_legacy_quality'
+    : props.format === 'dash' ? 'ft_dash_quality' : 'quality'
+
   /** @type {shaka.extern.UIConfiguration} */
   const uiConfig = {
     controlPanelElements: controlPanelElements,
@@ -844,7 +849,7 @@ const uiConfig = computed(() => {
   if (onlyUseOverFlowMenu.value) {
     uiConfig.overflowMenuButtons = [
       'ft_autoplay_toggle',
-      props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+      qualitySelectionElement,
       'playback_rate',
       'captions-settings',
       'ft_audio_tracks',
@@ -879,7 +884,7 @@ const uiConfig = computed(() => {
       'ft_audio_tracks',
       'captions-settings',
       'playback_rate',
-      props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+      qualitySelectionElement,
       'chapter',
       'loop',
       'recenter_vr',
@@ -2067,6 +2072,17 @@ function registerLegacyQualitySelection() {
   shakaOverflowMenu.registerElement('ft_legacy_quality', new LegacyQualitySelectionFactory())
 }
 
+function registerDashQualitySelection () {
+  class DashQualitySelectionFactory {
+    create(rootElement, controls) {
+      return new DashQualitySelection(rootElement, controls)
+    }
+  }
+
+  shakaControls.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+  shakaOverflowMenu.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+}
+
 function registerStatsButton() {
   events.addEventListener('setStatsVisibility', (/** @type {CustomEvent} */ event) => {
     showStats.value = event.detail
@@ -2163,6 +2179,8 @@ function cleanUpCustomPlayerControls() {
 
   shakaControls.registerElement('ft_legacy_quality', null)
   shakaOverflowMenu.registerElement('ft_legacy_quality', null)
+  shakaControls.registerElement('ft_dash_quality', null)
+  shakaOverflowMenu.registerElement('ft_dash_quality', null)
 
   shakaContextMenu.registerElement('ft_stats', null)
   shakaOverflowMenu.registerElement('ft_stats', null)
@@ -3026,6 +3044,7 @@ onMounted(async () => {
   registerFitScreenButton()
   registerPictureInPictureButton()
   registerLegacyQualitySelection()
+  registerDashQualitySelection()
   registerStatsButton()
   registerSkipButtons()
 
