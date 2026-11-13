@@ -1,7 +1,7 @@
 import shaka from 'shaka-player'
 
 import { PlayerIcons } from '../../../../constants'
-import { getUniqueVideoTracks } from './dash-quality.mjs'
+import { getQualityMark, getUniqueVideoTracks } from './dash-quality.mjs'
 
 export class DashQualitySelection extends shaka.ui.SettingsMenu {
   constructor (parent, controls) {
@@ -44,10 +44,18 @@ export class DashQualitySelection extends shaka.ui.SettingsMenu {
       span.textContent = label
       button.appendChild(span)
 
+      const qualityMark = getQualityMark(track.width, track.height, this.controls.getConfig().qualityMarks)
+      if (qualityMark) {
+        const mark = document.createElement('sup')
+        mark.classList.add('shaka-quality-mark')
+        mark.textContent = qualityMark
+        button.appendChild(mark)
+      }
+
       if (!abrEnabled && selected) {
         button.ariaChecked = 'true'
         span.classList.add('shaka-chosen-item')
-        button.appendChild(new shaka.ui.Icon(null, PlayerIcons.DONE_FILLED).getSvgElement())
+        button.appendChild(this.createCheckmark_())
         this.currentSelection.textContent = label
       }
 
@@ -69,7 +77,7 @@ export class DashQualitySelection extends shaka.ui.SettingsMenu {
 
     if (abrEnabled) {
       autoSpan.classList.add('shaka-chosen-item')
-      autoButton.appendChild(new shaka.ui.Icon(null, PlayerIcons.DONE_FILLED).getSvgElement())
+      autoButton.appendChild(this.createCheckmark_())
       this.currentSelection.textContent = autoSpan.textContent
     }
 
@@ -77,6 +85,13 @@ export class DashQualitySelection extends shaka.ui.SettingsMenu {
     this.button.setAttribute('shaka-status', this.currentSelection.textContent)
     this.button.classList.toggle('shaka-hidden', tracks.length === 0 || this.isSubMenuOpened)
     this.updateLocalizedStrings()
+  }
+
+  createCheckmark_ () {
+    const checkmark = new shaka.ui.Icon(null, PlayerIcons.DONE_FILLED).getSvgElement()
+    checkmark.classList.add('shaka-chosen-item')
+    checkmark.ariaHidden = 'true'
+    return checkmark
   }
 
   updateLocalizedStrings () {

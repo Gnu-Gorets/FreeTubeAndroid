@@ -30,6 +30,28 @@ export function getVideoResolutionLabel (track, tracks) {
   return label
 }
 
+export function getQualityMark (width, height, qualityMarks) {
+  if (!width || !height) return ''
+
+  let trackHeight = height
+  let trackWidth = width
+  if (trackHeight > trackWidth) {
+    [trackWidth, trackHeight] = [trackHeight, trackWidth]
+  }
+
+  if (trackWidth / trackHeight > 16 / 9) {
+    trackHeight = Math.round(trackWidth * 9 / 16)
+  }
+
+  if (trackHeight >= 8640) return `${trackHeight}p`
+  if (trackHeight >= 4320) return qualityMarks['4320']
+  if (trackHeight >= 2160) return qualityMarks['2160']
+  if (trackHeight >= 1440) return qualityMarks['1440']
+  if (trackHeight >= 1080) return qualityMarks['1080']
+  if (trackHeight >= 720) return qualityMarks['720']
+  return ''
+}
+
 export function getUniqueVideoTracks (tracks) {
   const selectedTrack = tracks.find(track => track.active)
   const filteredTracks = selectedTrack
