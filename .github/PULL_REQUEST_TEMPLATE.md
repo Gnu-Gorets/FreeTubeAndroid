@@ -15,7 +15,7 @@
 <!-- Example: "closes #123456". -->
 
 ## Description
-<!-- Write concise, user-facing release notes in plain language. Keep this section within 500 characters. For changes with no user-visible effect, write: No user-facing changes. This section is copied to Android beta release notes. -->
+<!-- Write concise, user-facing release notes in plain language. Group short bullets under Added:, Fixed:, and Changed: headings as needed. Keep this section within 500 characters. Omit implementation details and test reports. For changes with no user-visible effect, write: No user-facing changes. This section is copied to Android beta release notes. -->
 
 ## Screenshots <!-- If appropriate -->
 <!-- Please add before and after screenshots if there is a visible change. -->
