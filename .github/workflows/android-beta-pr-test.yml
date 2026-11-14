@@ -256,7 +256,7 @@ jobs:
           fi
 
           download_url=$(printf '%s/releases/download/%s/%s' \
-            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$tag" "$asset_name")
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$tag" "$(basename "$APK_PATH")")
           body=$(printf \
             'Latest signed test APK for PR #%s: [download APK](%s). ' \
             "$PR_NUMBER" "$download_url")
