@@ -210,6 +210,7 @@ Settings:
     General Settings: 'Général'
     Fallback to Non-Preferred Backend on Failure: 'Basculer vers l''API interne non préférée en cas d''échec'
     Enable Search Suggestions: 'Activer les suggestions de recherche'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Page de lancement par défaut'
     Locale Preference: 'Paramètres régionaux'
     Preferred API Backend:
@@ -1030,6 +1031,7 @@ More: Plus
 Playing Next Video Interval: Lecture de la prochaine vidéo en un rien de temps. Cliquez pour annuler. | Lecture de la prochaine vidéo dans {nextVideoInterval} seconde. Cliquer pour annuler. | Lecture de la vidéo suivante dans {nextVideoInterval} secondes. Cliquer pour annuler.
 Unknown YouTube url type, cannot be opened in app: Type d'URL YouTube inconnu, ne peut pas être ouvert dans l'application
 Open New Window: Ouvrir une nouvelle fenêtre
+Reload: Reload
 Default Invidious instance has been cleared: L'instance Invidious par défaut a été effacée
 Default Invidious instance has been set to {instance}: L'instance Invidious par défaut a été définie sur {instance}
 Search Bar:

@@ -4,6 +4,7 @@ import { parseLooseJSON } from 'bgutils-js/utils'
 
 import { SEARCH_CHAR_LIMIT } from '../../../constants'
 import { PlayerCache } from './PlayerCache'
+import { createLocalSearchContinuation } from './local-search-continuation.mjs'
 import {
   CHANNEL_HANDLE_REGEX,
   calculatePublishedDate,
@@ -70,6 +71,24 @@ if (process.env.SUPPORTS_LOCAL_API) {
 
         window.addEventListener('message', listener)
         iframe.contentWindow.postMessage(JSON.stringify({ id: messageId, code }), '*')
+      } else if (process.env.IS_ANDROID) {
+        const listener = () => {
+          window.removeEventListener(`${messageId}-resolve`, listener)
+          window.removeEventListener(`${messageId}-reject`, rejectListener)
+          try {
+            resolve(JSON.parse(window.Android.getSyncMessage(messageId)))
+          } catch (error) {
+            reject(error)
+          }
+        }
+        const rejectListener = () => {
+          window.removeEventListener(`${messageId}-resolve`, listener)
+          window.removeEventListener(`${messageId}-reject`, rejectListener)
+          reject(window.Android.getSyncMessage(messageId))
+        }
+        window.addEventListener(`${messageId}-resolve`, listener)
+        window.addEventListener(`${messageId}-reject`, rejectListener)
+        window.Android.runDecipherScript(messageId, code, 10000)
       } else {
         reject(new Error('Please setup the eval function for the n/sig deciphering'))
       }
@@ -282,7 +301,7 @@ export async function getLocalCachedFeedContinuation(type, continuation) {
   if (type === 'playlist') {
     return new YT.Playlist(session.actions, page, true)
   } else {
-    return new YT.Search(session.actions, page, true)
+    return createLocalSearchContinuation(session.actions, page)
   }
 }
 
@@ -386,8 +405,9 @@ export async function getLocalSearchResults(query, filters, safetyMode) {
 export async function getLocalSearchContinuation(continuationData) {
   let response
 
-  if (continuationData instanceof YT.Search) {
-    response = await continuationData.getContinuation()
+  if (continuationData instanceof Mixins.Feed) {
+    const page = await continuationData.getContinuationData()
+    response = createLocalSearchContinuation(continuationData.actions, page)
   } else {
     response = await getLocalCachedFeedContinuation('search', continuationData)
   }
@@ -620,7 +640,38 @@ function createWatchNextRequestBody(videoId) {
  *   adEndTimeUnixMs: number
  * }>}
  */
+/**
+ * Returns language of original audio track when YouTube provides it.
+ * @param {import('youtubei.js').YT.VideoInfo} info
+ * @returns {string | undefined}
+ */
+export function getOriginalVideoLanguage(info) {
+  const formats = info.streaming_data?.adaptive_formats ?? []
+  const originalFormat = formats.find(format => format.is_original && format.language)
+  return originalFormat?.language ?? formats.find(format => format.language)?.language
+}
+
+const localVideoInfoCache = new Map()
+const LOCAL_VIDEO_INFO_CACHE_TTL_MS = 5 * 60 * 1000
+
 export async function getLocalVideoInfo(id) {
+  const now = Date.now()
+  const cached = localVideoInfoCache.get(id)
+  if (cached && now - cached.createdAt < LOCAL_VIDEO_INFO_CACHE_TTL_MS) {
+    return await cached.promise
+  }
+
+  const promise = getLocalVideoInfoUncached(id)
+  localVideoInfoCache.set(id, { createdAt: now, promise })
+  try {
+    return await promise
+  } catch (error) {
+    if (localVideoInfoCache.get(id)?.promise === promise) localVideoInfoCache.delete(id)
+    throw error
+  }
+}
+
+async function getLocalVideoInfoUncached(id) {
   let responseTime
   let totalAdTimeMilliseconds = 0
 
@@ -657,6 +708,9 @@ export async function getLocalVideoInfo(id) {
     htmlExtracts.playerId
   )
 
+  // VideoInfo.toDash() reads its player from the Actions session.
+  htmlExtracts.session.player = player
+
   // based on the videoId
   let contentPoToken
 
@@ -674,6 +728,32 @@ export async function getLocalVideoInfo(id) {
       console.error('Local API, poToken generation failed', error)
       throw error
     }
+  } else if (process.env.IS_ANDROID) {
+    const tokenId = crypto.randomUUID()
+    contentPoToken = await new Promise((resolve, reject) => {
+      const resolveEvent = () => {
+        cleanup()
+        resolve(window.Android.getSyncMessage(tokenId))
+      }
+      const rejectEvent = () => {
+        cleanup()
+        reject(window.Android.getSyncMessage(tokenId))
+      }
+      const cleanup = () => {
+        window.removeEventListener(`${tokenId}-resolve`, resolveEvent)
+        window.removeEventListener(`${tokenId}-reject`, rejectEvent)
+      }
+      window.addEventListener(`${tokenId}-resolve`, resolveEvent)
+      window.addEventListener(`${tokenId}-reject`, rejectEvent)
+      window.Android.generatePOToken(
+        tokenId,
+        id,
+        JSON.stringify(htmlExtracts.session.context),
+        JSON.stringify(htmlExtracts.initialAttestationData),
+        JSON.stringify(htmlExtracts.ytConfig)
+      )
+    })
+    player.po_token = contentPoToken
   }
 
   let playerResponse
@@ -732,7 +812,14 @@ export async function getLocalVideoInfo(id) {
 
   const cpn = Utils.generateRandomString(16)
 
-  const info = new YT.VideoInfo([playerResponse, nextResponse], htmlExtracts.session.actions, cpn)
+  let info
+  try {
+    info = new YT.VideoInfo([playerResponse, nextResponse], htmlExtracts.session.actions, cpn)
+  } catch (error) {
+    // YouTube can return a watch-next layout unsupported by current youtubei.js.
+    console.warn(`Unable to parse watch-next response, using player response: ${error.message}`)
+    info = new YT.VideoInfo([playerResponse], htmlExtracts.session.actions, cpn)
+  }
 
   // Some time would be used for parsing and maybe additional requests so end time should be calculated sooner to reduce actual waiting time
   // Legacy format requires this
@@ -780,6 +867,7 @@ export async function getLocalVideoInfo(id) {
   const clientInfo = {
     clientName: Constants.CLIENT_NAME_IDS[clientName],
     clientVersion,
+    visitorData: context.client.visitorData,
     osName,
     osVersion
   }
@@ -805,45 +893,60 @@ export async function getLocalVideoInfo(id) {
   }
 
   if (info.streaming_data) {
-    await decipherFormats(info.streaming_data.formats, player)
+    await decipherFormats([
+      ...info.streaming_data.formats,
+      ...(info.streaming_data.adaptive_formats ?? [])
+    ], player)
 
     if (info.streaming_data.server_abr_streaming_url) {
-      info.streaming_data.server_abr_streaming_url = await player.decipher(info.streaming_data.server_abr_streaming_url)
+      try {
+        console.warn('[Local API] decipher server ABR URL', {
+          length: info.streaming_data.server_abr_streaming_url.length
+        })
+        const decipheredServerAbrUrl = await player.decipher(info.streaming_data.server_abr_streaming_url)
+        info.streaming_data.server_abr_streaming_url = new URL(decipheredServerAbrUrl).toString()
+      } catch (error) {
+        console.warn('[Local API] server ABR URL is unusable, falling back to DASH', error)
+        info.streaming_data.server_abr_streaming_url = null
+      }
     }
 
-    if (info.streaming_data.dash_manifest_url) {
-      info.streaming_data.dash_manifest_url = await decipherManifestUrl(
-        info.streaming_data.dash_manifest_url,
-        player,
-        contentPoToken,
-        true
-      )
-    }
-
-    if (info.streaming_data.hls_manifest_url) {
-      info.streaming_data.hls_manifest_url = await decipherManifestUrl(
-        info.streaming_data.hls_manifest_url,
-        player,
-        contentPoToken,
-        false
-      )
+    for (const [key, isDash] of [['dash_manifest_url', true], ['hls_manifest_url', false]]) {
+      if (!info.streaming_data[key]) continue
+      try {
+        info.streaming_data[key] = await decipherManifestUrl(
+          info.streaming_data[key],
+          player,
+          contentPoToken,
+          isDash
+        )
+      } catch (error) {
+        console.warn(`Unable to decipher ${key}, continuing with adaptive formats`, error)
+        info.streaming_data[key] = null
+      }
     }
   }
 
   if (info.captions?.caption_tracks) {
-    for (const captionTrack of info.captions.caption_tracks) {
-      const url = new URL(captionTrack.base_url)
+    info.captions.caption_tracks = info.captions.caption_tracks.filter((captionTrack) => {
+      try {
+        const url = new URL(captionTrack.base_url, 'https://www.youtube.com')
 
-      url.searchParams.set('potc', '1')
-      url.searchParams.set('pot', contentPoToken)
-      url.searchParams.set('c', clientName)
+        url.searchParams.set('potc', '1')
+        url.searchParams.set('pot', contentPoToken)
+        url.searchParams.set('c', clientName)
 
-      // Remove &xosf=1 as it adds `position:63% line:0%` to the subtitle lines
-      // placing them in the top right corner
-      url.searchParams.delete('xosf')
+        // Remove &xosf=1 as it adds `position:63% line:0%` to the subtitle lines
+        // placing them in the top right corner
+        url.searchParams.delete('xosf')
 
-      captionTrack.base_url = url.toString()
-    }
+        captionTrack.base_url = url.toString()
+        return true
+      } catch (error) {
+        console.warn('[Local API] skipping invalid caption URL', { error })
+        return false
+      }
+    })
   }
 
   return {
@@ -936,10 +1039,21 @@ export async function getLocalComments(id) {
  * @param {import('youtubei.js').Player} player
  */
 async function decipherFormats(formats, player) {
+  console.warn('[Local API] decipher formats', { count: formats.length })
   for (const format of formats) {
     // toDash deciphers the format again, so if we overwrite the original URL,
     // it breaks because the n param would get deciphered twice and then be incorrect
-    format.freeTubeUrl = await format.decipher(player)
+    try {
+      format.freeTubeUrl = await format.decipher(player)
+    } catch (error) {
+      console.warn('[Local API] format decipher failed', {
+        itag: format.itag,
+        mimeType: format.mime_type,
+        hasUrl: Boolean(format.url),
+        hasCipher: Boolean(format.signature_cipher || format.cipher),
+        error
+      })
+    }
   }
 }
 
@@ -1925,6 +2039,7 @@ export function parseLocalListVideo(item, channelId, channelName) {
       type: 'video',
       videoId: video.video_id,
       title: video.title.text?.trim(),
+      originalTitle: video.untranslated_title?.text?.trim(),
       author: video.author.name !== 'N/A' ? video.author.name : channelName,
       authorId: video.author.id !== 'N/A' ? video.author.id : channelId,
       collaborators: parseLocalCollaborators(video.author.collaborators),
@@ -2017,7 +2132,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
         type: 'playlist',
         dataSource: 'local',
         playlistId,
-        title: lockupView.metadata.title.text,
+        title: lockupView.metadata.title?.text ?? '',
         thumbnail: lockupView.content_image.primary_thumbnail.image[0].url,
         channelName,
         channelId,
@@ -2126,7 +2241,7 @@ function parseLockupView(lockupView, channelId = undefined, channelName = undefi
       return {
         type: 'video',
         videoId: lockupView.content_id,
-        title: lockupView.metadata.title.text?.trim(),
+        title: lockupView.metadata.title?.text?.trim() ?? '',
         author,
         authorId: lockupView.metadata.image?.renderer_context?.command_context?.on_tap?.payload.browseId ?? channelId,
         collaborators,
@@ -2270,7 +2385,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       collaborators: parseLocalCollaborators(video.author.collaborators),
@@ -2290,7 +2405,7 @@ export function parseLocalWatchNextVideo(video) {
     return {
       type: 'video',
       videoId: video.video_id,
-      title: video.title.text?.trim(),
+      title: video.title?.text?.trim() ?? '',
       author: video.author.name,
       authorId: video.author.id,
       collaborators: parseLocalCollaborators(video.author.collaborators),

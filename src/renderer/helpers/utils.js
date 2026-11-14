@@ -2,6 +2,8 @@ import { nextTick } from 'vue'
 import i18n from '../i18n/index'
 import router from '../router/index'
 import { UnsupportedPlayerActions } from '../../constants'
+import { requestOpenDialog, requestSaveDialog } from './android/dialogs'
+import { writeFile } from './android/storage'
 
 // allowed characters in channel handle: A-Z, a-z, 0-9, -, _, .
 // https://support.google.com/youtube/answer/11585688#change_handle
@@ -264,7 +266,86 @@ export async function copyToClipboard(content, { messageOnSuccess = null, messag
  * @param {string} url the URL to open
  */
 export async function openExternalLink(url) {
-  window.open(url, '_blank', 'noreferrer')
+  if (process.env.IS_ANDROID && typeof window.Android?.openExternalLink === 'function') {
+    window.Android.openExternalLink(url)
+  } else {
+    window.open(url, '_blank', 'noreferrer')
+  }
+}
+
+/**
+ * Opens video or playlist in Android external player or Electron external player.
+ * @param {{ videoId?: string | null, title?: string | null, mediaUrl?: string | null, mediaMimeType?: string | null, manifestUrl?: string | null, externalHeaders?: Record<string, string> | null, externalStreams?: object | null, maxQuality?: number | null, pending?: boolean, playlistId?: string | null, startTime?: number | null, playbackRate?: number | null, playlistIndex?: number | null, playlistReverse?: boolean | null, playlistShuffle?: boolean | null, playlistLoop?: boolean | null }} payload
+ */
+export function openExternalPlayer(payload) {
+  if (process.env.IS_ANDROID && typeof window.Android?.openExternalPlayer === 'function') {
+    console.warn('[ExternalPlayer] bridge-entry', JSON.stringify({
+      hasVideoId: typeof payload.videoId === 'string',
+      hasMediaUrl: typeof payload.mediaUrl === 'string',
+      hasManifestUrl: typeof payload.manifestUrl === 'string',
+      hasExternalStreams: Boolean(payload.externalStreams)
+    }))
+    const videoId = typeof payload.videoId === 'string' ? encodeURIComponent(payload.videoId) : null
+    const playlistId = typeof payload.playlistId === 'string' ? encodeURIComponent(payload.playlistId) : null
+
+    if (!videoId && !playlistId) return
+
+    let url = typeof payload.mediaUrl === 'string' && /^https?:\/\//.test(payload.mediaUrl)
+      ? payload.mediaUrl
+      : videoId
+        ? `https://www.youtube.com/watch?v=${videoId}`
+        : `https://www.youtube.com/playlist?list=${playlistId}`
+
+    if (!payload.mediaUrl && videoId && playlistId) url += `&list=${playlistId}`
+    if (!payload.mediaUrl && videoId && typeof payload.startTime === 'number' && payload.startTime > 0) {
+      url += `&t=${Math.floor(payload.startTime)}`
+    }
+
+    return window.Android.openExternalPlayer(
+      url,
+      payload.externalHeaders ? JSON.stringify(payload.externalHeaders) : null,
+      payload.manifestUrl ?? null,
+      payload.maxQuality ?? null,
+      payload.externalStreams ? JSON.stringify(payload.externalStreams) : null,
+      payload.mediaMimeType ?? null,
+      payload.title ?? null,
+      payload.pending === true
+    )
+  } else if (process.env.IS_ELECTRON) {
+    window.ftElectron.openInExternalPlayer(payload)
+  }
+}
+
+/**
+ * Updates pending Android external player request with resolved media data.
+ * @param {string} relayUrl
+ * @param {{ mediaUrl?: string | null, manifestUrl?: string | null, externalHeaders?: Record<string, string> | null, externalStreams?: object | null, maxQuality?: number | null }} payload
+ */
+export function updateExternalPlayer(relayUrl, payload) {
+  if (process.env.IS_ANDROID && typeof window.Android?.updateExternalPlayer === 'function' && relayUrl) {
+    window.Android.updateExternalPlayer(
+      relayUrl,
+      payload.mediaUrl ?? null,
+      payload.externalHeaders ? JSON.stringify(payload.externalHeaders) : null,
+      payload.manifestUrl ?? null,
+      payload.maxQuality ?? null,
+      payload.externalStreams ? JSON.stringify(payload.externalStreams) : null
+    )
+  }
+}
+
+/**
+ * Opens native Android sharesheet or copies sharing behavior to external link fallback.
+ * @param {string} text
+ */
+export function shareText(text) {
+  if (process.env.IS_ANDROID && typeof window.Android?.shareText === 'function') {
+    window.Android.shareText(text)
+  } else if (navigator.share) {
+    navigator.share({ text }).catch(() => {})
+  } else {
+    copyToClipboard(text)
+  }
 }
 
 /**
@@ -302,11 +383,17 @@ export async function readFileWithPicker(
 ) {
   let file
 
+  if (process.env.IS_ANDROID && typeof window.Android?.requestOpenDialog === 'function') {
+    const response = await requestOpenDialog(Object.keys(acceptedTypes))
+    if (response.canceled) return null
+    return { content: await response.text(), filename: response.name }
+  }
+
   // Only supported in Electron and desktop Chromium browsers
   // https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker#browser_compatibility
   // As we know it is supported in Electron, adding the build flag means we can skip the runtime check in Electron
   // and allow terser to remove the unused else block
-  if (process.env.IS_ELECTRON || 'showOpenFilePicker' in window) {
+  if (process.env.IS_ELECTRON || typeof window.showOpenFilePicker === 'function') {
     try {
       /** @type {FileSystemFileHandle[]} */
       const [handle] = await window.showOpenFilePicker({
@@ -390,11 +477,19 @@ export async function writeFileWithPicker(
   rememberDirectoryId,
   startInDirectory
 ) {
+  if (process.env.IS_ANDROID && typeof window.Android?.requestSaveDialog === 'function') {
+    if (content instanceof Blob) content = await content.text()
+    const response = await requestSaveDialog(fileName, mimeType)
+    if (response.canceled) return false
+    await writeFile(response.uri, content)
+    return true
+  }
+
   // Only supported in Electron and desktop Chromium browsers
   // https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker#browser_compatibility
   // As we know it is supported in Electron, adding the build flag means we can skip the runtime check in Electron
   // and allow terser to remove the unused else block
-  if (process.env.IS_ELECTRON || 'showSaveFilePicker' in window) {
+  if (process.env.IS_ELECTRON || typeof window.showSaveFilePicker === 'function') {
     let writableFileStream
 
     try {

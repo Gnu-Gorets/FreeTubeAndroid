@@ -2,6 +2,38 @@
   <FtSettingsSection
     :title="$t('Settings.Data Settings.Data Settings')"
   >
+    <template v-if="usingAndroid">
+      <h4 class="groupTitle data-directory-heading">
+        {{ $t('Settings.Data Settings.Data Directory') }}
+      </h4>
+      <FtFlexBox class="dataSettingsBox">
+        <FtButton
+          :label="$t('Settings.Data Settings.Select Data Directory')"
+          test-id="data-select-directory"
+          @click="selectDirectory"
+        />
+        <FtButton
+          :label="$t('Settings.Data Settings.Reset Data Directory')"
+          test-id="data-reset-directory"
+          @click="resetDirectory"
+        />
+        <FtToggleSwitch
+          :label="$t('Settings.Data Settings.Copy Data Files When Moving')"
+          :compact="true"
+          :default-value="shouldCopyDataFilesWhenMoving"
+          :tooltip="$t('Settings.Data Settings.Copy Data Files When Moving Tooltip')"
+          @change="toggleCopyDataDir"
+        />
+      </FtFlexBox>
+      <FtFlexBox>
+        <p>
+          {{ $t('Settings.Data Settings.Data Is Currently Stored In') }}
+        </p>
+        <p class="data-directory">
+          {{ dataDirectory }}
+        </p>
+      </FtFlexBox>
+    </template>
     <h4 class="groupTitle">
       {{ $t('Subscriptions.Subscriptions') }}
     </h4>
@@ -49,6 +81,7 @@
       />
       <FtButton
         :label="$t('Settings.Data Settings.Export Playlists')"
+        test-id="data-export-playlists"
         @click="exportPlaylists"
       />
     </FtFlexBox>
@@ -116,12 +149,14 @@ import FtButton from '../FtButton/FtButton.vue'
 import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import FtSettingsSection from '../FtSettingsSection/FtSettingsSection.vue'
+import FtToggleSwitch from '../FtToggleSwitch/FtToggleSwitch.vue'
 import FtTooltip from '../FtTooltip/FtTooltip.vue'
 
 import store from '../../store/index'
 import { defaultUpdaterId, NON_TRANSFERABLE_SETTINGS } from '../../store/modules/settings'
 
 import { MAIN_PROFILE_ID } from '../../../constants'
+import { handleAmbigiousContent } from '../../helpers/android/utils'
 import { calculateColorLuminance, getRandomColor } from '../../helpers/colors'
 import {
   deepCopy,
@@ -133,6 +168,9 @@ import {
 } from '../../helpers/utils'
 import { processToBeAddedPlaylistVideo } from '../../helpers/playlists'
 
+import android from 'android'
+import { DATA_DIRECTORY, getCurrentDataDirectory, selectDataDirectory } from '../../helpers/android/storage'
+
 const IMPORT_DIRECTORY_ID = 'data-settings-import'
 const START_IN_DIRECTORY = 'downloads'
 
@@ -141,6 +179,42 @@ const router = useRouter()
 
 function openProfileSettings() {
   router.push('/settings/profile')
+}
+
+const usingAndroid = process.env.IS_ANDROID
+const shouldCopyDataFilesWhenMoving = ref(false)
+const dataDirectory = ref(usingAndroid ? android.getDirectory(DATA_DIRECTORY) : '')
+
+function toggleCopyDataDir() {
+  shouldCopyDataFilesWhenMoving.value = !shouldCopyDataFilesWhenMoving.value
+}
+
+async function selectDirectory() {
+  try {
+    const uri = await selectDataDirectory(shouldCopyDataFilesWhenMoving.value)
+    if (uri !== undefined && uri !== null) dataDirectory.value = uri
+    showToast(t('Settings.Data Settings.Your data directory has been moved successfully'))
+  } catch (error) {
+    console.error(error)
+    showToast(t('Settings.Data Settings.Error moving data directory'))
+  }
+}
+
+async function resetDirectory() {
+  try {
+    const uri = await selectDataDirectory(shouldCopyDataFilesWhenMoving.value, true)
+    if (uri !== undefined && uri !== null) dataDirectory.value = uri
+    showToast(t('Settings.Data Settings.Your data directory has been moved successfully'))
+  } catch (error) {
+    console.error(error)
+    showToast(t('Settings.Data Settings.Error moving data directory'))
+  }
+}
+
+if (usingAndroid) {
+  getCurrentDataDirectory().then(({ uri }) => {
+    if (uri !== DATA_DIRECTORY) dataDirectory.value = uri
+  })
 }
 
 /**
@@ -205,6 +279,7 @@ const exportSubscriptionsPromptNames = computed(() => {
 
 const profileList = computed(() => store.getters.getProfileList)
 const primaryProfile = computed(() => deepCopy(profileList.value[0]))
+const primarySubscriptions = computed(() => profileList.value[0]?.subscriptions ?? [])
 
 // #region subscriptions import
 
@@ -232,16 +307,27 @@ async function importSubscriptions() {
     return
   }
 
-  const { filename, content } = response
+  let { filename, content } = response
+  if (usingAndroid) {
+    filename = handleAmbigiousContent(content, filename)
+  }
+  console.warn(`[Import] file=${filename} bytes=${content.length}`)
 
   if (filename.endsWith('.csv')) {
     importCsvYouTubeSubscriptions(content)
   } else if (filename.endsWith('.db')) {
-    importFreeTubeSubscriptions(content)
+    await importFreeTubeSubscriptions(content)
+    store.dispatch('updateActiveProfile', MAIN_PROFILE_ID)
   } else if (filename.endsWith('.opml') || filename.endsWith('.xml')) {
     importOpmlYouTubeSubscriptions(content)
   } else if (filename.endsWith('.json')) {
-    const jsonContent = JSON.parse(content)
+    let jsonContent
+    try {
+      jsonContent = JSON.parse(content)
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Invalid subscriptions file')}: ${error}`)
+      return
+    }
     if (jsonContent.subscriptions) {
       importNewPipeSubscriptions(jsonContent)
     } else {
@@ -305,12 +391,15 @@ function convertOldFreeTubeFormatToNew(oldData) {
 /**
  * @param {string} textDecode
  */
-function importFreeTubeSubscriptions(textDecode) {
-  textDecode = textDecode.split('\n')
-  textDecode.pop()
-  textDecode = textDecode.map(data => JSON.parse(data))
+async function importFreeTubeSubscriptions(textDecode) {
+  textDecode = textDecode
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(data => JSON.parse(data))
 
   const firstEntry = textDecode[0]
+  if (!firstEntry) return
   if (firstEntry.channelId && firstEntry.channelName && firstEntry.channelThumbnail && firstEntry._id && firstEntry.profile) {
     // Old FreeTube subscriptions format detected, so convert it to the new one:
     textDecode = convertOldFreeTubeFormatToNew(textDecode)
@@ -324,7 +413,7 @@ function importFreeTubeSubscriptions(textDecode) {
     'subscriptions'
   ]
 
-  textDecode.forEach((profileData) => {
+  for (const profileData of textDecode) {
     // We would technically already be done by the time the data is parsed,
     // however we want to limit the possibility of malicious data being sent
     // to the app, so we'll only grab the data we need here.
@@ -352,7 +441,7 @@ function importFreeTubeSubscriptions(textDecode) {
 
           return profileIndex === index
         })
-        store.dispatch('updateProfile', primaryProfile.value)
+        await store.dispatch('updateProfile', primaryProfile.value)
       } else {
         const existingProfileIndex = profileList.value.findIndex((profile) => {
           return profile.name.includes(profileObject.name)
@@ -368,9 +457,9 @@ function importFreeTubeSubscriptions(textDecode) {
 
             return profileIndex === index
           })
-          store.dispatch('updateProfile', existingProfile)
+          await store.dispatch('updateProfile', existingProfile)
         } else {
-          store.dispatch('updateProfile', profileObject)
+          await store.dispatch('updateProfile', profileObject)
         }
 
         primaryProfile.value.subscriptions = primaryProfile.value.subscriptions.concat(profileObject.subscriptions)
@@ -381,11 +470,12 @@ function importFreeTubeSubscriptions(textDecode) {
 
           return profileIndex === index
         })
-        store.dispatch('updateProfile', primaryProfile.value)
+        await store.dispatch('updateProfile', primaryProfile.value)
       }
     }
-  })
+  }
 
+  await store.dispatch('grabAllProfiles')
   showToast(t('Settings.Data Settings.All subscriptions and profiles have been successfully imported'))
 }
 
@@ -649,7 +739,7 @@ async function exportYouTubeSubscriptions() {
   const dateStr = getTodayDateStrLocalTimezone()
   const exportFileName = 'youtube-subscriptions-' + dateStr + '.json'
 
-  const subscriptionsObject = profileList.value[0].subscriptions.map((channel) => {
+  const subscriptionsObject = primarySubscriptions.value.map((channel) => {
     const object = {
       contentDetails: {
         activityType: 'all',
@@ -701,7 +791,7 @@ async function exportOpmlYouTubeSubscriptions() {
 
   let opmlData = '<opml version="1.1"><body><outline text="YouTube Subscriptions" title="YouTube Subscriptions">'
 
-  profileList.value[0].subscriptions.forEach((channel) => {
+  primarySubscriptions.value.forEach((channel) => {
     const escapedName = escapeHTML(channel.name)
 
     const channelOpmlString = `<outline text="${escapedName}" title="${escapedName}" type="rss" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=${channel.id}"/>`
@@ -725,7 +815,7 @@ async function exportCsvYouTubeSubscriptions() {
   const exportFileName = 'youtube-subscriptions-' + dateStr + '.csv'
 
   let exportText = 'Channel ID,Channel URL,Channel title\n'
-  profileList.value[0].subscriptions.forEach((channel) => {
+  primarySubscriptions.value.forEach((channel) => {
     const channelUrl = `https://www.youtube.com/channel/${channel.id}`
 
     // always have channel name quoted to simplify things
@@ -754,7 +844,7 @@ async function exportNewPipeSubscriptions() {
     subscriptions: []
   }
 
-  profileList.value[0].subscriptions.forEach((channel) => {
+  primarySubscriptions.value.forEach((channel) => {
     const channelUrl = `https://www.youtube.com/channel/${channel.id}`
     const subscription = {
       service_id: 0,
@@ -825,7 +915,11 @@ async function importWatchHistory() {
   if (filename.endsWith('.db')) {
     importFreeTubeWatchHistory(content.split('\n'))
   } else if (filename.endsWith('.json')) {
-    importYouTubeWatchHistory(JSON.parse(content))
+    try {
+      importYouTubeWatchHistory(JSON.parse(content))
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+    }
   }
 }
 
@@ -1070,9 +1164,9 @@ async function exportYouTubeWatchHistory() {
 const allPlaylists = computed(() => store.getters.getAllPlaylists)
 
 async function importPlaylists() {
-  let response
+  let playlists
   try {
-    response = await readFileWithPicker(
+    const response = await readFileWithPicker(
       t('Settings.Data Settings.Playlist File'),
       {
         'application/x-freetube-db': '.db'
@@ -1080,34 +1174,38 @@ async function importPlaylists() {
       IMPORT_DIRECTORY_ID,
       START_IN_DIRECTORY
     )
+
+    if (response === null) {
+      return
+    }
+
+    let data = response.content
+
+    // for the sake of backwards compatibility,
+    // check if this is the old JSON array export (used until version 0.19.1),
+    // that didn't match the actual database format
+    const trimmedData = data.trim()
+
+    if (trimmedData[0] === '[' && trimmedData[trimmedData.length - 1] === ']') {
+      playlists = JSON.parse(trimmedData)
+    } else {
+      // otherwise assume this is the correct database format,
+      // which is also what we export now (used in 0.20.0 and later versions)
+      data = data.split('\n')
+      data.pop()
+
+      playlists = data.map(playlistJson => JSON.parse(playlistJson))
+    }
   } catch (err) {
+    console.error(err)
     const message = t('Settings.Data Settings.Unable to read file')
     showToast(`${message}: ${err}`)
     return
   }
 
-  if (response === null) {
+  if (!Array.isArray(playlists)) {
+    showToast(t('Settings.Data Settings.Unable to read file'))
     return
-  }
-
-  let data = response.content
-
-  let playlists
-
-  // for the sake of backwards compatibility,
-  // check if this is the old JSON array export (used until version 0.19.1),
-  // that didn't match the actual database format
-  const trimmedData = data.trim()
-
-  if (trimmedData[0] === '[' && trimmedData[trimmedData.length - 1] === ']') {
-    playlists = JSON.parse(trimmedData)
-  } else {
-    // otherwise assume this is the correct database format,
-    // which is also what we export now (used in 0.20.0 and later versions)
-    data = data.split('\n')
-    data.pop()
-
-    playlists = data.map(playlistJson => JSON.parse(playlistJson))
   }
 
   const requiredKeys = [
@@ -1136,7 +1234,7 @@ async function importPlaylists() {
     'videoCount',
   ]
 
-  const knownKeys = [...requiredKeys, ...optionalKeys, ...ignoredKeys]
+  const knownKeys = new Set([...requiredKeys, ...optionalKeys, ...ignoredKeys])
 
   const requiredVideoKeys = [
     'videoId',
@@ -1153,53 +1251,53 @@ async function importPlaylists() {
   ]
 
   const newPlaylists = []
+  let importedPlaylistCount = 0
 
-  playlists.forEach((playlistData) => {
+  for (const playlistData of playlists) {
+    if (playlistData === null || typeof playlistData !== 'object' || Array.isArray(playlistData)) {
+      showToast(t('Settings.Data Settings.Playlist insufficient data'))
+      continue
+    }
+    if (!Array.isArray(playlistData.videos)) {
+      showToast(t('Settings.Data Settings.Playlist insufficient data', { playlist: playlistData.playlistName }))
+      continue
+    }
+
     // We would technically already be done by the time the data is parsed,
     // however we want to limit the possibility of malicious data being sent
     // to the app, so we'll only grab the data we need here.
 
     const playlistObject = {}
     const videoIdToBeAddedSet = new Set()
-    let countRequiredKeysPresent = 0
 
     Object.keys(playlistData).forEach((key) => {
-      if (!knownKeys.includes(key)) {
+      if (!knownKeys.has(key)) {
         const message = `${t('Settings.Data Settings.Unknown data key')}: ${key}`
         showToast(message)
       } else if (key === 'videos') {
         const videoArray = []
         playlistData.videos.forEach((video) => {
-          const videoPropertyKeys = Object.keys(video)
-          const videoObjectHasAllRequiredKeys = requiredVideoKeys.every((k) => videoPropertyKeys.includes(k))
-
-          if (videoObjectHasAllRequiredKeys) {
+          if (video !== null && typeof video === 'object' && requiredVideoKeys.every((k) => Object.hasOwn(video, k))) {
             videoArray.push(video)
             videoIdToBeAddedSet.add(video.videoId)
           }
         })
 
         playlistObject.videos = videoArray
-
-        if (requiredKeys.includes(key)) {
-          countRequiredKeysPresent++
-        }
       } else if (!ignoredKeys.includes(key)) {
         // Do nothing for keys to be ignored
         playlistObject[key] = playlistData[key]
-
-        if (requiredKeys.includes(key)) {
-          countRequiredKeysPresent++
-        }
       }
     })
 
-    if (countRequiredKeysPresent !== requiredKeys.length) {
+    const allVideosSkipped = playlistData.videos?.length > 0 && playlistObject.videos.length === 0
+    if (!requiredKeys.every((k) => Object.hasOwn(playlistObject, k)) || allVideosSkipped) {
       const message = t('Settings.Data Settings.Playlist insufficient data', { playlist: playlistData.playlistName })
       showToast(message)
-      return
+      continue
     }
 
+    importedPlaylistCount++
     const existingPlaylist = allPlaylists.value.find((playlist) => {
       if (playlistObject._id != null && playlist._id === playlistObject._id) {
         return true
@@ -1210,7 +1308,7 @@ async function importPlaylists() {
 
     if (existingPlaylist === undefined) {
       newPlaylists.push(playlistObject)
-      return
+      continue
     }
 
     /** @type {Set<string> | undefined} */
@@ -1242,7 +1340,7 @@ async function importPlaylists() {
             return x.videoId === video.videoId && x.timeAdded === video.timeAdded
           })
         }
-      } else if (existingVideoIdSet !== undefined) {
+      } else {
         // Disallow duplicate (by videoId) videos to be added
 
         if (existingVideoIdSet.has(video.videoId)) {
@@ -1250,11 +1348,6 @@ async function importPlaylists() {
         } else {
           existingVideoIdSet.add(video.videoId)
         }
-      } else {
-        videoExists = playlistVideos.some((x) => {
-          // Disallow duplicate (by videoId) videos to be added
-          return x.videoId === video.videoId
-        })
       }
 
       if (!videoExists) {
@@ -1263,21 +1356,29 @@ async function importPlaylists() {
         playlistVideos.push(video)
       }
     })
+
     // Update playlist's `lastUpdatedAt` & other attributes
-    store.dispatch('updatePlaylist', {
+    await store.dispatch('updatePlaylist', {
       _id: existingPlaylist._id,
       // Only these attributes would be updated (besides videos)
       playlistName: playlistObject.playlistName,
       description: playlistObject.description,
       videos: playlistVideos
     })
-  })
-
-  if (newPlaylists.length > 0) {
-    store.dispatch('addPlaylists', newPlaylists)
   }
 
-  showToast(t('Settings.Data Settings.All playlists has been successfully imported'))
+  if (newPlaylists.length > 0) {
+    await store.dispatch('addPlaylists', newPlaylists)
+  }
+
+  if (importedPlaylistCount === 0) {
+    showToast(t('Settings.Data Settings.Unable to read file'))
+    return
+  }
+
+  if (importedPlaylistCount > 0) {
+    showToast(t('Settings.Data Settings.Playlists have been successfully imported', { count: importedPlaylistCount, total: playlists.length }, importedPlaylistCount))
+  }
 }
 
 async function exportPlaylists() {
@@ -1334,7 +1435,11 @@ async function importSearchHistory() {
   if (filename.endsWith('.db')) {
     importFreeTubeSearchHistory(content.split('\n'))
   } else if (filename.endsWith('.json')) {
-    importYouTubeSearchHistory(JSON.parse(content))
+    try {
+      importYouTubeSearchHistory(JSON.parse(content))
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+    }
   }
 }
 
@@ -1510,19 +1615,31 @@ async function importSettings() {
     return
   }
 
-  const textDecode = response.content.split('\n')
-  textDecode.pop()
+  const entries = response.content.split('\n').filter(Boolean).flatMap((rawEntry) => {
+    try {
+      return [JSON.parse(rawEntry)]
+    } catch (error) {
+      showToast(`${t('Settings.Data Settings.Unable to read file')}: ${error}`)
+      return []
+    }
+  })
+
+  // Original Android exports store scale in separate Android-only settings.
+  const useAndroidScale = entries.find(({ _id }) => _id === 'useUiScale')?.value === true
+  const androidScale = entries.find(({ _id }) => _id === 'uiScaleAndroid')?.value
+  const importedEntries = entries.filter(({ _id }) => _id !== 'uiScaleAndroid' && _id !== 'useUiScale')
+  if (useAndroidScale && typeof androidScale === 'number') {
+    importedEntries.push({ _id: 'uiScale', value: androidScale })
+  }
 
   const currentSettings = store.state.settings
 
-  textDecode.forEach((rawEntry) => {
-    const entry = JSON.parse(rawEntry)
+  for (const entry of importedEntries) {
     if (typeof entry._id !== 'string' || !Object.hasOwn(entry, 'value')) {
       showToast(t('Settings.Data Settings.Setting object has insufficient data, skipping item'))
       console.error('Missing keys:', entry)
     } else if (!Object.hasOwn(currentSettings, entry._id)) {
-      const message = t('Settings.Data Settings.Unknown setting key', { key: entry._id })
-      showToast(message)
+      console.warn('Skipping unknown setting key:', entry._id)
     } else if (NON_TRANSFERABLE_SETTINGS.has(entry._id)) {
       const message = t('Settings.Data Settings.Non-transferable setting key', { key: entry._id })
       showToast(message)
@@ -1532,10 +1649,10 @@ async function importSettings() {
         (typeof entry.value === 'object' && JSON.stringify(currentValue) === JSON.stringify(entry.value))
       if (!areValuesEqual) {
         const updaterId = defaultUpdaterId(entry._id)
-        store.dispatch(updaterId, entry.value)
+        await store.dispatch(updaterId, entry.value)
       }
     }
-  })
+  }
 
   showToast(t('Settings.Data Settings.All settings have been successfully imported'))
 }

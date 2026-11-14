@@ -24,6 +24,7 @@ Close: 'დახურვა'
 Back: 'უკან'
 Forward: 'წინ'
 Open New Window: 'ახალი ფანჯრის გახსნა'
+Reload: Reload
 
 Version {versionNumber} is now available!  Click for more details: 'ხელმისაწვდომია {versionNumber} ვერსია!  დააჭირეთ დამატებითი ინფორმაციისთვის'
 Download From Site: 'საიტიდან ჩამოტვირთვა'
@@ -205,7 +206,7 @@ Channel:
 Video:
   External Player: {}
 Tooltips: {}
-About:
+About: {}
 Search Listing:
   Label:
     4K: 4K
@@ -219,6 +220,6 @@ Preferences: პრეფერენციები
 Profile:
   Select All: ყველას მონიშვნა
 Search character limit: ძებნის მოთხოვნა {searchCharacterLimit}-ზე მეტ სიმბოლოს შეიცავს
-Go to page: გადადით გვერდზე
+Go to page: გადადით გვერდზე {page}
 Right-click or hold to see history: მარჯვენა ღილაკით დააწკაპუნეთ ან დააჭირეთ და გააჩერეთ ისტორიის სანახავად
 Close Banner: დახურვა ბანერის

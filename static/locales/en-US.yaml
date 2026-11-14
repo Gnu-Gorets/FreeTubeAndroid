@@ -28,6 +28,7 @@ Back: Back
 Forward: Forward
 Right-click or hold to see history: Right-click or hold to see history
 Open New Window: Open New Window
+Reload: Reload
 Go to page: Go to {page}
 Close Banner: Close Banner
 
@@ -282,6 +283,7 @@ Settings:
     Fallback to Non-Preferred Backend on Failure: Fallback to Non-Preferred Backend
       on Failure
     Enable Search Suggestions: Enable Search Suggestions
+    Use Original Video Titles: Use Original Video Titles
     Open Deep Links In New Window: Open URLs Passed to FreeTube in a New Window
     Minimize to system tray: Minimize to system tray
     Auto Load Next Page:
@@ -461,6 +463,7 @@ Settings:
     Skip by Scrolling Over Video Player: Skip by Scrolling Over Video Player
     Display Play Button In Video Player: Display Play Button In Video Player
     Enter Fullscreen on Display Rotate: Enter Fullscreen on Display Rotate
+    Fit Video to Fullscreen: Fit Video to Fullscreen
     Next Video Interval: Autoplay Countdown Timer
     Autoplay Interruption Timer: Autoplay Interruption Timer
     Fast-Forward / Rewind Interval: Fast-Forward / Rewind Interval
@@ -658,6 +661,14 @@ Settings:
     Non-transferable setting key: 'Non-transferable setting key: {key}'
     How do I import my subscriptions?: How do I import my subscriptions?
     Manage Subscriptions: Manage Subscriptions
+    Data Directory: Data Directory
+    Select Data Directory: Select Data Directory
+    Reset Data Directory: Reset Data Directory
+    Copy Data Files When Moving: Copy Data Files When Moving
+    Copy Data Files When Moving Tooltip: Copy existing data files to new directory
+    Data Is Currently Stored In: Data is currently stored in
+    Your data directory has been moved successfully: Your data directory has been moved successfully
+    Error moving data directory: Error moving data directory
   Proxy Settings:
     Proxy Settings: Proxy
     Proxy Warning: FreeTube doesn't have a built-in proxy but can connect to an external proxy, such as one running on your machine like Tor or an external proxy such-as a SOCKS5 proxy provided by some VPNs. If enabled, make sure your proxy/Tor is configured properly, or FreeTube won't be able to fetch any data.
@@ -1012,6 +1023,50 @@ Playlist:
 # On Video Watch Page
 #* Published
 #& Views
+Downloads:
+  Downloads: Downloads
+  Download: Download
+  Type: Download type
+  Video: Video
+  Audio: Audio
+  Format: Format
+  Video format: Video format
+  Audio format: Audio format
+  Download subtitles: Download subtitles
+  Audio format is not available: Audio format is not available
+  ETA: Remaining
+  LabelSeparator: ':'
+  PerSecond: /s
+  Share: Share
+  Empty: No downloads yet
+  Active: Active
+  Post processing: Post-processing
+  Paused: Paused
+  Completed: Completed
+  Failed: Failed
+  Canceled: Canceled
+  Missing: File missing
+  Pause: Pause
+  Resume: Resume
+  Cancel: Cancel
+  Retry: Retry
+  Open: Open
+  Source: Source video
+  Delete: Delete
+  Settings: Download settings
+  Wi-Fi only: Wi-Fi only
+  Concurrent downloads: Concurrent downloads
+  Threads: Threads
+  Threads description: Streams which are not yet supported by the downloader are not shown
+  Audio language: Audio language
+  Original audio: Original audio
+  Default video format: Default video format
+  Default audio format: Default audio format
+  Select directory: Select downloads directory
+  Reset directory permission: Reset downloads directory permission
+  Prefer local files: Prefer downloaded files for playback
+  Play all: Play all downloaded videos
+
 Change Format:
   Change Media Formats: Change Media Formats
   Use Dash Formats: Use DASH Formats
@@ -1028,6 +1083,7 @@ Share:
   Share Post: Share Post
   Share Channel: Share Channel
   Share Playlist: Share Playlist
+  Share via Android: Share via Android
   Include Timestamp: Include Timestamp
   Copy Link: Copy Link
   Open Link: Open Link
@@ -1108,6 +1164,7 @@ Tooltips:
       the playback rate. Press and hold the Control key (Command Key on Mac) and left click the mouse
       to quickly return to the default playback rate (1x unless it has been changed in the settings).
     Skip by Scrolling Over Video Player: Use the scroll wheel to skip through the video, MPV style.
+    Fit Video to Fullscreen: Fill fullscreen with video and crop edges to preserve its aspect ratio.
   External Player Settings:
     External Player: Choosing an external player will display an icon, for opening the
       video (playlist if supported) in the external player, on the thumbnail. Warning, Invidious settings do not affect external players.

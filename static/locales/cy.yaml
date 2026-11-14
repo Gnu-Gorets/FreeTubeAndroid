@@ -25,6 +25,7 @@ Close: 'Cau'
 Back: 'Nôl'
 Forward: 'Ymlaen'
 Open New Window: 'Agor Ffenestr Newydd'
+Reload: Reload
 Go to page: 'Mynd i {page}'
 
 Version {versionNumber} is now available!  Click for more details: 'Mae Fersiwn {versionNumber} bellach ar gael!  Cliciwch am fwy o manylion'
@@ -237,6 +238,7 @@ Settings:
     Check for Updates: 'Chwilio am Ddiweddariadau'
     Fallback to Non-Preferred Backend on Failure: 'Nôl i''r Cefn Diddewis ar Fethiant'
     Enable Search Suggestions: 'Galluogi Awgrymiadau Chwilio'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Tudalen Glanio Ragosodedig'
     Locale Preference: 'Dewis Iaith'
     System Default: 'Rhagosodiad y System'

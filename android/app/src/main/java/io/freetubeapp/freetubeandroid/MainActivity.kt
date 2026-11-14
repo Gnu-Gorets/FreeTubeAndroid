@@ -1,0 +1,756 @@
+package io.freetubeapp.freetubeandroid
+
+import android.app.Activity
+import android.graphics.Color
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.app.PictureInPictureParams
+import android.app.PendingIntent
+import android.app.RemoteAction
+import android.content.res.Configuration
+import android.graphics.Rect
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.util.Rational
+import android.os.Bundle
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.core.view.ViewCompat
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import org.json.JSONArray
+import org.json.JSONObject
+
+class MainActivity : Activity() {
+    companion object {
+        val consoleMessages = java.util.concurrent.CopyOnWriteArrayList<String>()
+        const val CREATE_FILE_REQUEST = 1001
+        const val OPEN_FILE_REQUEST = 1002
+        const val DIRECTORY_REQUEST = 1003
+        const val OPEN_DOWNLOADS_EXTRA = "open_downloads"
+        const val ENTER_PIP_SCRIPT = """
+            (() => {
+              const player = document.querySelector('.ftVideoPlayer');
+              if (!player) return;
+              window.__ftPipStyles = [];
+              let node = player;
+              while (node && node !== document.body) {
+                for (const sibling of node.parentElement.children) {
+                  if (sibling !== node) {
+                    window.__ftPipStyles.push([sibling, sibling.getAttribute('style')]);
+                    sibling.style.display = 'none';
+                  }
+                }
+                window.__ftPipStyles.push([node, node.getAttribute('style')]);
+                node.style.display = node === player ? 'block' : 'contents';
+                node = node.parentElement;
+              }
+              window.__ftPipStyles.push([player, player.getAttribute('style')]);
+              player.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important;overflow:hidden!important;background:#000!important;';
+              const video = player.querySelector('video');
+              if (video) {
+                for (const sibling of player.children) {
+                  if (sibling !== video) {
+                    window.__ftPipStyles.push([sibling, sibling.getAttribute('style')]);
+                    sibling.style.display = 'none';
+                  }
+                }
+                window.__ftPipStyles.push([video, video.getAttribute('style')]);
+                video.style.cssText += ';position:fixed!important;inset:0!important;left:-12.5%!important;width:125%!important;height:100vh!important;object-fit:cover!important;';
+              }
+              window.__ftRestorePictureInPicture = () => {
+                for (const [element, style] of window.__ftPipStyles || []) {
+                  if (style === null) element.removeAttribute('style');
+                  else element.setAttribute('style', style);
+                }
+                window.__ftPipStyles = null;
+              };
+            })();
+        """
+        const val EXIT_PIP_SCRIPT = "window.__ftRestorePictureInPicture?.()"
+    }
+
+    private lateinit var webView: WebView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var androidBridge: AndroidBridge
+    private var pendingDeepLink: Intent? = null
+    private var reloadSmokePending = false
+    private var webAppReady = false
+
+    @Suppress("DEPRECATION")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        setContentView(R.layout.activity_main)
+
+        webView = findViewById(R.id.webView)
+        webView.setBackgroundColor(Color.rgb(16, 16, 16))
+        swipeRefresh = findViewById(R.id.swipeRefresh)
+        swipeRefresh.setOnRefreshListener { webView.reload() }
+        ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
+            val safeInsets = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val params = view.layoutParams as ViewGroup.MarginLayoutParams
+            params.setMargins(safeInsets.left, safeInsets.top, safeInsets.right, safeInsets.bottom)
+            view.layoutParams = params
+            view.setPadding(0, 0, 0, 0)
+            insets
+        }
+        pendingDeepLink = intent
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                webAppReady = false
+                if (reloadSmokePending) {
+                    reloadSmokePending = false
+                    Log.i("FreeTubeSmoke", "SMOKE_RELOAD_TEST:PASS")
+                }
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                swipeRefresh.isRefreshing = false
+            }
+
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): android.webkit.WebResourceResponse? {
+                if (request == null || request.isForMainFrame) return null
+                return try {
+                    val response = androidBridge.captionTransport.fetch(
+                        request.method, request.url.toString(), request.requestHeaders
+                    ) ?: return null
+                    android.webkit.WebResourceResponse(
+                        response.headers["Content-Type"]?.substringBefore(';') ?: "application/octet-stream",
+                        null, response.status, response.reason, response.headers, response.body
+                    )
+                } catch (error: Exception) {
+                    Log.w("FreeTubeCaptions", "Caption transport failed: ${error.javaClass.simpleName}")
+                    android.webkit.WebResourceResponse(
+                        "text/plain", "utf-8", 502, "Caption request failed",
+                        mapOf("Access-Control-Allow-Origin" to "*"),
+                        java.io.ByteArrayInputStream(byteArrayOf())
+                    )
+                }
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): Boolean {
+                val uri = request?.url ?: return false
+                if (request.isForMainFrame && uri.scheme in setOf("http", "https")) {
+                    androidBridge.openExternalLink(uri.toString())
+                    return true
+                }
+                return false
+            }
+        }
+        var fullscreenView: View? = null
+        val root = findViewById<ViewGroup>(android.R.id.content)
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                if (fullscreenView != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                fullscreenView = view
+                root.addView(view)
+                (view.layoutParams as? ViewGroup.MarginLayoutParams)?.setMargins(0, 0, 0, 0)
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+
+            override fun onHideCustomView() {
+                fullscreenView?.let {
+                    ViewCompat.setOnApplyWindowInsetsListener(it, null)
+                    root.removeView(it)
+                }
+                fullscreenView = null
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
+
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                val entry = JSONObject().apply {
+                    put("message", message.message())
+                    put("source", message.sourceId())
+                    put("line", message.lineNumber())
+                    put("level", message.messageLevel())
+                }.toString()
+                consoleMessages.add(entry)
+                Log.d("FreeTubeWebView", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                return true
+            }
+        }
+        window.attributes.layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        @Suppress("DEPRECATION")
+        webView.settings.allowUniversalAccessFromFileURLs = true
+        @Suppress("DEPRECATION")
+        webView.settings.allowFileAccessFromFileURLs = true
+        webView.settings.mediaPlaybackRequiresUserGesture = false
+        androidBridge = AndroidBridge(this, webView, webView.parent as ViewGroup) { enabled ->
+            swipeRefresh.isEnabled = enabled
+        }
+        webView.addJavascriptInterface(androidBridge, "Android")
+        webView.loadUrl("file:///android_asset/index.html")
+    }
+
+    fun onWebAppReady() {
+        runOnUiThread {
+            webAppReady = true
+            if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) {
+                intent?.removeExtra(OPEN_DOWNLOADS_EXTRA)
+                webView.evaluateJavascript("window.location.hash = '#/downloads'", null)
+            }
+            pendingDeepLink?.let {
+                dispatchDeepLink(it)
+                pendingDeepLink = null
+            }
+        }
+    }
+
+    private fun dispatchDeepLink(intent: Intent?) {
+        val url = intent?.data?.toString() ?: return
+        val event = JSONObject.quote(url)
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('youtube-link', { detail: { link: $event } }))",
+            null
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            CREATE_FILE_REQUEST -> androidBridge.finishSaveFile(resultCode, data?.data)
+            OPEN_FILE_REQUEST -> androidBridge.finishOpenFile(resultCode, data?.data)
+            DIRECTORY_REQUEST -> androidBridge.finishDirectoryAccess(resultCode, data?.data)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.i("FreeTubeLifecycle", "onPause")
+        if (!isInPictureInPictureMode) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('app-pause'))", null)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.i("FreeTubeLifecycle", "onResume")
+        if (!isInPictureInPictureMode) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('app-resume'))", null)
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        swipeRefresh.isEnabled = !isInPictureInPictureMode
+        webView.evaluateJavascript(
+            if (isInPictureInPictureMode) ENTER_PIP_SCRIPT else EXIT_PIP_SCRIPT,
+            null
+        )
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('android-pip', { detail: { active: $isInPictureInPictureMode } }))",
+            null
+        )
+    }
+
+    fun enterPictureInPicture(isPlaying: Boolean): Boolean {
+        if (isInPictureInPictureMode) return false
+        updatePictureInPictureAction(isPlaying)
+        return enterPictureInPictureMode(pictureInPictureParams(isPlaying))
+    }
+
+    fun updatePictureInPictureAction(isPlaying: Boolean) {
+        if (isInPictureInPictureMode) {
+            setPictureInPictureParams(pictureInPictureParams(isPlaying))
+        }
+    }
+
+    private fun pictureInPictureParams(isPlaying: Boolean): PictureInPictureParams {
+        val sourceRect = Rect()
+        webView.getGlobalVisibleRect(sourceRect)
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setSourceRectHint(sourceRect)
+            .setActions(pictureInPictureActions(isPlaying))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
+    }
+
+    private fun pictureInPictureActions(isPlaying: Boolean): List<RemoteAction> {
+        val toggleIntent = PendingIntent.getBroadcast(
+            this,
+            3001,
+            Intent(this, MediaControlsReceiver::class.java).setAction("PIP_PLAY_PAUSE"),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return listOf(
+            RemoteAction(
+                Icon.createWithResource(
+                    this,
+                    if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+                ),
+                if (isPlaying) "Pause" else "Play",
+                if (isPlaying) "Pause video" else "Play video",
+                toggleIntent
+            )
+        )
+    }
+
+    override fun onDestroy() {
+        Log.i("FreeTubeLifecycle", "onDestroy finishing=$isFinishing changingConfigurations=$isChangingConfigurations")
+        androidBridge.dispose()
+        androidBridge.cancelMediaNotification()
+        androidBridge.closeCaptionTransport()
+        webView.destroy()
+        super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.getBooleanExtra(OPEN_DOWNLOADS_EXTRA, false) == true) {
+            setIntent(intent)
+            if (webAppReady) onWebAppReady()
+        }
+        when (intent?.action) {
+            "MEDIA_PLAY" -> webView.evaluateJavascript("document.querySelector('video')?.play()", null)
+            "MEDIA_PAUSE" -> webView.evaluateJavascript("document.querySelector('video')?.pause()", null)
+            "io.freetubeapp.freetubeandroid.TEST_SETTINGS_SORT" -> {
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    runSettingsSortTest()
+                }
+            }
+            "io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION" -> {
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    val action = intent?.getStringExtra("action")
+                    if (action == "fullscreen") runFullscreenSmokeAction()
+                    else if (action == "long_press") runLongPressSmokeAction()
+                    else if (action == "reload") runReloadSmokeAction()
+                    else runSmokeAction(action, intent?.getStringExtra("query"))
+                }
+            }
+            Intent.ACTION_VIEW -> {
+                pendingDeepLink = intent
+                if (webAppReady) onWebAppReady()
+            }
+        }
+    }
+
+    private fun runReloadSmokeAction() {
+        if (reloadSmokePending) {
+            Log.i("FreeTubeSmoke", "SMOKE_RELOAD_TEST:FAIL:already-pending")
+            return
+        }
+        reloadSmokePending = true
+        swipeRefresh.post {
+            val width = swipeRefresh.width.toFloat()
+            val height = swipeRefresh.height.toFloat()
+            val x = width / 2
+            val startY = height * 0.2f
+            val endY = height * 0.7f
+            val start = android.os.SystemClock.uptimeMillis()
+            val down = MotionEvent.obtain(start, start, MotionEvent.ACTION_DOWN, x, startY, 0)
+            swipeRefresh.dispatchTouchEvent(down)
+            down.recycle()
+            for (step in 1..5) {
+                val eventTime = start + step * 100L
+                val y = startY + (endY - startY) * step / 5
+                val move = MotionEvent.obtain(start, eventTime, MotionEvent.ACTION_MOVE, x, y, 0)
+                swipeRefresh.dispatchTouchEvent(move)
+                move.recycle()
+            }
+            val up = MotionEvent.obtain(start, start + 600L, MotionEvent.ACTION_UP, x, endY, 0)
+            swipeRefresh.dispatchTouchEvent(up)
+            up.recycle()
+            swipeRefresh.postDelayed({
+                if (reloadSmokePending) {
+                    reloadSmokePending = false
+                    Log.i("FreeTubeSmoke", "SMOKE_RELOAD_TEST:FAIL:gesture-not-triggered")
+                }
+            }, 5000)
+        }
+    }
+
+    private fun runLongPressSmokeAction() {
+        webView.evaluateJavascript(
+            """
+            (() => {
+              const video = document.querySelector('video');
+              const target = document.querySelector('.shaka-spacer, .shaka-controls-container');
+              if (!video || !target || video.paused) return '';
+              const rect = target.getBoundingClientRect();
+              return [rect.left + rect.width / 2, rect.top + rect.height / 2, video.playbackRate].join(',');
+            })();
+            """.trimIndent()
+        ) { rawPoint ->
+            val point = rawPoint.trim('"').split(',').mapNotNull { it.toFloatOrNull() }
+            if (point.size != 3) {
+                Log.i("FreeTubeSmoke", "SMOKE_LONG_PRESS_TEST:FAIL:control-not-found")
+                return@evaluateJavascript
+            }
+            webView.post {
+                val now = android.os.SystemClock.uptimeMillis()
+                val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, point[0], point[1], 0)
+                webView.dispatchTouchEvent(down)
+                down.recycle()
+                webView.postDelayed({
+                    webView.evaluateJavascript("document.querySelector('video')?.playbackRate || 0") { rate ->
+                        val accelerated = rate.trim('"').toFloatOrNull()?.let { it > point[2] } == true
+                        val upTime = android.os.SystemClock.uptimeMillis()
+                        val up = MotionEvent.obtain(upTime, upTime, MotionEvent.ACTION_UP, point[0], point[1], 0)
+                        webView.dispatchTouchEvent(up)
+                        up.recycle()
+                        webView.postDelayed({
+                            webView.evaluateJavascript("document.querySelector('video')?.playbackRate || 0") { restoredRate ->
+                                val restored = restoredRate.trim('"').toFloatOrNull() == point[2]
+                                Log.i("FreeTubeSmoke", "SMOKE_LONG_PRESS_TEST:${if (accelerated && restored) "PASS" else "FAIL"}:accelerated=$accelerated,restored=$restored")
+                            }
+                        }, 300)
+                    }
+                }, 700)
+            }
+        }
+    }
+
+    private fun runFullscreenSmokeAction() {
+        webView.evaluateJavascript(
+            """
+            (() => {
+              const button = document.querySelector('.shaka-fullscreen-button');
+              if (!button) return '';
+              const rect = button.getBoundingClientRect();
+              return (rect.left + rect.width / 2) + ',' + (rect.top + rect.height / 2);
+            })();
+            """.trimIndent()
+        ) { rawPoint ->
+            val point = rawPoint.trim('"').split(',').mapNotNull { it.toFloatOrNull() }
+            if (point.size != 2) {
+                Log.i("FreeTubeSmoke", "SMOKE_FULLSCREEN_TEST:FAIL:control-not-found")
+                return@evaluateJavascript
+            }
+            webView.post {
+                val now = android.os.SystemClock.uptimeMillis()
+                val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, point[0], point[1], 0)
+                val up = MotionEvent.obtain(now, now + 50, MotionEvent.ACTION_UP, point[0], point[1], 0)
+                webView.dispatchTouchEvent(down)
+                webView.dispatchTouchEvent(up)
+                down.recycle()
+                up.recycle()
+                webView.postDelayed({
+                    webView.evaluateJavascript(
+                        "document.fullscreenElement ? 'PASS' : 'FAIL'"
+                    ) { result ->
+                        Log.i("FreeTubeSmoke", "SMOKE_FULLSCREEN_TEST:${result.trim('"')}")
+                    }
+                }, 1000)
+            }
+        }
+    }
+
+    private fun runSmokeAction(action: String?, query: String?) {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player") {
+            Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
+            return
+        }
+        val value = JSONObject.quote(query ?: "linux")
+        webView.evaluateJavascript(
+            """
+            (() => {
+              const value = $value;
+              if ('$action' === 'external_player') {
+                const parts = value.split('|');
+                const index = Number(parts[0]);
+                const playerPackage = parts[1];
+                let attempts = 0;
+                const open = () => {
+                  const cards = [...document.querySelectorAll('.ft-list-video')];
+                  const button = cards[index]?.querySelector('.externalPlayerIcon .iconButton');
+                  if (!button || !playerPackage) {
+                    if (++attempts < 30) {
+                      setTimeout(open, 1000);
+                    } else {
+                      console.log('SMOKE_EXTERNAL_PLAYER_TEST:FAIL:card-or-player-not-found');
+                    }
+                    return;
+                  }
+                  window.Android?.setSmokeExternalPlayerPackage?.(playerPackage);
+                  button.click();
+                  console.log('SMOKE_EXTERNAL_PLAYER_TEST:PASS:' + index + ':' + playerPackage);
+                };
+                open();
+                return;
+              }
+              if ('$action' === 'video_state') {
+                const video = document.querySelector('video');
+                console.log('SMOKE_VIDEO_STATE:' + JSON.stringify({
+                  hash: location.hash,
+                  video: !!video,
+                  readyState: video?.readyState,
+                  networkState: video?.networkState,
+                  error: video?.error?.code,
+                  paused: video?.paused,
+                  width: video?.videoWidth,
+                  height: video?.videoHeight,
+                  currentSrc: video?.currentSrc,
+                  networkType: window.Android?.getNetworkType?.()
+                }));
+                return;
+              }
+              if ('$action' === 'fullscreen') {
+                setTimeout(() => {
+                  console.log('SMOKE_FULLSCREEN_TEST:' + (document.fullscreenElement ? 'PASS' : 'FAIL'));
+                }, 500);
+                return;
+              }
+              if ('$action' === 'persistence_set') {
+                setTimeout(() => {
+                  const input = document.querySelector('[data-test="ui-scale"]');
+                  if (!input) {
+                    console.log('SMOKE_PERSISTENCE_SET_TEST:FAIL:control-not-found');
+                    return;
+                  }
+                  const original = Number(input.value);
+                  const requested = Number(value);
+                  const target = value !== '' && Number.isFinite(requested) ? requested : (original === 300 ? original - 5 : original + 5);
+                  input.value = target;
+                  input.dispatchEvent(new Event('input', { bubbles: true }));
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                  console.log('SMOKE_PERSISTENCE_SET_TEST:PASS:' + original + ':' + target);
+                }, 1000);
+                return;
+              }
+              if ('$action' === 'persistence_check') {
+                setTimeout(() => {
+                  const input = document.querySelector('[data-test="ui-scale"]');
+                  const parts = value.split(':');
+                  const target = Number(parts[0]);
+                  const original = Number(parts[1]);
+                  if (!input) {
+                    console.log('SMOKE_PERSISTENCE_CHECK_TEST:FAIL:control-not-found');
+                    return;
+                  }
+                  const passed = Number(input.value) === target;
+                  input.value = original;
+                  input.dispatchEvent(new Event('input', { bubbles: true }));
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                  console.log('SMOKE_PERSISTENCE_CHECK_TEST:' + (passed ? 'PASS' : 'FAIL') + ':' + input.value);
+                }, 1000);
+                return;
+              }
+              if ('$action' === 'scale_layout') {
+                const input = document.querySelector('[data-test="ui-scale"]');
+                const expectedScale = Number(value.split(':')[0]);
+                const expectedLayout = value.split(':')[1];
+                const mobile = matchMedia('(width <= 680px)').matches;
+                const passed = Number(input?.value) === expectedScale && (expectedLayout === 'unchanged' || mobile === (expectedLayout === 'mobile'));
+                console.log('SMOKE_SCALE_LAYOUT_TEST:' + (passed ? 'PASS' : 'FAIL') + ':scale=' + input?.value + ',width=' + innerWidth + ',layout=' + (mobile ? 'mobile' : 'desktop'));
+                return;
+              }
+              if ('$action' === 'data_export' || '$action' === 'data_select' || '$action' === 'data_reset') {
+                const selector = '$action' === 'data_export'
+                  ? '[data-test="data-export-playlists"]'
+                  : ('$action' === 'data_reset'
+                      ? '[data-test="data-reset-directory"]'
+                      : '[data-test="data-select-directory"]');
+                window.location.hash = '#/settings';
+                setTimeout(() => {
+                  const link = document.querySelector('[data-section="data"]');
+                  link?.click();
+                  setTimeout(() => {
+                    const button = document.querySelector(selector);
+                    if (!button) {
+                      console.log('SMOKE_' + ('$action' === 'data_export' ? 'DATA_EXPORT' : ('$action' === 'data_reset' ? 'DATA_RESET' : 'DATA_SELECT')) + '_TEST:FAIL:button-not-found');
+                      return;
+                    }
+                    button.click();
+                    console.log('SMOKE_' + ('$action' === 'data_export' ? 'DATA_EXPORT' : ('$action' === 'data_reset' ? 'DATA_RESET' : 'DATA_SELECT')) + '_TEST:PASS');
+                  }, 700);
+                }, 300);
+                return;
+              }
+              if ('$action' === 'proxy_off') {
+                const input = document.querySelector('[data-test="proxy-enabled"]');
+                if (!input) {
+                  console.log('SMOKE_PROXY_OFF_TEST:FAIL:control-not-found');
+                  return;
+                }
+                if (input.checked) input.click();
+                setTimeout(() => console.log('SMOKE_PROXY_OFF_TEST:' + (!input.checked ? 'PASS' : 'FAIL')), 300);
+                return;
+              }
+              if ('$action' === 'proxy') {
+                const enabled = document.querySelector('[data-test="proxy-enabled"]');
+                if (!enabled) {
+                  console.log('SMOKE_PROXY_TEST:FAIL:toggle-not-found');
+                  return;
+                }
+                if (!enabled.checked) enabled.click();
+                setTimeout(() => {
+                  const inputValue = (selector, value) => {
+                    const input = document.querySelector(selector);
+                    if (!input) return false;
+                    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                    setter.call(input, value);
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    return true;
+                  };
+                  const protocol = document.querySelector('[data-test="proxy-protocol"]');
+                  const host = inputValue('[data-test="proxy-host"]', '127.0.0.1');
+                  const port = inputValue('[data-test="proxy-port"]', value);
+                  if (!protocol || !host || !port) {
+                    console.log('SMOKE_PROXY_TEST:FAIL:controls-not-found:' + JSON.stringify({
+                      protocol: !!protocol,
+                      host,
+                      port
+                    }));
+                    return;
+                  }
+                  protocol.value = 'http';
+                  protocol.dispatchEvent(new Event('change', { bubbles: true }));
+                  setTimeout(() => {
+                    const button = document.querySelector('[data-test="proxy-test"]');
+                    if (!button) {
+                      console.log('SMOKE_PROXY_TEST:FAIL:test-button-not-found');
+                      return;
+                    }
+                    button.click();
+                    setTimeout(() => console.log('SMOKE_PROXY_TEST:PASS'), 1000);
+                  }, 500);
+                }, 700);
+                return;
+              }
+              if ('$action' === 'fit_visual') {
+                const video = document.querySelector('.ftVideoPlayer > .player');
+                const expected = value === 'on' ? 'cover' : 'contain';
+                const actual = video ? getComputedStyle(video).objectFit : '';
+                console.log('SMOKE_FIT_VISUAL_TEST:' + (actual === expected ? 'PASS' : 'FAIL') + ':' + actual);
+                return;
+              }
+              if ('$action' === 'fit') {
+                const button = document.querySelector('[data-test="fit-screen"]');
+                const target = value === 'on';
+                if (!button) {
+                  console.log('SMOKE_FIT_TEST:FAIL:control-not-found');
+                  return;
+                }
+                if (button.getAttribute('aria-pressed') !== String(target)) button.click();
+                setTimeout(() => {
+                  console.log('SMOKE_FIT_TEST:' + (button.getAttribute('aria-pressed') === String(target) ? 'PASS' : 'FAIL') + ':' + button.getAttribute('aria-pressed'));
+                }, 300);
+                return;
+              }
+              if ('$action' === 'settings') {
+                window.location.hash = '#/settings';
+                setTimeout(() => {
+                  const link = document.querySelector('[data-section="' + value + '"]');
+                  link?.click();
+                  setTimeout(() => {
+                    const section = document.querySelector('.settingsSections [data-section="' + value + '"]');
+                    const passed = !!link && !!section && !section.classList.contains('hideOnMobile');
+                    console.log('SMOKE_SETTINGS_TEST:' + (passed ? 'PASS' : 'FAIL') + ':' + value);
+                  }, 300);
+                }, 300);
+                return;
+              }
+              const open = document.querySelector('[data-test="search-open"]');
+              open?.click();
+              setTimeout(() => {
+                const input = document.querySelector('.searchInput input');
+                const action = document.querySelector('.searchInput .inputAction');
+                if (!input || !action) {
+                  console.log('SMOKE_SEARCH_TEST:FAIL:controls-not-found');
+                  return;
+                }
+                const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                setter.call(input, value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                action.click();
+                setTimeout(() => {
+                  const passed = location.hash.startsWith('#/search/');
+                  console.log('SMOKE_SEARCH_TEST:' + (passed ? 'PASS' : 'FAIL') + ':' + location.hash);
+                }, 500);
+              }, 300);
+            })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    private fun runSettingsSortTest() {
+        webView.evaluateJavascript(
+            """
+            (() => {
+              window.location.hash = '#/settings';
+              setTimeout(() => {
+                const expectedOff = ['general', 'theme', 'player', 'subscription', 'distraction', 'parental-control', 'privacy', 'data', 'proxy', 'sponsor-block', 'password'];
+                const expectedOn = ['general', 'data', 'distraction', 'parental-control', 'password', 'player', 'privacy', 'proxy', 'sponsor-block', 'subscription', 'theme'];
+                const links = [...document.querySelectorAll('.settingsMenu a[data-section]')];
+                const order = links.map(link => link.dataset.section);
+                const label = [...document.querySelectorAll('label')].find(element => element.textContent.includes('Sort settings sections (A-Z)'));
+                const input = label ? document.getElementById(label.htmlFor) : null;
+                const initial = input?.checked;
+                const readOrder = () => [...document.querySelectorAll('.settingsMenu a[data-section]')].map(link => link.dataset.section);
+                const orderMatches = (value, expected) => JSON.stringify(value) === JSON.stringify(expected);
+                const setState = (target, done) => {
+                  if (input.checked === target) {
+                    done();
+                    return;
+                  }
+                  input.click();
+                  setTimeout(done, 300);
+                };
+                setState(false, () => {
+                  const offOrder = readOrder();
+                  setState(true, () => {
+                    const onOrder = readOrder();
+                    setState(initial, () => {
+                      const restored = input.checked === initial;
+                      const pass = orderMatches(offOrder, expectedOff) && orderMatches(onOrder, expectedOn) && restored;
+                      console.log('SETTINGS_SORT_TEST:' + (pass ? 'PASS' : 'FAIL') + ':' + JSON.stringify({ initial, order, offOrder, onOrder, restored }));
+                    });
+                  });
+                });
+              }, 1500);
+            })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            androidBridge.cancelMediaNotification()
+            super.onBackPressed()
+        }
+    }
+}

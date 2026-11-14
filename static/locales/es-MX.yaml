@@ -149,13 +149,13 @@ User Playlists:
   Copy Playlist: Copiar lista de reproducción
   Cannot delete the quick bookmark target playlist.: No se puede eliminar la lista de reproducción objetivo del marcador rápido.
   Quick Bookmark Enabled: Marcador rápido habilitado
-  Are you sure you want to remove {playlistItemCount} duplicate videos from this playlist? This cannot be undone: Estás seguro de que deseas eliminar 1 video duplicado de esta lista de reproducción? Esto no se puede deshacer.
+  Are you sure you want to remove {playlistItemCount} duplicate videos from this playlist? This cannot be undone: Estás seguro de que deseas eliminar 1 video duplicado de esta lista de reproducción? Esto no se puede deshacer. | Estás seguro de que deseas eliminar {playlistItemCount} videos duplicados de esta lista de reproducción? Esto no se puede deshacer.
   Move Video Up: Mover video hacia arriba
   TotalTimePlaylist: 'Tiempo total: {duration}'
   Remove from Playlist: Eliminar de la lista de reproducción
   Playlist Name: Nombre de la lista de reproducción
   Remove Duplicate Videos: Eliminar videos duplicados
-  Are you sure you want to remove {playlistItemCount} watched videos from this playlist? This cannot be undone: ¿Estás seguro de que deseas eliminar 1 video visto de esta lista de reproducción? Esto no se puede deshacer.
+  Are you sure de que deseas eliminar {playlistItemCount} watched videos from this playlist? This cannot be undone: ¿Estás seguro de que deseas eliminar 1 video visto de esta lista de reproducción? Esto no se puede deshacer. | ¿Estás seguro de que deseas eliminar {playlistItemCount} videos vistos de esta lista de reproducción? Esto no se puede deshacer.
   AddVideoPrompt:
     Toast:
       "Video(s) added to {playlistCount} playlists": ""
@@ -188,6 +188,7 @@ Settings:
     General Settings: 'Ajustes generales'
     Fallback to Non-Preferred Backend on Failure: 'Recurrir a otro motor en caso de fallo'
     Enable Search Suggestions: 'Activar sugerencias de búsqueda'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Página de destino predeterminada'
     Locale Preference: 'Ajustes de ubicación'
     Preferred API Backend:
@@ -641,6 +642,7 @@ The playlist has been reversed: La lista de reproducción ha sido invertida
 Download From Site: Descargar desde el sitio
 Version {versionNumber} is now available!  Click for more details: Versión {versionNumber} ya está disponible! Presione para más detalles
 Open New Window: Abrir nueva ventana
+Reload: Reload
 More: Más
 Are you sure you want to open this link?: ¿Estás seguro de abrir este link?
 Search Bar:

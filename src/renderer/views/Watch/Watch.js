@@ -12,6 +12,7 @@ import CommentSection from '../../components/CommentSection/CommentSection.vue'
 import WatchVideoLiveChat from '../../components/WatchVideoLiveChat/WatchVideoLiveChat.vue'
 import WatchVideoPlaylist from '../../components/WatchVideoPlaylist/WatchVideoPlaylist.vue'
 import WatchVideoRecommendations from '../../components/WatchVideoRecommendations/WatchVideoRecommendations.vue'
+import DownloadDialog from '../../components/DownloadDialog/DownloadDialog.vue'
 import FtAgeRestricted from '../../components/FtAgeRestricted/FtAgeRestricted.vue'
 import { calculateColorLuminance } from '../../helpers/colors'
 import {
@@ -28,6 +29,7 @@ import {
 } from '../../helpers/utils'
 import {
   getLocalVideoInfo,
+  getOriginalVideoLanguage,
   mapLocalLegacyFormat,
   parseLocalSubscriberCount,
   parseLocalTextRuns,
@@ -42,8 +44,13 @@ import {
   youtubeImageUrlToInvidious
 } from '../../helpers/api/invidious'
 import { sortCaptions } from '../../helpers/player/utils'
+import { getLocalCaptionLabel } from '../../helpers/player/local-caption-label.mjs'
+import { getDownloadQualityLabel } from '../../helpers/download-quality.mjs'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { useI18n } from 'vue-i18n'
+import android from 'android'
+import { createMediaSession } from '../../helpers/android/media-session'
+import { getDownloads } from '../../helpers/android/downloads'
 
 /**
  * @typedef {{
@@ -66,6 +73,87 @@ const UNAVAILABLE_VIDEO_THUMBNAILS = {
   dark: 'https://www.youtube.com/img/desktop/unavailable/unavailable_video_dark_theme.png'
 }
 
+function normalizeVideoQuality(value) {
+  const height = String(value).match(/\d{3,4}/)?.[0]
+  return height ? `${height}p` : value
+}
+
+function formatDownloadSize(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return ''
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes < 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KiB', 'MiB', 'GiB']
+  let amount = bytes
+  let unit = 'B'
+  for (const nextUnit of units) {
+    amount /= 1024
+    unit = nextUnit
+    if (amount < 1024 || nextUnit === units.at(-1)) break
+  }
+  return `${amount.toFixed(amount < 10 ? 1 : 0)} ${unit}`
+}
+
+function normalizeDownloadFormat(format, kind, index) {
+  const mimeType = format.mime_type || format.mimeType || format.type || ''
+  const [container, codecs] = mimeType.split(';')
+  const qualityLabel = getDownloadQualityLabel(format)
+  const size = [format.content_length, format.clen].find(value => Number(value) > 0) || ''
+  const hasVideo = container.startsWith('video/')
+  const hasAudio = container.startsWith('audio/')
+  const language = format.language || format.audio_track?.id?.split('.')[0] || ''
+  const audioTrackId = format.audio_track?.id || language || 'und'
+  let audioTrackLabel = format.audio_track?.display_name || ''
+  if (!audioTrackLabel && language) {
+    try {
+      audioTrackLabel = new Intl.DisplayNames('en-US', { type: 'language', languageDisplay: 'standard' }).of(language)
+    } catch {
+      audioTrackLabel = language
+    }
+  }
+  return {
+    id: `${kind}-${format.itag || index}`,
+    kind,
+    url: format.freeTubeUrl || format.url,
+    mimeType: container,
+    codecs: codecs?.match(/codecs="([^"]+)"/)?.[1] || '',
+    extension: format.container || container.split('/')[1],
+    quality: format.qualityLabel || format.quality || '',
+    qualityLabel,
+    container: format.container || container.split('/')[1],
+    bitrateLabel: format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : '',
+    label: kind === 'audio'
+      ? [
+          format.container || container.split('/')[1],
+          format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : 'unknown quality',
+          formatDownloadSize(size)
+        ].filter(Boolean).join(' · ')
+      : [
+          format.container || container.split('/')[1],
+          format.height ? `${format.height}p` : normalizeVideoQuality(format.qualityLabel || format.quality || format.container || container),
+          formatDownloadSize(size)
+        ].filter(Boolean).join(' · '),
+    size,
+    width: format.width,
+    height: format.height,
+    bitrate: format.bitrate,
+    language,
+    audioTrackId,
+    audioTrackLabel,
+    isOriginal: format.is_original === true || format.audio_track?.audio_is_default === true,
+    hasVideo,
+    hasAudio
+  }
+}
+
+function normalizeDownloadFormats(progressiveFormats, adaptiveFormats, getAdaptiveKind) {
+  return progressiveFormats
+    .map((format, index) => normalizeDownloadFormat(format, 'progressive', index))
+    .concat(adaptiveFormats
+      .filter(format => format.freeTubeUrl || format.url)
+      .map((format, index) => normalizeDownloadFormat(format, getAdaptiveKind(format), index)))
+}
+
 export default defineComponent({
   name: 'Watch',
   components: {
@@ -78,16 +166,29 @@ export default defineComponent({
     'watch-video-live-chat': WatchVideoLiveChat,
     'watch-video-playlist': WatchVideoPlaylist,
     'watch-video-recommendations': WatchVideoRecommendations,
+    DownloadDialog,
+    'download-dialog': DownloadDialog,
     'ft-age-restricted': FtAgeRestricted
   },
   beforeRouteLeave: async function (to, from, next) {
     this.handleRouteChange()
     window.removeEventListener('beforeunload', this.handleWatchProgressAutoSave)
+    window.removeEventListener('app-pause', this.handleWatchProgressAutoSave)
     document.removeEventListener('keydown', this.resetAutoplayInterruptionTimeout)
     document.removeEventListener('click', this.resetAutoplayInterruptionTimeout)
 
     if (this.$refs.player) {
-      await this.destroyPlayer()
+      try {
+        await Promise.race([
+          this.destroyPlayer(),
+          new Promise(resolve => setTimeout(resolve, 2000))
+        ])
+      } catch (error) {
+        console.warn('[Watch] Player cleanup failed', error)
+      } finally {
+        next()
+      }
+      return
     }
 
     next()
@@ -101,6 +202,7 @@ export default defineComponent({
   },
   data: function () {
     return {
+      usingAndroid: process.env.IS_ANDROID,
       startNextVideoInFullscreen: false,
       startNextVideoInFullwindow: false,
       startNextVideoInPip: false,
@@ -121,7 +223,10 @@ export default defineComponent({
       thumbnail: '',
       videoId: '',
       videoTitle: '',
+      originalVideoTitle: '',
+      originalVideoLanguage: '',
       videoDescription: '',
+      originalVideoDescription: '',
       videoDescriptionHtml: '',
       license: '',
       videoViewCount: 0,
@@ -146,6 +251,8 @@ export default defineComponent({
       /** @type {SabrData | null} */
       sabrData: null,
       legacyFormats: [],
+      downloadFormats: [],
+      downloadDialogVisible: false,
       captions: [],
       /** @type {import('youtubei.js').Misc.Format[]} */
       hlsAudioMetadata: [],
@@ -166,6 +273,7 @@ export default defineComponent({
       playNextTimeout: null,
       playNextCountDownIntervalId: null,
       blockVideoAutoplay: false,
+      resumeDownloadedPlayback: false,
       autoplayInterruptionTimeout: null,
       playabilityStatus: '',
       totalAdTimeSeconds: 0,
@@ -183,6 +291,8 @@ export default defineComponent({
       /** @type {Date|null} */
       streamingDataExpiryDate: null,
       currentPlaybackRate: null,
+      downloadedMission: null,
+      refreshMissionId: '',
     }
   },
   computed: {
@@ -203,6 +313,20 @@ export default defineComponent({
     },
     saveVideoHistoryWithLastViewedPlaylist: function () {
       return this.$store.getters.getSaveVideoHistoryWithLastViewedPlaylist
+    },
+    displayVideoTitle: function () {
+      const useOriginalTitle = this.$store.getters.getUseOriginalVideoTitles && this.originalVideoTitle
+      return useOriginalTitle ? this.originalVideoTitle : this.videoTitle
+    },
+    displayVideoDescription: function () {
+      return this.$store.getters.getUseOriginalVideoTitles && this.originalVideoDescription
+        ? this.originalVideoDescription
+        : this.videoDescription
+    },
+    displayVideoDescriptionHtml: function () {
+      return this.$store.getters.getUseOriginalVideoTitles && this.originalVideoDescription
+        ? ''
+        : this.videoDescriptionHtml
     },
     backendPreference: function () {
       return this.$store.getters.getBackendPreference
@@ -330,6 +454,11 @@ export default defineComponent({
       return !this.isLoading
     },
 
+    refreshMission() {
+      if (!this.refreshMissionId) return null
+      return getDownloads().find(mission => mission.id === this.refreshMissionId) || null
+    },
+
     chaptersSrc() {
       if (this.videoChapters.length > 0) {
         const vttText = buildChaptersVttFile(this.videoChapters)
@@ -342,14 +471,21 @@ export default defineComponent({
   },
   watch: {
     async $route() {
+      console.warn('[Downloads] Watch route changed')
       await this.reloadView()
     },
     userPlaylistsReady() {
+      console.warn('[Downloads] userPlaylistsReady changed ' + JSON.stringify({ value: this.userPlaylistsReady }))
       this.onMountedDependOnLocalStateLoading()
     },
+    thumbnail() {
+      if (process.env.IS_ANDROID) createMediaSession(this.displayVideoTitle, this.channelName, this.videoLengthSeconds * 1000, this.thumbnail)
+    }
   },
   created: function () {
+    console.warn('[Downloads] Watch created ' + JSON.stringify({ videoId: this.$route.params.id }))
     this.videoId = this.$route.params.id
+    this.refreshMissionId = this.$route.query.refreshDownloadId || ''
     this.activeFormat = this.defaultVideoFormat
     // So that the value for this session remains unchanged even if setting changed
     this.autoplayNextRecommendedVideo = this.autoplayNextRecommendedVideoByDefault
@@ -359,10 +495,25 @@ export default defineComponent({
     this.currentPlaybackRate = this.$store.getters.getDefaultPlayback
   },
   mounted: function () {
+    console.warn('[Downloads] Watch mounted ' + JSON.stringify({ videoId: this.videoId, userPlaylistsReady: this.userPlaylistsReady }))
+    if (process.env.IS_ANDROID) {
+      window.addEventListener('media-next', this.handleSkipToNext)
+      window.addEventListener('media-previous', this.handleSkipToPrev)
+      window.addEventListener('media-reload', this.reloadView)
+    }
     this.onMountedDependOnLocalStateLoading()
+  },
+  beforeUnmount() {
+    if (process.env.IS_ANDROID) {
+      window.removeEventListener('media-next', this.handleSkipToNext)
+      window.removeEventListener('media-previous', this.handleSkipToPrev)
+      window.removeEventListener('media-reload', this.reloadView)
+      android.cancelMediaNotification()
+    }
   },
   methods: {
     async reloadView() {
+      console.warn('[Downloads] reloadView start ' + JSON.stringify({ routeId: this.$route.params.id, backendPreference: this.backendPreference }))
       await this.handleRouteChange()
 
       if (this.$refs.player) {
@@ -372,6 +523,7 @@ export default defineComponent({
       // react to route changes...
       this.videoId = this.$route.params.id
       this.resetVideoState()
+      await this.$nextTick()
 
       this.firstLoad = true
       this.videoPlayerLoaded = false
@@ -380,6 +532,8 @@ export default defineComponent({
       this.checkIfTimestamp()
       this.checkIfPlaylist()
       this.setViewingModeOnRouteChange()
+
+      if (await this.loadDownloadedMission()) return
 
       switch (this.backendPreference) {
         case 'local':
@@ -404,7 +558,10 @@ export default defineComponent({
       this.upcomingTimeLeft = null
       this.thumbnail = ''
       this.videoTitle = ''
+      this.originalVideoTitle = ''
+      this.originalVideoLanguage = ''
       this.videoDescription = ''
+      this.originalVideoDescription = ''
       this.videoDescriptionHtml = ''
       this.license = ''
       this.contentDisclosures = null
@@ -426,7 +583,11 @@ export default defineComponent({
       this.manifestMimeType = MANIFEST_TYPE_DASH
       this.sabrData = null
       this.legacyFormats = []
+      this.downloadFormats = []
+      this.downloadDialogVisible = false
       this.captions = []
+      this.downloadedMission = null
+      this.refreshMissionId = this.$route.query.refreshDownloadId || ''
       this.vrProjection = null
       this.recommendedVideos = []
       this.playabilityStatus = ''
@@ -438,19 +599,30 @@ export default defineComponent({
       this.updateTitle()
     },
 
-    onMountedDependOnLocalStateLoading() {
+    async onMountedDependOnLocalStateLoading() {
+      console.warn('[Downloads] onMounted state ' + JSON.stringify({ onMountedRun: this.onMountedRun, userPlaylistsReady: this.userPlaylistsReady, isUserPlaylistRequested: this.isUserPlaylistRequested, videoId: this.videoId }))
       // Prevent running twice
       if (this.onMountedRun) { return }
       // Stuff that require user playlists to be ready
-      if (this.isUserPlaylistRequested && !this.userPlaylistsReady) { return }
+      if (this.isUserPlaylistRequested && !this.userPlaylistsReady) {
+        console.warn('[Downloads] onMounted waiting for user playlists')
+        return
+      }
 
       this.onMountedRun = true
 
       this.checkIfPlaylist()
 
+      if (await this.loadDownloadedMission()) return
+
       // this has to be below checkIfPlaylist() as theatrePossible needs to know if there is a playlist or not
       this.setViewingModeOnFirstLoad()
 
+      console.warn('[Downloads] Watch backend branch ' + JSON.stringify({
+        supportsLocalApi: Boolean(process.env.SUPPORTS_LOCAL_API),
+        backendPreference: this.backendPreference,
+        videoId: this.videoId
+      }))
       if (!process.env.SUPPORTS_LOCAL_API || this.backendPreference === 'invidious') {
         this.getVideoInformationInvidious()
       } else {
@@ -463,7 +635,40 @@ export default defineComponent({
       document.addEventListener('click', this.resetAutoplayInterruptionTimeout)
 
       window.addEventListener('beforeunload', this.handleWatchProgressAutoSave)
+      window.addEventListener('app-pause', this.handleWatchProgressAutoSave)
       this.resetAutoplayInterruptionTimeout()
+    },
+
+    async loadDownloadedMission() {
+      if (!process.env.IS_ANDROID) return false
+
+      const mission = getDownloads().find(item =>
+        item.status === 'completed' && item.kind === 'video' && item.video?.id === this.videoId && item.outputUri
+      )
+      if (!mission || this.playlistType !== 'downloaded') return false
+
+      this.downloadedMission = mission
+      this.videoTitle = mission.video.title || this.videoId
+      this.channelName = mission.video.author || ''
+      this.videoLengthSeconds = Number(mission.video.duration) || 0
+      this.thumbnail = mission.video.thumbnail || ''
+      const width = Number(mission.streamSelection?.width) || 0
+      const height = Number(mission.streamSelection?.height) || 0
+      this.legacyFormats = [{
+        url: mission.outputUri,
+        mimeType: mission.mimeType || 'video/mp4',
+        quality: 'Downloaded',
+        qualityLabel: mission.streamSelection?.qualityLabel || '',
+        width,
+        height,
+        bitrate: 0
+      }]
+      this.manifestSrc = null
+      this.activeFormat = 'legacy'
+      this.isLoading = false
+      this.firstLoad = false
+      this.updateTitle()
+      return true
     },
 
     setViewingModeOnFirstLoad: function () {
@@ -503,7 +708,30 @@ export default defineComponent({
       }
     },
 
+    openDownloadDialog: function () {
+      console.warn('[Downloads] Open dialog ' + JSON.stringify({
+        backendPreference: this.backendPreference,
+        downloadFormats: this.downloadFormats.length,
+        videoId: this.videoId
+      }))
+      this.downloadDialogVisible = true
+    },
+
+    refreshDownloadFormats: async function () {
+      console.warn('[Downloads] Refresh download formats ' + JSON.stringify({ videoId: this.videoId }))
+      const { info } = await getLocalVideoInfo(this.videoId, true)
+      const streamingData = info.streaming_data
+      if (!streamingData) return []
+      this.downloadFormats = normalizeDownloadFormats(
+        streamingData.formats,
+        streamingData.adaptive_formats,
+        format => format.mime_type.startsWith('video/') ? 'video' : 'audio'
+      )
+      return this.downloadFormats
+    },
+
     getVideoInformationLocal: async function () {
+      console.warn('[Downloads] Local information request ' + JSON.stringify({ videoId: this.videoId }))
       if (this.firstLoad) {
         this.isLoading = true
       }
@@ -546,14 +774,17 @@ export default defineComponent({
         }
 
         // extract localised title first and fall back to the not localised one
-        this.videoTitle = result.primary_info?.title.text?.trim() ?? result.basic_info.title?.trim()
-        this.videoViewCount = result.basic_info.view_count ?? (result.primary_info.view_count ? extractNumberFromString(result.primary_info.view_count.text) : null)
-        this.license = result.secondary_info.metadata.rows.find(element => element.title?.text === 'License')?.contents[0]?.text
+        this.videoTitle = result.primary_info?.title?.text?.trim() ?? result.basic_info.title?.trim()
+        this.originalVideoTitle = result.basic_info.title?.trim() ?? ''
+        this.originalVideoLanguage = getOriginalVideoLanguage(result) ?? ''
+        this.originalVideoDescription = result.basic_info.short_description ?? ''
+        this.videoViewCount = result.basic_info.view_count ?? (result.primary_info?.view_count?.text ? extractNumberFromString(result.primary_info.view_count.text) : null)
+        this.license = result.secondary_info?.metadata?.rows?.find(element => element.title?.text === 'License')?.contents?.[0]?.text
 
-        this.channelId = result.basic_info.channel_id ?? result.secondary_info.owner?.author.id
-        this.channelName = result.basic_info.author ?? result.secondary_info.owner?.author.name
+        this.channelId = result.basic_info.channel_id ?? result.secondary_info?.owner?.author?.id
+        this.channelName = result.basic_info.author ?? result.secondary_info?.owner?.author?.name
 
-        if (result.secondary_info.owner?.author) {
+        if (result.secondary_info?.owner?.author) {
           this.channelThumbnail = result.secondary_info.owner.author.best_thumbnail?.url ?? ''
         } else {
           this.channelThumbnail = ''
@@ -567,19 +798,19 @@ export default defineComponent({
           channelId: this.channelId
         })
 
-        if (result.page[0].microformat?.publish_date) {
+        if (result.page?.[0]?.microformat?.publish_date) {
           // `result.page[0].microformat.publish_date` example value: `2023-08-12T08:59:59-07:00`
           this.videoPublished = Date.parse(result.page[0].microformat.publish_date)
         } else {
           // text date Jan 1, 2000, not as accurate but better than nothing
-          this.videoPublished = Date.parse(result.primary_info.published)
+          this.videoPublished = Date.parse(result.primary_info?.published)
         }
 
-        if (result.secondary_info?.description.runs) {
+        if (result.secondary_info?.description?.runs) {
           try {
             this.videoDescription = parseLocalTextRuns(result.secondary_info.description.runs)
           } catch (error) {
-            console.error('Failed to extract the localised description, falling back to the standard one.', error, JSON.stringify(result.secondary_info.description.runs))
+            console.error('Failed to extract the localised description, falling back to the standard one.', error, JSON.stringify(result.secondary_info?.description?.runs))
             this.videoDescription = result.basic_info.short_description
           }
         } else {
@@ -597,7 +828,7 @@ export default defineComponent({
             this.thumbnail = `https://i.ytimg.com/vi/${this.videoId}/maxres3.jpg`
             break
           default:
-            this.thumbnail = result.basic_info.thumbnail?.[0].url ?? `https://i.ytimg.com/vi/${this.videoId}/maxresdefault.jpg`
+            this.thumbnail = result.basic_info.thumbnail?.[0]?.url ?? `https://i.ytimg.com/vi/${this.videoId}/maxresdefault.jpg`
             break
         }
 
@@ -617,7 +848,8 @@ export default defineComponent({
         this.isPostLiveDvr = !!result.basic_info.is_post_live_dvr
         this.isUnlisted = !!result.basic_info.is_unlisted
 
-        const subCount = !result.secondary_info.owner.subscriber_count.isEmpty() ? parseLocalSubscriberCount(result.secondary_info.owner.subscriber_count.text) : NaN
+        const subscriberCount = result.secondary_info?.owner?.subscriber_count
+        const subCount = subscriberCount && !subscriberCount.isEmpty() ? parseLocalSubscriberCount(subscriberCount.text) : NaN
 
         if (!isNaN(subCount)) {
           this.channelSubscriptionCountText = subCount >= 10000 ? formatNumber(subCount, { notation: 'compact' }) : formatSubscriberCount(subCount)
@@ -636,7 +868,7 @@ export default defineComponent({
               const start = chapter.time_range_start_millis / 1000
 
               chapters.push({
-                title: chapter.title.text,
+                title: chapter.title?.text ?? '',
                 timestamp: formatDurationAsTimestamp(start),
                 startSeconds: start,
                 endSeconds: 0,
@@ -651,10 +883,11 @@ export default defineComponent({
             if (macroMarkersList) {
               for (const item of macroMarkersList.contents) {
                 if (item instanceof YTNodes.MacroMarkersListItem) {
+                  const timestamp = item.time_description?.text ?? '0:00'
                   chapters.push({
-                    title: item.title.text,
-                    timestamp: item.time_description.text,
-                    startSeconds: Utils.timeToSeconds(item.time_description.text),
+                    title: item.title?.text ?? '',
+                    timestamp,
+                    startSeconds: Utils.timeToSeconds(timestamp),
                     endSeconds: 0,
                     thumbnail: item.thumbnail[0]
                   })
@@ -662,7 +895,7 @@ export default defineComponent({
               }
               chaptersKind = 'keyMoments'
             } else {
-              chapters = this.extractChaptersFromDescription(result.basic_info.short_description ?? result.secondary_info.description.text)
+              chapters = this.extractChaptersFromDescription(result.basic_info.short_description ?? result.secondary_info?.description?.text ?? '')
             }
           }
 
@@ -741,15 +974,36 @@ export default defineComponent({
         }
 
         if ((this.isLive || this.isPostLiveDvr) && !this.isUpcoming) {
-          if (result.streaming_data.dash_manifest_url) {
-            this.manifestSrc = result.streaming_data.dash_manifest_url
-            this.manifestMimeType = MANIFEST_TYPE_DASH
-          } else {
-            this.manifestSrc = result.streaming_data.hls_manifest_url
-            this.manifestMimeType = MANIFEST_TYPE_HLS
+          let useRemoteManifest = true
 
-            this.hlsAudioMetadata = result.streaming_data.adaptive_formats
-              .filter((format) => format.mime_type.startsWith('audio/mp4'))
+          if (this.isPostLiveDvr) {
+            // I wasn't able to get SABR working with Post-Live-DVR yet, so for the moment we'll use YouTube's provided DASH manifest instead.
+            // It only contains the last 4 hours of the stream, instead of starting from the beginning but that is better than nothing.
+            if (
+              result.streaming_data.adaptive_formats[0]?.url ||
+              result.streaming_data.adaptive_formats[0]?.signature_cipher ||
+              result.streaming_data.adaptive_formats[0]?.cipher
+            ) {
+              try {
+                this.manifestSrc = await this.createLocalDashManifest(result, true, poToken)
+                this.manifestMimeType = MANIFEST_TYPE_DASH
+                useRemoteManifest = false
+              } catch (error) {
+                console.error(`Failed to generate DASH manifest for this Post Live DVR video ${this.videoId}, falling back to using YouTube's provided one...`, error)
+              }
+            }
+          }
+
+          if (useRemoteManifest) {
+            if (result.streaming_data.dash_manifest_url) {
+              this.manifestSrc = result.streaming_data.dash_manifest_url
+              this.manifestMimeType = MANIFEST_TYPE_DASH
+            } else {
+              this.manifestSrc = result.streaming_data.hls_manifest_url
+              this.manifestMimeType = MANIFEST_TYPE_HLS
+              this.hlsAudioMetadata = result.streaming_data.adaptive_formats
+                .filter((format) => format.mime_type.startsWith('audio/mp4'))
+            }
           }
 
           this.streamingDataExpiryDate = result.streaming_data.expires
@@ -820,21 +1074,32 @@ export default defineComponent({
           if (result.streaming_data) {
             this.streamingDataExpiryDate = result.streaming_data.expires
 
-            if (result.streaming_data.formats.length > 0) {
-              this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
-            }
+            this.legacyFormats = result.streaming_data.formats.map(mapLocalLegacyFormat)
+            this.downloadFormats = normalizeDownloadFormats(
+              result.streaming_data.formats,
+              result.streaming_data.adaptive_formats,
+              format => format.mime_type.startsWith('video/') ? 'video' : 'audio'
+            )
+            console.warn('[Downloads] Local normalized formats ' + JSON.stringify({
+              progressive: result.streaming_data.formats.length,
+              adaptive: result.streaming_data.adaptive_formats.length,
+              downloadable: this.downloadFormats.length
+            }))
 
             if (result.captions) {
+              const androidCaptions = process.env.IS_ANDROID
+              const captionFormat = androidCaptions ? 'ttml' : 'vtt'
+              const captionMimeType = androidCaptions ? 'application/ttml+xml' : 'text/vtt'
               const captionTracks = result.captions?.caption_tracks?.map((caption) => {
                 const url = new URL(caption.base_url)
-                url.searchParams.set('fmt', 'vtt')
+                url.searchParams.set('fmt', captionFormat)
 
                 return {
                   id: caption.vss_id,
                   url: url.toString(),
-                  label: caption.name.text,
                   language: caption.language_code,
-                  mimeType: 'text/vtt'
+                  label: getLocalCaptionLabel(caption),
+                  mimeType: captionMimeType
                 }
               }) ?? []
 
@@ -899,10 +1164,22 @@ export default defineComponent({
               })
               ?.projection_type ?? null
 
+            const hasDirectAdaptiveFormats = result.streaming_data.adaptive_formats.some(format =>
+              format.url || format.signature_cipher || format.cipher
+            )
+            console.warn('[Local playback] stream selection', {
+              adaptiveFormats: result.streaming_data.adaptive_formats.length,
+              hasDirectAdaptiveFormats,
+              hasServerAbr: Boolean(videoInfo.info.streaming_data?.server_abr_streaming_url),
+              hasUstreamerConfig: Boolean(videoInfo.info.player_config.media_common_config.media_ustreamer_request_config)
+            })
+
             if (
+              !result.streaming_data.adaptive_formats.some(format => format.url || format.signature_cipher || format.cipher) &&
               videoInfo.info.streaming_data?.server_abr_streaming_url &&
               videoInfo.info.player_config.media_common_config.media_ustreamer_request_config
             ) {
+              console.warn('[Local playback] selecting SABR')
               const storyboards = storyboard
                 ? [{
                     templateUrl: storyboard.template_url,
@@ -924,7 +1201,8 @@ export default defineComponent({
               result.streaming_data.adaptive_formats[0]?.signature_cipher ||
               result.streaming_data.adaptive_formats[0]?.cipher
             ) {
-              this.manifestSrc = await this.createLocalDashManifest(result)
+              console.warn('[Local playback] selecting DASH')
+              this.manifestSrc = await this.createLocalDashManifest(result, false, poToken)
               this.manifestMimeType = MANIFEST_TYPE_DASH
             } else {
               this.manifestSrc = null
@@ -938,12 +1216,17 @@ export default defineComponent({
 
         if (this.activeFormat === 'legacy' && (this.isLive || this.isPostLiveDvr || this.legacyFormats.length === 0)) {
           // Legacy wanted as default but unavailable
-          showToast(this.t('Change Format.Legacy formats are not available for this video'))
-          this.handleActiveFormatUnavailable()
+          if (this.manifestSrc !== null) {
+            this.enableDashFormat()
+          } else {
+            showToast(this.t('Change Format.Legacy formats are not available for this video'))
+            this.handleActiveFormatUnavailable()
+          }
         }
 
         this.isLoading = false
         this.updateTitle()
+        if (this.refreshMission) this.downloadDialogVisible = true
       } catch (err) {
         console.error(err)
         if (this.backendPreference === 'local' && this.backendFallback && !err.toString().includes('private') && !err.toString().includes('unavailable')) {
@@ -965,6 +1248,7 @@ export default defineComponent({
     },
 
     getVideoInformationInvidious: function () {
+      console.warn('[Downloads] Invidious information request ' + JSON.stringify({ videoId: this.videoId }))
       if (this.firstLoad) {
         this.isLoading = true
       }
@@ -976,6 +1260,9 @@ export default defineComponent({
           }
 
           this.videoTitle = result.title
+          this.originalVideoTitle = ''
+          this.originalVideoLanguage = ''
+          this.originalVideoDescription = result.description ?? ''
           this.videoViewCount = result.viewCount
 
           const subCount = parseLocalSubscriberCount(result.subCountText)
@@ -1029,8 +1316,11 @@ export default defineComponent({
           this.captions = sortCaptions(result.captions.map(caption => {
             return {
               url: this.currentInvidiousInstanceUrl + caption.url,
-              label: caption.label,
               language: caption.language_code,
+              container: 'vtt',
+              quality: caption.label,
+              label: `${caption.language_code} · ${caption.label}`,
+              autoGenerated: false,
               mimeType: 'text/vtt'
             }
           }))
@@ -1115,6 +1405,16 @@ export default defineComponent({
             this.streamingDataExpiryDate = this.extractExpiryDateFromStreamingUrl(result.adaptiveFormats[0].url)
 
             this.legacyFormats = result.formatStreams.map(mapInvidiousLegacyFormat)
+            this.downloadFormats = normalizeDownloadFormats(
+              result.formatStreams,
+              result.adaptiveFormats,
+              format => format.type.startsWith('video/') ? 'video' : 'audio'
+            )
+            console.warn('[Downloads] Invidious normalized formats ' + JSON.stringify({
+              progressive: result.formatStreams.length,
+              adaptive: result.adaptiveFormats.length,
+              downloadable: this.downloadFormats.length
+            }))
 
             if (!process.env.SUPPORTS_LOCAL_API || this.proxyVideos) {
               this.legacyFormats.forEach(format => {
@@ -1322,6 +1622,10 @@ export default defineComponent({
       return Object.hasOwn(this.$store.getters.getHistoryCacheById, videoId)
     },
 
+    handleDownloadedPlaybackStarted: function () {
+      this.resumeDownloadedPlayback = false
+    },
+
     handleVideoLoaded: function () {
       // Only used one time = remove after use
       this.oneTimeTimestamp = null
@@ -1357,6 +1661,14 @@ export default defineComponent({
 
       this.playlistId = this.$route.query.playlistId
       this.playlistItemId = this.$route.query.playlistItemId
+
+      if (this.$route.query.playlistType === 'downloaded') {
+        this.playlistId = 'downloads'
+        this.playlistType = 'downloaded'
+        this.playlistItemId = null
+        this.watchingPlaylist = true
+        return
+      }
 
       if (this.playlistId == null || this.playlistId.length === 0) {
         this.playlistType = ''
@@ -1487,6 +1799,11 @@ export default defineComponent({
         return
       }
 
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(1, true)
+        return
+      }
+
       if (this.watchingPlaylist && this.$refs.watchVideoPlaylist?.shouldStopDueToPlaylistEnd) {
         // Let `watchVideoPlaylist` handle end of playlist, no countdown needed
         this.$refs.watchVideoPlaylist.playNextVideo()
@@ -1532,10 +1849,33 @@ export default defineComponent({
       }
     },
 
+    getDownloadedPlaylist: function () {
+      return getDownloads()
+        .filter(mission => mission.status === 'completed' && mission.kind === 'video' && mission.video?.id && mission.outputUri)
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    },
+
+    playDownloadedVideo: function (direction, shouldResume = false) {
+      const wasPlaying = shouldResume || (this.$refs.player ? !this.$refs.player.isPaused() : false)
+      const playlist = this.getDownloadedPlaylist()
+      const index = playlist.findIndex(mission => mission.video.id === this.videoId)
+      const next = index < 0
+        ? (direction > 0 ? playlist[0] : playlist.at(-1))
+        : playlist[index + direction]
+      if (!next) return
+      this.resumeDownloadedPlayback = wasPlaying
+      this.$router.push({
+        path: `/watch/${next.video.id}`,
+        query: { playlistId: 'downloads', playlistType: 'downloaded' }
+      })
+    },
+
     // Skip to the next video if in a playlist
     // else next recommended video if autoplay enabled
     handleSkipToNext: function () {
-      if (this.watchingPlaylist) {
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(1)
+      } else if (this.watchingPlaylist) {
         this.$refs.watchVideoPlaylist?.playNextVideo()
       } else if (!this.hideRecommendedVideos && this.nextRecommendedVideo) {
         this.$router.push({
@@ -1547,7 +1887,11 @@ export default defineComponent({
 
     // Skip to the previous video in a playlist
     handleSkipToPrev: function () {
-      this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      if (this.playlistType === 'downloaded') {
+        this.playDownloadedVideo(-1)
+      } else {
+        this.$refs.watchVideoPlaylist?.playPreviousVideo()
+      }
     },
 
     abortAutoplayCountdown: function (hideToast = false) {
@@ -1652,8 +1996,12 @@ export default defineComponent({
      * @param {import('youtubei.js').YT.VideoInfo} videoInfo
      * @param {boolean} includeThumbnails
      */
-    createLocalDashManifest: async function (videoInfo, includeThumbnails = false) {
+    createLocalDashManifest: async function (videoInfo, includeThumbnails = false, poToken) {
       const xmlData = await videoInfo.toDash({
+        url_transformer: (url) => {
+          if (poToken) url.searchParams.set('pot', poToken)
+          return url
+        },
         manifest_options: {
           include_thumbnails: includeThumbnails,
         },
@@ -1856,7 +2204,7 @@ export default defineComponent({
         translationName = this.t('Locale Name')
         translationCode = userLanguages.values().next().value
       } else {
-        translationName = translationLanguage.language_name.text
+        translationName = translationLanguage.language_name?.text ?? this.t('Locale Name')
         translationCode = translationLanguage.language_code
       }
 
@@ -1881,7 +2229,7 @@ export default defineComponent({
 
       const label = this.t('Video.Player.TranslatedCaptionTemplate', {
         language: translationName,
-        originalLanguage: trackToTranslate.name.text
+        originalLanguage: trackToTranslate.name?.text ?? trackToTranslate.language_code
       })
 
       return {
@@ -1900,6 +2248,10 @@ export default defineComponent({
       if (player && !player.isPaused()) {
         player.pause()
       }
+    },
+
+    getExternalPlayerUrl: function () {
+      return this.$refs.player?.getExternalPlayerUrl?.() || null
     },
 
     getWatchedProgress: function () {
@@ -1922,7 +2274,7 @@ export default defineComponent({
     },
 
     updateTitle: function () {
-      this.setAppTitle(this.videoTitle)
+      this.setAppTitle(this.displayVideoTitle)
     },
 
     isHiddenVideo: function (forbiddenTitles, channelsHidden, video) {

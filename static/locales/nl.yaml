@@ -208,6 +208,7 @@ Settings:
     General Settings: 'Algemeen'
     Fallback to Non-Preferred Backend on Failure: 'Terugvallen op alternatieve backend bij problemen'
     Enable Search Suggestions: 'Zoeksuggesties inschakelen'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Standaard startscherm'
     Locale Preference: 'Regiovoorkeur'
     Preferred API Backend:
@@ -420,7 +421,7 @@ Settings:
       Default Viewing Mode: Standaard afspeelmode
       Full Screen: Volledig scherm
       Picture in Picture: Beeld in beeld
-      External Player: Externe speler
+      External Player: Externe speler ({externalPlayerName})
     Autoplay Interruption Timer: Timer voor Automatisch Afspelen Onderbreken
   Privacy Settings:
     Privacy Settings: 'Privacy'
@@ -974,6 +975,7 @@ Playing Next Video Interval: Volgende video wordt afgespeeld. Klik om te onderbr
 More: Meer
 Unknown YouTube url type, cannot be opened in app: Onbekende YouTube-URL; de URL kan niet worden geopend in de app
 Open New Window: Nieuw venster openen
+Reload: Reload
 Default Invidious instance has been cleared: Standaard Invidious-instantie is verwijderd
 Default Invidious instance has been set to {instance}: Standaard Invidious-instantie is ingesteld op {instance}
 Are you sure you want to open this link?: Weet u zeker dat u deze link wilt openen?

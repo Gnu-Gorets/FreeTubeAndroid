@@ -207,6 +207,7 @@ Settings:
     Check for Updates: 'Sjå etter oppdateringar'
     Fallback to Non-Preferred Backend on Failure: 'Tilbakefall til ikkje-føretrekte backend ved feil'
     Enable Search Suggestions: 'Slå på søkeforslag'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Standardlandingside'
     Locale Preference: 'Språkinnstilling'
     Preferred API Backend:
@@ -719,6 +720,7 @@ Unknown YouTube url type, cannot be opened in app: Ukjent type YouTube-nettadres
 Playing Next Video Interval: Speler av neste video no. Klikk her for å avbryte. | Speler av neste video om {nextVideoInterval} sekund. Klikk her for å avbryte. | Speler av neste video om {nextVideoInterval} sekund. Klikk her for å avbryte.
 More: Meir
 Open New Window: Opne nytt vindauge
+Reload: Reload
 Search Bar:
   Clear Input: Tøm inndata
   Remove: Fjerna
@@ -734,7 +736,7 @@ Channels:
   Count: Fant {number} kanal(ar).
   Empty: Kanallista di er tom.
   Unsubscribe Prompt: Er du sikker på at du vil avslutte abonnementet på "{channelName}"?
-Screenshot Success: Lagra skjermbilete som "{filePath}"
+Screenshot Success: Lagra skjermbilete
 Screenshot Error: Skjermbilete feila. {error}
 Ok: OK
 Clipboard:
