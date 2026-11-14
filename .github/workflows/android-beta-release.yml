@@ -9,6 +9,7 @@ name: Android Beta Release
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: android-beta-release-${{ github.ref }}-${{ github.sha }}
@@ -162,6 +163,7 @@ jobs:
           COMMIT_SHA: ${{ matrix.commit }}
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
@@ -171,8 +173,21 @@ jobs:
             echo "Release $RELEASE_TAG already exists; leaving it unchanged."
             exit 0
           fi
-          notes=$(printf 'Commit: `%s`\nVersion: `%s`\nBase: `v0.26.0-beta`' \
-            "$COMMIT_SHA" "$VERSION_NAME")
+          pr_body=$(gh api "repos/$GITHUB_REPOSITORY/commits/$COMMIT_SHA/pulls" \
+            --jq 'map(select(.base.ref == "beta/0.26.0" and .merged_at != null)) | first | .body // ""')
+          notes=$(printf '%s\n' "$pr_body" | awk '
+            /^## Description[[:space:]]*$/ { in_description=1; next }
+            /^## / { if (in_description) exit }
+            in_description && /<!--[[:space:]]/ { next }
+            in_description { print }
+          ' | sed '/^[[:space:]]*$/d')
+          if [[ -z "$notes" ]]; then
+            notes=$(git show -s --format=%B "$COMMIT_SHA")
+          fi
+          if (( ${#notes} > 500 )); then
+            echo "Release notes exceed F-Droid's 500-character changelog limit." >&2
+            exit 1
+          fi
           gh release create "$RELEASE_TAG" "$APK_PATH#$asset_name" \
             --target "$COMMIT_SHA" \
             --title "FreeTube Beta Release $VERSION_NAME" \
