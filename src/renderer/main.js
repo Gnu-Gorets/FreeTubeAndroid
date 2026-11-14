@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import i18n from './i18n/index'
+import i18n, { loadLocale } from './i18n/index'
 import router from './router/index'
 import store from './store/index'
 import App from './App.vue'
@@ -130,7 +130,6 @@ import {
   faDotCircle as farDotCircle
 } from '@fortawesome/free-regular-svg-icons'
 import {
-  faBitcoin,
   faGithub,
   faMastodon,
   faMatrix,
@@ -259,7 +258,6 @@ library.add(
 
   // brand icons
   faGithub,
-  faBitcoin,
   faMastodon,
   faMatrix,
 )
@@ -278,7 +276,9 @@ app
   .use(store)
   .use(i18n)
 
-router.isReady().then(() => {
+store.dispatch('startDownloadUpdates')
+
+Promise.all([loadLocale('en-US'), router.isReady()]).then(() => {
   app.mount('#app')
 })
 

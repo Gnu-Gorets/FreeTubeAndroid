@@ -1,0 +1,59 @@
+# Android build
+
+Android build uses Docker for Node.js, pnpm, JDK, and Android SDK. Host `adb` is only needed for device installation and tests.
+
+## Build
+
+```bash
+docker compose build android-build
+docker compose run --rm android-build bash -lc \
+  'pnpm install --frozen-lockfile && \
+   pnpm run pack:android:core && \
+   cd android && ./gradlew assembleDebug'
+```
+
+APK output:
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Local nightly release build does not require signing:
+
+```bash
+docker compose run --rm android-nightly
+```
+
+Output:
+
+```text
+android/app/build/outputs/apk/release/app-release-unsigned.apk
+```
+
+For GitHub signed nightly setup, see `docs/ANDROID_NIGHTLY_SIGNING.md`.
+
+Gradle cache, pnpm store, and Android debug keystore use Docker named volumes. This keeps app and androidTest debug signatures compatible across separate containers. repository and generated Android assets are bind-mounted into `/workspace`; generated output is ignored by Git.
+
+## Install on device
+
+Keep `adb` on host. Use host `pnpm` only for JavaScript/static checks; Android packaging and Gradle builds stay in Docker:
+
+```bash
+adb devices -l
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+connected device is not required to build APK. Device validation must be reported separately when no device is available.
+
+## Toolchain
+
+image currently provides:
+
+- Node.js 24;
+- pnpm 12.3.4;
+- JDK 17;
+- Android platform 36;
+- Android build tools 36.0.0;
+- Android platform-tools preinstalled in image (avoids per-build SDK installation).
+
+These versions match current Android project configuration. Change them together with `android/app/build.gradle.kts`, not independently.

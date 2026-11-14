@@ -176,7 +176,7 @@ User Playlists:
   Move Video Up: Μετακίνηση βίντεο πάνω
   Remove Duplicate Videos: Αφαίρεση διπλών βίντεο
   Edit Playlist Info: Επεξεργασία πληροφοριών λίστας αναπαραγωγής
-  Are you sure you want to remove {playlistItemCount} watched videos from this playlist? This cannot be undone: Είστε σίγουροι ότι θέλετε να αφαιρέσετε 1 παρακολουθημένο βίντεο από αυτή τη λίστα αναπαραγωγής; Αυτό δεν μπορεί να αναιρεθεί. Είστε σίγουροι ότι θέλετε να αφαιρέσετε τα βίντεο από αυτή τη λίστα; Αυτό δεν μπορεί να αναιρεθεί.
+  Are you sure you want to remove {playlistItemCount} watched videos from this playlist? This cannot be undone: Είστε σίγουροι ότι θέλετε να αφαιρέσετε 1 παρακολουθημένο βίντεο από αυτή τη λίστα αναπαραγωγής; Αυτό δεν μπορεί να αναιρεθεί. | Είστε σίγουροι ότι θέλετε να αφαιρέσετε {playlistItemCount} παρακολουθημένα βίντεο από αυτή τη λίστα αναπαραγωγής; Αυτό δεν μπορεί να αναιρεθεί.
   Remove from Playlist: Αφαίρεση από τη λίστα αναπαραγωγής
   Are you sure you want to remove {playlistItemCount} duplicate videos from this playlist? This cannot be undone: Είστε σίγουροι ότι θέλετε να αφαιρέσετε 1 διπλό βίντεο από αυτή τη λίστα αναπαραγωγής; Αυτό δεν μπορεί να αναιρεθεί. Είστε σίγουροι ότι θέλετε να αφαιρέσετε {playlistItemCount} διπλά βίντεο από αυτή τη λίστα; Αυτό δεν μπορεί να αναιρεθεί.
   This playlist currently has no videos.: Αυτή η λίστα αναπαραγωγής προς το παρόν δεν έχει βίντεο.
@@ -212,6 +212,7 @@ Settings:
     General Settings: 'Γενικά'
     Fallback to Non-Preferred Backend on Failure: 'Εναλλαγή σε μη προτιμώμενο σύστημα υποστήριξης σε περίπτωση αποτυχίας'
     Enable Search Suggestions: 'Ενεργοποίηση προτάσεων αναζήτησης'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Προεπιλεγμένη σελίδα προορισμού'
     Locale Preference: 'Προτιμήσεις γλώσσας'
     Preferred API Backend:
@@ -1005,6 +1006,7 @@ Search Bar:
   Open Search Container: Άνοιγμα Δοχείου Αναζήτησης
   Search: Αναζήτηση
 Open New Window: Άνοιγμα Νέου παραθύρου
+Reload: Reload
 Default Invidious instance has been set to {instance}: Το προεπιλεγμένο στιγμιότυπο Invidious έχει οριστεί σε {instance}
 Default Invidious instance has been cleared: Το προεπιλεγμένο στιγμιότυπο Invidious έχει διαγραφεί
 External link opening has been disabled in the general settings: Το άνοιγμα εξωτερικών συνδέσμων έχει απενεργοποιηθεί στις γενικές ρυθμίσεις
@@ -1043,7 +1045,7 @@ Search Listing:
     VR180: VR180
     New: Νέα
     3D: 3D
-Search character limit: Το ερώτημα αναζήτησης είναι πάνω από το αναζητήσημο όριο χαρακτήρα
+Search character limit: Το ερώτημα αναζήτησης είναι πάνω από το όριο των {searchCharacterLimit} χαρακτήρων
 Right-click or hold to see history: Δεξί κλικ ή κράτηστε για να δείτε το ιστορικό
 Close Banner: Κλείσιμο Βanner
 Feed:

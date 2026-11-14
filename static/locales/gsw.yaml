@@ -24,6 +24,7 @@ Close: 'Schlüsse'
 Back: 'Zrugg'
 Forward: 'Füre'
 Open New Window: 'Nois Fäischter ufmache'
+Reload: Reload
 
 Version {versionNumber} is now available!  Click for more details: 'Version {versionNumber} isch jetzt verfüegbar! Klick für meh Details.'
 Download From Site: 'Vo de Website abelade'
@@ -101,7 +102,7 @@ Global:
   Sort By: Sortieren nach
 Search character limit: Die Suchanfrage ist länger als das erlaubte Limit von {searchCharacterLimit} Zeichen
 Preferences: Ihstellige
-Go to page: gehe zu
+Go to page: gehe zu {page}
 Close Banner: Banner schließen
 Search Bar:
   Remove: Entferne

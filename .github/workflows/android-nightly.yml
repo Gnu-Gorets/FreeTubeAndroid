@@ -1,0 +1,151 @@
+---
+name: Android Beta Nightly
+
+'on':
+  push:
+    branches:
+      - beta/0.26.0
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-beta-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/beta/0.26.0'
+    runs-on: ubuntu-latest
+    outputs:
+      commits: ${{ steps.list.outputs.commits }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: List commits to build
+        id: list
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_commit=b23886b04d09fd0ee82f088a0d4075deb1785c3f
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            commits="$GITHUB_SHA"
+          elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
+            commits=$(git rev-list --reverse "$BEFORE_SHA..$GITHUB_SHA")
+          else
+            commits=$(git rev-list --reverse "$base_commit..$GITHUB_SHA")
+          fi
+          if [[ -z "$commits" ]]; then
+            commits="$GITHUB_SHA"
+          fi
+          commit_list=$(
+            printf '%s\n' "$commits" |
+              jq -R -s -c 'split("\n") | map(select(length > 0))'
+          )
+          echo "commits=$commit_list" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: prepare
+    name: Build Android beta release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        commit: ${{ fromJson(needs.prepare.outputs.commits) }}
+
+    steps:
+      - name: Checkout commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ matrix.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set version
+        id: version
+        env:
+          COMMIT_SHA: ${{ matrix.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_version=$(jq -er '.version | strings' package.json)
+          if [[ ! "$base_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Unsupported base version: $base_version" >&2
+            exit 1
+          fi
+          major=${BASH_REMATCH[1]}
+          minor=${BASH_REMATCH[2]}
+          patch=${BASH_REMATCH[3]}
+          base_tag=v0.26.0-beta
+          base_commit=b23886b04d09fd0ee82f088a0d4075deb1785c3f
+          commit_number=$(git rev-list --count "$base_commit..$COMMIT_SHA")
+          if (( commit_number < 1 )); then
+            echo "Commit is not after $base_tag ($base_commit)" >&2
+            exit 1
+          fi
+          version_name="${base_version}.${commit_number}"
+          version_code=$((major * 1000000000
+            + minor * 1000000
+            + patch * 1000
+            + commit_number))
+          if (( version_code < 1 || version_code > 2100000000 )); then
+            echo "Android versionCode is out of range: $version_code" >&2
+            exit 1
+          fi
+          {
+            echo "version_name=$version_name"
+            echo "version_code=$version_code"
+            echo "release_tag=android-v$version_name-${COMMIT_SHA:0:7}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker compose build android-nightly
+
+      - name: Build unsigned APK
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          docker compose run --rm \
+            -e ANDROID_VERSION_NAME="$VERSION_NAME" \
+            -e ANDROID_VERSION_CODE="$VERSION_CODE" \
+            -e ANDROID_APPLICATION_ID=io.freetubeapp.freetubeandroid.nightly \
+            android-nightly
+
+      - name: Publish per-commit prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_PATH: >-
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+          COMMIT_SHA: ${{ matrix.commit }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$APK_PATH"
+          asset_name="freetube-android-$VERSION_NAME.apk"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; leaving it unchanged."
+            exit 0
+          fi
+          notes=$(printf 'Commit: `%s`\nVersion: `%s`\nBase: `v0.26.0-beta`' \
+            "$COMMIT_SHA" "$VERSION_NAME")
+          gh release create "$RELEASE_TAG" "$APK_PATH#$asset_name" \
+            --target "$COMMIT_SHA" \
+            --title "FreeTube Android $VERSION_NAME" \
+            --notes "$notes" \
+            --prerelease

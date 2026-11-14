@@ -38,7 +38,7 @@ Global:
     Channel Count: 1 チャンネル | {count} チャンネル
     Comment Count: 1 コメント | {count} コメント
     Like Count: 1 いいね | {count} いいね
-    Replies Remaining: （残り 1 件）|（残り {count} 件）
+    Replies Remaining: "{' '}（残り 1 件）|{' '}（残り {count} 件）"
 Search / Go to URL: '検索 / URL に移動'
   # In Filter Button
 Search Filters:
@@ -210,6 +210,7 @@ Settings:
     General Settings: '一般'
     Fallback to Non-Preferred Backend on Failure: 'データ取得の問題発生時には取得方法を自動変更'
     Enable Search Suggestions: '検索候補の有効化'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: '既定の言語ページ'
     Locale Preference: '言語設定'
     Preferred API Backend:
@@ -1027,6 +1028,7 @@ Playing Next Video Interval: すぐに次の動画を再生します。クリッ
 More: もっと見る
 Unknown YouTube url type, cannot be opened in app: 不明な YouTube url タイプのため、アプリで開くことができません
 Open New Window: 新しいウィンドウを開く
+Reload: Reload
 Default Invidious instance has been cleared: デフォルトの Invidious インスタンスがクリアされました
 Default Invidious instance has been set to {instance}: デフォルトの Invidious インスタンスは{instance}に設定されました
 External link opening has been disabled in the general settings: 一般設定で外部リンクの表示は無効になっています
