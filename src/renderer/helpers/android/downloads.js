@@ -23,6 +23,13 @@ export function getDownloadDirectory() {
   return localStorage.getItem(DOWNLOAD_DIRECTORY_KEY) || (typeof android.getDownloadDirectory === 'function' ? android.getDownloadDirectory() : null)
 }
 
+export function getDownloadDirectoryDisplayPath(directory) {
+  if (!directory) return ''
+  return typeof android.getDownloadDirectoryDisplayPath === 'function'
+    ? android.getDownloadDirectoryDisplayPath(directory)
+    : directory
+}
+
 export function resetDownloadDirectory() {
   if (!isAndroid) return
   const uri = getDownloadDirectory()

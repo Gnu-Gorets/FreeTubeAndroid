@@ -61,6 +61,7 @@ import FtToggleSwitch from '../FtToggleSwitch/FtToggleSwitch.vue'
 import store from '../../store'
 import {
   getDownloadDirectory,
+  getDownloadDirectoryDisplayPath,
   getDownloadSettings,
   resetDownloadDirectory,
   selectDownloadDirectory,
@@ -73,15 +74,7 @@ const concurrency = computed(() => store.getters.getDownloadsConcurrency)
 const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideoFormat)
 const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
 const directory = ref(getDownloadDirectory())
-const directoryLabel = computed(() => {
-  if (!directory.value) return ''
-  try {
-    const path = decodeURIComponent(new URL(directory.value).pathname)
-    return path.split(':').pop()?.split('/').filter(Boolean).pop() || directory.value
-  } catch {
-    return directory.value
-  }
-})
+const directoryLabel = computed(() => getDownloadDirectoryDisplayPath(directory.value))
 const videoFormatValues = ['auto', 'mp4', 'webm']
 const audioFormatValues = ['auto', 'm4a', 'webm']
 const videoFormatNames = ['Auto', 'MP4', 'WebM']
@@ -117,6 +110,10 @@ onMounted(async () => {
 
 <style scoped>
 .downloadDirectory {
+  margin-block: .75rem 0;
+  color: var(--tertiary-text-color);
+  font-size: .875rem;
+  text-align: center;
   box-sizing: border-box;
   inline-size: 100%;
   min-inline-size: 0;
