@@ -97,3 +97,5 @@ Each push to `beta/0.26.0` builds an APK and creates a separate prerelease for e
 The beta application ID is `io.freetubeapp.freetubeandroid.betaRelease`. The existing nightly app keeps its separate application ID, `io.freetubeapp.freetubeandroid.nightly`.
 
 Each prerelease has an `android-beta-release-v<version>-<commit>` tag and a signed `freetube-android-beta-release-<version>.apk` asset. The workflow checks the APK signature, application ID, version, and `FreeTube` label before publishing. Re-running a commit keeps its version and does not replace an existing release.
+
+Release notes use the `Description` section of the merged PR associated with each commit. Write it as concise, user-facing notes in plain language, preferably as short bullets. Keep it within F-Droid's 500-character changelog limit. For changes with no user-visible effect, use `No user-facing changes.` If a commit has no associated merged PR or its description is empty, the workflow uses the commit message instead.
