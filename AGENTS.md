@@ -49,7 +49,7 @@ Proceed only when physical device state is `device` and active user is `0`.
 
 ## Beta release notes
 
-1. Android beta release notes are copied from the `Description` section of the merged PR. Write it as concise, user-facing release notes: state the user-visible change in plain language, use short bullets, and omit implementation details, test reports, and boilerplate.
+1. Android beta release notes are copied from the `Description` section of the merged PR. Write concise, user-facing notes in plain language. Group short bullets under `Added:`, `Fixed:`, and `Changed:` headings as needed. Omit implementation details, test reports, and boilerplate.
 2. Keep the description at or below F-Droid's 500-character changelog limit. For changes with no user-visible effect, write `No user-facing changes.` If a commit has no associated merged PR, the release workflow uses its commit message.
 
 ## Git workflow
