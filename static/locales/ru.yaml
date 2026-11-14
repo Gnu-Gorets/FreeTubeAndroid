@@ -210,6 +210,7 @@ Settings:
     General Settings: 'Общие'
     Fallback to Non-Preferred Backend on Failure: 'Откатить к непредпочтительному движку при сбое'
     Enable Search Suggestions: 'Включить поисковые предложения'
+    Use Original Video Titles: 'Использовать оригинальные названия видео'
     Default Landing Page: 'Страница по умолчанию'
     Locale Preference: 'Язык приложения'
     Preferred API Backend:
@@ -1030,6 +1031,7 @@ More: Больше
 Playing Next Video Interval: Воспроизведение следующего видео без задержки. Нажмите для отмены. | Воспроизведение следующего видео через {nextVideoInterval} сек. Нажмите для отмены. | Воспроизведение следующего видео через {nextVideoInterval} сек. Нажмите для отмены.
 Unknown YouTube url type, cannot be opened in app: Неизвестный тип адреса YouTube, невозможно открыть в приложении
 Open New Window: Открыть новое окно
+Reload: Reload
 Default Invidious instance has been cleared: Образец Invidious по умолчанию очищен
 Default Invidious instance has been set to {instance}: Образец Invidious по умолчанию установлен на {instance}
 External link opening has been disabled in the general settings: Открытие внешних ссылок отключено в настройках

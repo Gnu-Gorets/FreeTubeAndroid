@@ -16,6 +16,7 @@
       <FtToggleSwitch
         :label="$t('Settings.Proxy Settings.Enable Tor / Proxy')"
         :default-value="useProxy"
+        test-id="proxy-enabled"
         @change="handleUpdateProxy"
       />
     </FtFlexBox>
@@ -30,6 +31,7 @@
           :select-values="PROTOCOL_VALUES"
           class="protocol-dropdown"
           :icon="['fas', 'network-wired']"
+          test-id="proxy-protocol"
           @change="handleUpdateProxyProtocol"
         />
       </FtFlexBox>
@@ -39,6 +41,7 @@
           :show-action-button="false"
           show-label
           :value="proxyHostname"
+          test-id="proxy-host"
           @input="handleUpdateProxyHostname"
           @keydown.enter="testProxy"
         />
@@ -47,13 +50,14 @@
           :show-action-button="false"
           show-label
           :value="proxyPort"
+          test-id="proxy-port"
           :maxlength="5"
           @input="handleUpdateProxyPort"
           @keydown.enter="testProxy"
         />
       </FtFlexBox>
       <FtFlexBox
-        v-if="areCredentialsSupported"
+        v-if="areCredentialsSupported && !IS_ANDROID"
       >
         <FtInput
           :placeholder="$t('Settings.Proxy Settings.Proxy Username')"
@@ -81,6 +85,7 @@
       <FtFlexBox>
         <FtButton
           :label="$t('Settings.Proxy Settings.Test Proxy')"
+          test-id="proxy-test"
           @click="testProxy"
         />
       </FtFlexBox>
@@ -129,6 +134,7 @@ import store from '../../store/index'
 import { debounce, showToast } from '../../helpers/utils'
 
 const { locale, t } = useI18n()
+const IS_ANDROID = process.env.IS_ANDROID
 
 const PROTOCOL_NAMES = [
   'HTTP',
@@ -212,9 +218,13 @@ const areCredentialsSupported = computed(() => {
 /**
  * @param {boolean} enabled
  */
-function handleUpdateProxy(enabled) {
+async function handleUpdateProxy(enabled) {
   if (enabled) {
-    enableProxy()
+    try {
+      await enableProxy()
+    } catch (error) {
+      showProxyError(error)
+    }
   } else {
     disableProxy()
   }
@@ -225,12 +235,12 @@ function handleUpdateProxy(enabled) {
 /**
  * @param {string} value
  */
-function handleUpdateProxyProtocol(value) {
-  if (useProxy.value) {
-    enableProxy()
-  }
+async function handleUpdateProxyProtocol(value) {
+  await store.dispatch('updateProxyProtocol', value)
 
-  store.dispatch('updateProxyProtocol', value)
+  if (useProxy.value) {
+    enableProxy().catch(showProxyError)
+  }
 }
 
 /**
@@ -290,14 +300,46 @@ function handleUpdateProxyPassword(value) {
 function enableProxy() {
   if (process.env.IS_ELECTRON) {
     window.ftElectron.enableProxy(proxyUrl.value)
+    return Promise.resolve()
   }
+
+  if (IS_ANDROID) {
+    const id = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      const resolveEvent = () => {
+        cleanup()
+        resolve()
+      }
+      const rejectEvent = () => {
+        cleanup()
+        reject(new Error(window.Android.getSyncMessage(id)))
+      }
+      const cleanup = () => {
+        window.removeEventListener(`${id}-resolve`, resolveEvent)
+        window.removeEventListener(`${id}-reject`, rejectEvent)
+      }
+      window.addEventListener(`${id}-resolve`, resolveEvent)
+      window.addEventListener(`${id}-reject`, rejectEvent)
+      window.Android.setProxy(id, proxyProtocol.value, proxyHostname.value, proxyPort.value)
+    })
+  }
+
+  return Promise.resolve()
 }
 
-const debouncedEnableProxy = debounce(enableProxy, 200)
+function showProxyError(error) {
+  console.error('errored while configuring proxy:', error)
+  showToast(t('Settings.Proxy Settings["Error getting network information. Is your proxy configured properly?"]'))
+}
+
+const debouncedEnableProxy = debounce(() => enableProxy().catch(showProxyError), 200)
 
 function disableProxy() {
   if (process.env.IS_ELECTRON) {
     window.ftElectron.disableProxy()
+  } else if (IS_ANDROID) {
+    const id = crypto.randomUUID()
+    window.Android.clearProxy(id)
   }
 
   dataAvailable.value = false
@@ -311,7 +353,7 @@ async function testProxy() {
   isLoading.value = true
 
   if (!useProxy.value) {
-    enableProxy()
+    await enableProxy()
   }
 
   try {

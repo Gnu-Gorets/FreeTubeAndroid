@@ -210,6 +210,7 @@ Settings:
     General Settings: 'Ogólne'
     Fallback to Non-Preferred Backend on Failure: 'Wycofaj się do niepreferowanego back-endu przy niepowodzeniu'
     Enable Search Suggestions: 'Włącz sugestie wyszukiwania'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Domyślna karta startowa'
     Locale Preference: 'Ustawienia regionalne'
     Preferred API Backend:
@@ -1030,6 +1031,7 @@ Playing Next Video Interval: Odtwarzanie kolejnego filmu już za chwilę. Wciśn
 More: Więcej
 Unknown YouTube url type, cannot be opened in app: Nieznany typ adresu URL YouTube. Nie można go otworzyć w aplikacji
 Open New Window: Otwórz nowe okno
+Reload: Reload
 Default Invidious instance has been cleared: Domyślna instancja Invidious została wyczyszczona
 Default Invidious instance has been set to {instance}: Domyślna instancja Invidious została ustawiona na {instance}
 Search Bar:
@@ -1040,7 +1042,7 @@ Search Bar:
 External link opening has been disabled in the general settings: Otwieranie zewnętrznych odnośników zostało wyłączone w ustawieniach ogólnych
 Are you sure you want to open this link?: Czy na pewno chcesz otworzyć ten link?
 Screenshot Error: Wykonanie zrzutu nie powiodło się. {error}
-Screenshot Success: Zapisano zrzut ekranu jako „{filePath}”
+Screenshot Success: Zapisano zrzut ekranu
 New Window: Nowe okno
 Channels:
   Title: Lista kanałów

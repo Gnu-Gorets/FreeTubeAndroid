@@ -46,6 +46,7 @@
       <button
         v-if="!hideSearchBar"
         class="navSearchButton navButton"
+        data-test="search-open"
         :aria-label="t('Search Bar.Open Search Container')"
         :title="t('Search Bar.Open Search Container')"
         @click="toggleSearchContainer"
@@ -600,6 +601,12 @@ function removeSearchHistoryEntryInDbAndCache(query) {
 
 function toggleSearchContainer() {
   showSearchContainer.value = !showSearchContainer.value
+  if (showSearchContainer.value) {
+    nextTick(() => {
+      searchInput.value?.focus()
+      searchInput.value?.select()
+    })
+  }
 }
 
 /**

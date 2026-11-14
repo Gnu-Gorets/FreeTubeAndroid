@@ -128,9 +128,10 @@ import store from './store/index'
 import packageDetails from '../../package.json'
 import { openExternalLink, openInternalPath, showToast } from './helpers/utils'
 import { translateWindowTitle } from './helpers/strings'
-import { loadLocale } from './i18n/index'
 import { getLocalClip } from './helpers/api/local.js'
 import { getClipInvidious } from './helpers/api/invidious.js'
+
+import { updateAndroidTheme } from './helpers/android/system'
 
 const route = useRoute()
 const router = useRouter()
@@ -174,7 +175,34 @@ const defaultInvidiousInstance = computed(() => store.getters.getDefaultInvidiou
 const dataReady = ref(false)
 
 onMounted(async () => {
+  if (process.env.IS_ANDROID) {
+    window.addEventListener('youtube-link', ({ detail }) => {
+      if (detail?.link) handleYoutubeLink(detail.link)
+    })
+    window.Android?.onAppReady?.()
+  }
+
   await store.dispatch('grabUserSettings')
+
+  if (process.env.IS_ANDROID && store.getters.getUseProxy) {
+    const proxyId = crypto.randomUUID()
+    await new Promise((resolve) => {
+      const finish = () => {
+        window.removeEventListener(`${proxyId}-resolve`, finish)
+        window.removeEventListener(`${proxyId}-reject`, finish)
+        window.Android.getSyncMessage(proxyId)
+        resolve()
+      }
+      window.addEventListener(`${proxyId}-resolve`, finish)
+      window.addEventListener(`${proxyId}-reject`, finish)
+      window.Android.setProxy(
+        proxyId,
+        store.getters.getProxyProtocol,
+        store.getters.getProxyHostname,
+        store.getters.getProxyPort
+      )
+    })
+  }
 
   updateTheme()
 
@@ -247,6 +275,7 @@ watch(secColor, updateTheme)
 function updateTheme() {
   document.body.className = `${baseTheme.value || 'system'} main${mainColor.value || 'Red'} sec${secColor.value || 'Blue'}`
   document.body.dataset.systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  if (process.env.IS_ANDROID) updateAndroidTheme()
 }
 
 updateTheme()
@@ -600,10 +629,6 @@ watch(locale, (value) => {
 
   document.body.dir = isLocaleRightToLeft.value ? 'rtl' : 'ltr'
 }, { immediate: true })
-
-// en-US is the fallback locale, which means we always need it
-// regardless of the user's settings so we can already start start loading it now
-loadLocale('en-US')
 
 /** @type {import('vue').ComputedRef<string>} */
 const currentInvidiousInstanceUrl = computed(() => store.getters.getCurrentInvidiousInstanceUrl)

@@ -1,0 +1,110 @@
+---
+services:
+  android-build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
+      - gradle-cache:/root/.gradle
+      - android-debug-keystore:/root/.android
+      - pnpm-store:/pnpm/store
+    environment:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      CI: "true"
+      PNPM_HOME: /pnpm
+      npm_config_update_notifier: "false"
+      PNPM_CONFIG_LOGLEVEL: "error"
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+  android-nightly:
+    extends:
+      service: android-build
+    environment:
+      ANDROID_VERSION_NAME: ${ANDROID_VERSION_NAME:-}
+      ANDROID_VERSION_CODE: ${ANDROID_VERSION_CODE:-}
+      ANDROID_APPLICATION_ID: ${ANDROID_APPLICATION_ID:-}
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        base_version=$$(node -p "require('./package.json').version")
+        version_name="$${ANDROID_VERSION_NAME:-$${base_version}-nightly.local}"
+        version_code="$${ANDROID_VERSION_CODE:-1}"
+        application_id="$${ANDROID_APPLICATION_ID:-io.freetubeapp.freetubeandroid.nightly}"
+        pnpm install --frozen-lockfile
+        pnpm run pack:android:core
+        cd android
+        ./gradlew clean assembleRelease \
+          -PandroidVersionName="$${version_name}" \
+          -PandroidVersionCode="$${version_code}" \
+          -PandroidApplicationId="$${application_id}"
+
+  android-beta-release:
+    extends:
+      service: android-build
+    environment:
+      ANDROID_VERSION_NAME: ${ANDROID_VERSION_NAME:-}
+      ANDROID_VERSION_CODE: ${ANDROID_VERSION_CODE:-}
+      ANDROID_APPLICATION_ID: ${ANDROID_APPLICATION_ID:-}
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        base_version=$$(node -p "require('./package.json').version")
+        version_name="$${ANDROID_VERSION_NAME:-$${base_version}-beta-release.local}"
+        version_code="$${ANDROID_VERSION_CODE:-1}"
+        application_id="$${ANDROID_APPLICATION_ID:-io.freetubeapp.freetubeandroid.betaRelease}"
+        signing_config=none
+        if [[ -n "$${ANDROID_BETA_RELEASE_KEYSTORE_BASE64:-}" || \
+              -n "$${ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD:-}" || \
+              -n "$${ANDROID_BETA_RELEASE_KEY_ALIAS:-}" || \
+              -n "$${ANDROID_BETA_RELEASE_KEY_PASSWORD:-}" ]]; then
+          : "$${ANDROID_BETA_RELEASE_KEYSTORE_BASE64:?Missing Base64}"
+          : "$${ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD:?Missing password}"
+          : "$${ANDROID_BETA_RELEASE_KEY_ALIAS:?Missing alias}"
+          : "$${ANDROID_BETA_RELEASE_KEY_PASSWORD:?Missing key password}"
+          umask 077
+          signing_dir=$$(
+            mktemp -d "$${TMPDIR:-/tmp}/freetube-beta.XXXXXX"
+          )
+          trap 'rm -rf "$$signing_dir"' EXIT
+          printf '%s' "$$ANDROID_BETA_RELEASE_KEYSTORE_BASE64" |
+            base64 --decode > "$$signing_dir/key.p12"
+          export ANDROID_BETA_RELEASE_KEYSTORE_PATH="$$signing_dir/key.p12"
+          signing_config=betaRelease
+        fi
+        pnpm install --frozen-lockfile
+        pnpm run pack:android:core
+        cd android
+        ./gradlew clean assembleRelease \
+          -PandroidVersionName="$${version_name}" \
+          -PandroidVersionCode="$${version_code}" \
+          -PandroidApplicationId="$${application_id}" \
+          -PandroidSigningConfig="$$signing_config"
+        if [[ "$$signing_config" == betaRelease ]]; then
+          apk=app/build/outputs/apk/release/app-release.apk
+          test -f "$$apk"
+          apksigner=/opt/android-sdk/build-tools/36.0.0/apksigner
+          aapt=/opt/android-sdk/build-tools/36.0.0/aapt
+          "$$apksigner" verify --print-certs "$$apk"
+          badging=$$("$$aapt" dump badging "$$apk")
+          grep -F "package: name='$$application_id'" <<< "$$badging"
+          grep -F \
+            "versionCode='$$version_code' versionName='$$version_name'" \
+            <<< "$$badging"
+          grep -F "application-label:'FreeTube'" <<< "$$badging"
+        else
+          test -f app/build/outputs/apk/release/app-release-unsigned.apk
+        fi
+
+volumes:
+  gradle-cache: {}
+  android-debug-keystore: {}
+  pnpm-store: {}

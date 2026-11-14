@@ -215,6 +215,7 @@ Settings:
     Check for Updates: 'Check for updates'
     Fallback to Non-Preferred Backend on Failure: 'Revert to non-preferred backend on failure'
     Enable Search Suggestions: 'Enable search suggestions'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Default landing page'
     Locale Preference: 'Language preference'
     Preferred API Backend:
@@ -1007,6 +1008,7 @@ Playing Next Video Interval: Playing next video in no time. Click to cancel. | P
 More: More
 Unknown YouTube url type, cannot be opened in app: Unknown YouTube url type, cannot be opened in app
 Open New Window: Open New Window
+Reload: Reload
 Default Invidious instance has been cleared: Default Invidious instance has been cleared
 Default Invidious instance has been set to {instance}: Default Invidious instance has been set to {instance}
 Search Bar:

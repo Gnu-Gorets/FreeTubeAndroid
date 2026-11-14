@@ -218,6 +218,7 @@ Settings:
     Check for Updates: 'Kontrolovat aktualizace'
     Fallback to Non-Preferred Backend on Failure: 'Při chybě přepnout na nepreferovaný backend'
     Enable Search Suggestions: 'Zapnout návrhy vyhledávání'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Výchozí vstupní stránka'
     Locale Preference: 'Předvolby jazyka'
     Preferred API Backend:
@@ -1036,6 +1037,7 @@ Playing Next Video Interval: Přehrávání dalšího videa bez prodlevy Kliknut
 More: Více
 Unknown YouTube url type, cannot be opened in app: Neznámý typ adresy URL YouTube, nelze v aplikaci otevřít
 Open New Window: Otevřít nové okno
+Reload: Reload
 Default Invidious instance has been cleared: Výchozí instance Invidious byla vymazána
 Default Invidious instance has been set to {instance}: Výchozí instance Invidious byla nastavena na {instance}
 Search Bar:
