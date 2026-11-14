@@ -1,0 +1,194 @@
+---
+name: Android Beta Test APK
+
+'on':
+  pull_request:
+    branches:
+      - beta/0.26.0
+    types:
+      - labeled
+      - synchronize
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Branch that contains the commit
+        required: true
+        type: string
+      commit_sha:
+        description: Full commit SHA to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.actor == 'Gnu-Gorets' &&
+       github.ref == 'refs/heads/development') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.state == 'open' &&
+       github.event.pull_request.user.login == 'Gnu-Gorets' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       ((github.event.action == 'labeled' &&
+         github.event.label.name == 'beta-apk-test') ||
+        (github.event.action == 'synchronize' &&
+         contains(github.event.pull_request.labels.*.name, 'beta-apk-test'))))
+    name: Build signed beta test APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: >-
+            ${{ github.event_name == 'pull_request' &&
+            github.event.pull_request.head.sha ||
+            format('refs/heads/{0}', inputs.source_branch) }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select commit and version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUESTED_SHA: ${{ inputs.commit_sha }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            commit_sha="$PR_HEAD_SHA"
+          else
+            if ! git check-ref-format --branch "$SOURCE_BRANCH" >/dev/null; then
+              echo "Enter a valid source branch." >&2
+              exit 1
+            fi
+            commit_sha="$REQUESTED_SHA"
+          fi
+          if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Enter a full commit SHA." >&2
+            exit 1
+          fi
+          git cat-file -e "$commit_sha^{commit}"
+          if ! git merge-base --is-ancestor "$commit_sha" HEAD; then
+            echo "Commit is not on the selected branch or PR ref." >&2
+            exit 1
+          fi
+          git checkout --detach "$commit_sha"
+          base_version=$(jq -er '.version | strings' package.json)
+          if [[ ! "$base_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Unsupported base version: $base_version" >&2
+            exit 1
+          fi
+          major=${BASH_REMATCH[1]}
+          minor=${BASH_REMATCH[2]}
+          patch=${BASH_REMATCH[3]}
+          base_commit=b23886b04d09fd0ee82f088a0d4075deb1785c3f
+          if ! git merge-base --is-ancestor "$base_commit" "$commit_sha"; then
+            echo "Commit is not based on v0.26.0-beta." >&2
+            exit 1
+          fi
+          commit_number=$(git rev-list --count "$base_commit..$commit_sha")
+          if (( commit_number < 1 )); then
+            echo "Commit is not after v0.26.0-beta." >&2
+            exit 1
+          fi
+          version_name="${base_version}.${commit_number}"
+          version_code=$((major * 1000000000
+            + minor * 1000000
+            + patch * 1000
+            + commit_number))
+          if (( version_code < 1 || version_code > 2100000000 )); then
+            echo "Android versionCode is out of range: $version_code" >&2
+            exit 1
+          fi
+          {
+            echo "commit_sha=$commit_sha"
+            echo "short_sha=${commit_sha:0:7}"
+            echo "version_name=$version_name"
+            echo "version_code=$version_code"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check beta signing secrets
+        env:
+          BETA_KEYSTORE_BASE64: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_BASE64 }}
+          BETA_KEYSTORE_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD }}
+          BETA_KEY_ALIAS: ${{ secrets.ANDROID_BETA_RELEASE_KEY_ALIAS }}
+          BETA_KEY_PASSWORD: ${{ secrets.ANDROID_BETA_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$BETA_KEYSTORE_BASE64" || -z "$BETA_KEYSTORE_PASSWORD" || \
+                -z "$BETA_KEY_ALIAS" || -z "$BETA_KEY_PASSWORD" ]]; then
+            echo "::error::Missing beta signing secrets." >&2
+            exit 1
+          fi
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker compose build android-beta-release
+
+      - name: Build signed APK
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          APPLICATION_ID: io.freetubeapp.freetubeandroid.betaRelease
+          ANDROID_BETA_RELEASE_KEYSTORE_BASE64: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_BETA_RELEASE_KEY_ALIAS: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEY_ALIAS }}
+          ANDROID_BETA_RELEASE_KEY_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEY_PASSWORD }}
+        run: |
+          docker compose run --rm \
+            -e ANDROID_VERSION_NAME="$VERSION_NAME" \
+            -e ANDROID_VERSION_CODE="$VERSION_CODE" \
+            -e ANDROID_APPLICATION_ID="$APPLICATION_ID" \
+            -e ANDROID_BETA_RELEASE_KEYSTORE_BASE64 \
+            -e ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD \
+            -e ANDROID_BETA_RELEASE_KEY_ALIAS \
+            -e ANDROID_BETA_RELEASE_KEY_PASSWORD \
+            android-beta-release
+
+      - name: Upload test APK
+        uses: >-
+          actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: >-
+            freetube-android-beta-test-${{ steps.version.outputs.short_sha }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Add APK link to pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ steps.version.outputs.commit_sha }}
+          RUN_URL: >-
+            ${{ github.server_url }}/${{ github.repository
+            }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=$(printf \
+            'Beta test APK for commit `%s`: [download from workflow run](%s).' \
+            "$COMMIT_SHA" "$RUN_URL")
+          gh pr comment "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "$body"

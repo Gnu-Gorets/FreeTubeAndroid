@@ -61,6 +61,10 @@ docker compose run --rm android-nightly
 
 This uses nightly application ID and `package.json` version with `-nightly.local` suffix. For signing and GitHub nightly release setup, see `docs/ANDROID_NIGHTLY_SIGNING.md`.
 
+### Beta test APK
+
+For signed test APKs from beta PRs or a selected branch and commit, see `docs/ANDROID_BETA_PR_TESTING.md`.
+
 ## Android build and install
 
 Build from repository root with documented Docker workflow:
