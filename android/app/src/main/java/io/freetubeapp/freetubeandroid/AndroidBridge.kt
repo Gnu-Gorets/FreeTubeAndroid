@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import android.provider.OpenableColumns
 import android.app.PendingIntent
@@ -44,6 +45,14 @@ import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+
+internal fun formatExternalStorageDocumentId(documentId: String): String {
+    val (volumeId, path) = documentId.split(':', limit = 2).let {
+        if (it.size == 2) it[0] to it[1] else "primary" to it[0]
+    }
+    val volume = if (volumeId == "primary") "Internal storage" else "Storage ($volumeId)"
+    return listOf(volume, path.trim('/')).filter(String::isNotBlank).joinToString("/")
+}
 
 class AndroidBridge(
     private val activity: Activity,
@@ -310,6 +319,26 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun getDownloadDirectory(): String = DownloadStorage.DEFAULT_DIRECTORY
+
+    @JavascriptInterface
+    fun getDownloadDirectoryDisplayPath(tree: String): String {
+        if (tree == DownloadStorage.DEFAULT_DIRECTORY) return "Downloads/FreeTube"
+        return try {
+            val uri = Uri.parse(tree)
+            val documentId = DocumentsContract.getTreeDocumentId(uri)
+            if (uri.authority == "com.android.externalstorage.documents") {
+                formatExternalStorageDocumentId(documentId)
+            } else {
+                DocumentFile.fromTreeUri(activity, uri)?.name ?: tree
+            }
+        } catch (_: Exception) {
+            try {
+                DocumentFile.fromTreeUri(activity, Uri.parse(tree))?.name ?: tree
+            } catch (_: Exception) {
+                tree
+            }
+        }
+    }
 
     @JavascriptInterface
     fun revokeDownloadDirectory(tree: String): Boolean {
