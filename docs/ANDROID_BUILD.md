@@ -30,7 +30,13 @@ Output:
 android/app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-For GitHub signed nightly setup, see `docs/ANDROID_NIGHTLY_SIGNING.md`.
+Local unsigned beta-release build uses its own application ID; the displayed app name remains `FreeTube`:
+
+```bash
+docker compose run --rm android-beta-release
+```
+
+For GitHub beta release and signing setup, see `docs/ANDROID_BETA_RELEASE.md`.
 
 Gradle cache, pnpm store, and Android debug keystore use Docker named volumes. This keeps app and androidTest debug signatures compatible across separate containers. repository and generated Android assets are bind-mounted into `/workspace`; generated output is ignored by Git.
 
