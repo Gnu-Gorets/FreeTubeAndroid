@@ -166,7 +166,13 @@ jobs:
 
       - name: Set APK ownership for upload
         run: |
-          sudo chown -R "$(id -u):$(id -g)" \
+          # Docker's umask 077 leaves these build directories root-only.
+          owner="$(id -u):$(id -g)"
+          sudo chown "$owner" \
+            android/app/build \
+            android/app/build/outputs \
+            android/app/build/outputs/apk
+          sudo chown -R "$owner" \
             android/app/build/outputs/apk/release
 
       - name: Upload test APK
