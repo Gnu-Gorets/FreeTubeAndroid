@@ -42,13 +42,10 @@ pnpm run pack
 pnpm run pack:web
 ```
 
-Build Android packaging in Docker. This workflow uses production web assets, even for `assembleDebug`, so installed APK does not contain development source maps:
+Build Android packaging in Docker. The default `android-build` command creates a debug APK and uses production web assets, so the APK does not contain development source maps:
 
 ```bash
-docker compose run --rm android-build bash -lc \
-  'pnpm install --frozen-lockfile && \
-   pnpm run pack:android:core && \
-   cd android && ./gradlew assembleDebug'
+docker compose run --rm android-build
 ```
 
 `pack:android:dev` is reserved for WebView debugging. Do not use it for normal APK installation or performance testing.
@@ -71,13 +68,10 @@ This uses application ID `io.freetubeapp.freetubeandroid.betaRelease` and the `-
 
 ## Android build and install
 
-Build from repository root with documented Docker workflow:
+Build from repository root with the default Docker workflow:
 
 ```bash
-docker compose run --rm android-build bash -lc \
-  'pnpm install --frozen-lockfile && \
-   pnpm run pack:android:core && \
-   cd android && ./gradlew assembleDebug'
+docker compose run --rm android-build
 ```
 
 Install resulting APK from host with `adb` only after required device checks. debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. Stable application ID is `io.freetubeapp.freetubeandroid`; nightly application ID is `io.freetubeapp.freetubeandroid.nightly`; beta application ID is `io.freetubeapp.freetubeandroid.betaRelease`.

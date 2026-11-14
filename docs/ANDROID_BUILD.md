@@ -4,12 +4,10 @@ Android build uses Docker for Node.js, pnpm, JDK, and Android SDK. Host `adb` is
 
 ## Build
 
+Build the default Android debug APK:
+
 ```bash
-docker compose build android-build
-docker compose run --rm android-build bash -lc \
-  'pnpm install --frozen-lockfile && \
-   pnpm run pack:android:core && \
-   cd android && ./gradlew assembleDebug'
+docker compose run --rm android-build
 ```
 
 APK output:

@@ -20,6 +20,15 @@ services:
       npm_config_update_notifier: "false"
       PNPM_CONFIG_LOGLEVEL: "error"
       GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        pnpm install --frozen-lockfile
+        pnpm run pack:android:core
+        cd android
+        ./gradlew assembleDebug
 
   android-nightly:
     extends:
