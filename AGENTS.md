@@ -47,6 +47,11 @@ Proceed only when physical device state is `device` and active user is `0`.
 4. Never change system density, scale, resolution, font scale, or display settings. App `UI Scale` is allowed only for documented FreeTube smoke normalization.
 5. Do not change device data, app state, or system settings during manual testing unless explicitly requested.
 
+## Beta release notes
+
+1. Android beta release notes are copied from the `Description` section of the merged PR. Write it as concise, user-facing release notes: state the user-visible change in plain language, use short bullets, and omit implementation details, test reports, and boilerplate.
+2. Keep the description at or below F-Droid's 500-character changelog limit. For changes with no user-visible effect, write `No user-facing changes.` If a commit has no associated merged PR, the release workflow uses its commit message.
+
 ## Git workflow
 
 1. Direct commits and force pushes to `development` are allowed only for repository-owner-approved maintenance. Preserve Conventional Commits and coordinate force pushes with active contributors.

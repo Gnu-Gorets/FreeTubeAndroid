@@ -15,7 +15,7 @@
 <!-- Example: "closes #123456". -->
 
 ## Description
-<!-- Please write a clear and concise description of what the pull request does. -->
+<!-- Write concise, user-facing release notes in plain language. Keep this section within 500 characters. For changes with no user-visible effect, write: No user-facing changes. This section is copied to Android beta release notes. -->
 
 ## Screenshots <!-- If appropriate -->
 <!-- Please add before and after screenshots if there is a visible change. -->
