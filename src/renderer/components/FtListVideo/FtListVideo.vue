@@ -301,7 +301,7 @@
 
 <script setup>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 
@@ -317,13 +317,22 @@ import {
   getRelativeTimeFromDate,
   isNumberRounded,
   openExternalLink,
+  openExternalPlayer,
+  updateExternalPlayer,
   showToast,
   toDistractionFreeTitle,
   deepCopy,
   debounce
 } from '../../helpers/utils.js'
 import { deArrowData, deArrowThumbnail } from '../../helpers/sponsorblock.js'
+import { getLocalVideoInfo, getOriginalVideoLanguage } from '../../helpers/api/local'
+import { getNetworkType } from '../../helpers/android/network'
+import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
+import { getOriginalVideoTitle } from '../../helpers/api/original-video-title.mjs'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
+
+const originalTitles = new Map()
+const originalTitleRequests = new Map()
 
 const props = defineProps({
   data: {
@@ -418,6 +427,7 @@ const route = useRoute()
 
 const id = ref('')
 const title = ref('')
+const originalTitle = ref('')
 const channelName = ref(null)
 const channelId = ref(null)
 const collaborators = ref([])
@@ -808,7 +818,9 @@ const hideVideoViews = computed(() => store.getters.getHideVideoViews)
 const addWatchedStyle = computed(() => historyEntryExists.value && !inHistory.value)
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => store.getters.getExternalPlayer)
+const externalPlayer = computed(() => process.env.IS_ANDROID
+  ? store.getters.getExternalPlayer !== '' ? t('Settings.External Player Settings.External Player') : ''
+  : store.getters.getExternalPlayer)
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const externalPlayerIsDefaultViewingMode = computed(() => {
@@ -832,10 +844,14 @@ const saveVideoHistoryWithLastViewedPlaylist = computed(() => store.getters.getS
 const showDistractionFreeTitles = computed(() => store.getters.getShowDistractionFreeTitles)
 
 /** @type {import('vue').ComputedRef<string>} */
+const useOriginalVideoTitles = computed(() => store.getters.getUseOriginalVideoTitles)
+
 const displayTitle = computed(() => {
   let title_
   if (showDeArrowTitle.value && deArrowCache.value?.title) {
     title_ = deArrowCache.value.title
+  } else if (useOriginalVideoTitles.value && originalTitle.value) {
+    title_ = originalTitle.value
   } else {
     title_ = title.value
   }
@@ -1032,8 +1048,137 @@ function toggleDeArrow() {
   }
 }
 
-function handleExternalPlayer() {
+async function handleExternalPlayer() {
+  const requestId = crypto.randomUUID().slice(0, 8)
+  const startedAt = performance.now()
+  const log = (message, data = '') => console.warn(`[ExternalPlayer:${requestId}] ${message}`, typeof data === 'string' ? data : JSON.stringify(data))
+
+  log('tap', id.value)
   emit('pause-player')
+
+  if (process.env.IS_ANDROID) {
+    let mediaUrl = null
+    let externalStreams = null
+    let targetQuality = 720
+    let externalHeaders = null
+    const relayUrl = openExternalPlayer({
+      videoId: id.value,
+      title: displayTitle.value,
+      playlistId: playlistIdFinal.value,
+      startTime: watchProgress.value,
+      pending: true
+    })
+    log('picker-called', { elapsedMs: Math.round(performance.now() - startedAt) })
+
+    try {
+      log('resolve-start')
+      const { info, clientInfo } = await getLocalVideoInfo(id.value)
+      log('resolve-done', { elapsedMs: Math.round(performance.now() - startedAt) })
+      const formats = info.streaming_data?.formats ?? []
+      const adaptiveFormats = info.streaming_data?.adaptive_formats ?? []
+      const networkType = getNetworkType()
+      targetQuality = getDefaultQualityForNetwork(
+        networkType,
+        parseInt(store.getters.getWifiDefaultQuality),
+        parseInt(store.getters.getMobileDefaultQuality),
+        720
+      )
+      const formatUrl = format => format.freeTubeUrl ?? format.url
+      const hasVideo = format => format.has_video || (format.width ?? 0) > 0 || format.mime_type?.startsWith('video/')
+      const hasAudio = format => format.has_audio || format.mime_type?.startsWith('audio/')
+      const progressiveFormats = formats.filter(format => {
+        return hasVideo(format) && hasAudio(format) && typeof formatUrl(format) === 'string'
+      })
+      const suitableFormats = progressiveFormats.filter(format => (format.height ?? 0) <= targetQuality)
+      const selectedFormat = [...(suitableFormats.length ? suitableFormats : progressiveFormats)]
+        .sort((a, b) => {
+          const qualityDifference = (b.height ?? 0) - (a.height ?? 0)
+          if (qualityDifference !== 0) return qualityDifference
+          return formats.indexOf(a) - formats.indexOf(b)
+        })[0]
+      const adaptiveVideoFormats = adaptiveFormats.filter(format => {
+        return hasVideo(format) && typeof formatUrl(format) === 'string'
+      })
+      const adaptiveAudioFormats = adaptiveFormats.filter(format => {
+        return hasAudio(format) && !hasVideo(format) && typeof formatUrl(format) === 'string'
+      })
+      const suitableAdaptiveVideoFormats = adaptiveVideoFormats.filter(format => (format.height ?? 0) <= targetQuality)
+      const selectedAdaptiveVideo = [...(suitableAdaptiveVideoFormats.length ? suitableAdaptiveVideoFormats : adaptiveVideoFormats)]
+        .sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
+      const originalAudioLanguage = getOriginalVideoLanguage(info)
+      const originalAudioFormats = adaptiveAudioFormats.filter(format => {
+        return format.is_original === true || format.language === originalAudioLanguage
+      })
+      const selectedAdaptiveAudio = [...(originalAudioFormats.length ? originalAudioFormats : adaptiveAudioFormats)]
+        .sort((a, b) => {
+          const aIsMp4 = a.mime_type?.startsWith('audio/mp4') ? 1 : 0
+          const bIsMp4 = b.mime_type?.startsWith('audio/mp4') ? 1 : 0
+          return bIsMp4 - aIsMp4 || (b.bitrate ?? 0) - (a.bitrate ?? 0)
+        })[0]
+      const useDirectAdaptiveVideo = networkType === 'mobile' && Boolean(selectedAdaptiveVideo)
+      const useAdaptiveStreams = Boolean(selectedAdaptiveVideo && selectedAdaptiveAudio)
+      if (useAdaptiveStreams) {
+        externalStreams = {
+          videoUrl: formatUrl(selectedAdaptiveVideo),
+          audioUrl: formatUrl(selectedAdaptiveAudio),
+          videoWidth: selectedAdaptiveVideo.width,
+          videoHeight: selectedAdaptiveVideo.height,
+          videoMimeType: selectedAdaptiveVideo.mime_type,
+          videoBandwidth: selectedAdaptiveVideo.bitrate,
+          videoInitRange: selectedAdaptiveVideo.init_range,
+          videoIndexRange: selectedAdaptiveVideo.index_range,
+          audioMimeType: selectedAdaptiveAudio.mime_type,
+          audioBandwidth: selectedAdaptiveAudio.bitrate,
+          audioInitRange: selectedAdaptiveAudio.init_range,
+          audioIndexRange: selectedAdaptiveAudio.index_range,
+          audioSampleRate: selectedAdaptiveAudio.audio_sample_rate,
+          audioChannels: selectedAdaptiveAudio.audio_channels,
+          durationSeconds: Number(info.basic_info?.duration ?? 0)
+        }
+      }
+      if (useDirectAdaptiveVideo && !useAdaptiveStreams) {
+        mediaUrl = formatUrl(selectedAdaptiveVideo)
+      } else if (selectedFormat && !useAdaptiveStreams) {
+        mediaUrl = formatUrl(selectedFormat)
+      }
+      if (clientInfo) {
+        externalHeaders = {
+          'X-Goog-Visitor-Id': clientInfo.visitorData,
+          'X-YouTube-Client-Name': String(clientInfo.clientName),
+          'X-YouTube-Client-Version': clientInfo.clientVersion
+        }
+      }
+      log('stream-selected', {
+        elapsedMs: Math.round(performance.now() - startedAt),
+        hasMediaUrl: Boolean(mediaUrl),
+        hasExternalStreams: Boolean(externalStreams),
+        selectedFormatHeight: selectedFormat?.height ?? null,
+        selectedFormatItag: selectedFormat?.itag ?? null,
+        selectedAdaptiveHeight: selectedAdaptiveVideo?.height ?? null,
+        selectedDirectAdaptiveVideo: useDirectAdaptiveVideo,
+        networkType,
+        selectedAudioLanguage: selectedAdaptiveAudio?.language ?? null,
+        selectedAudioOriginal: selectedAdaptiveAudio?.is_original === true,
+        targetQuality
+      })
+    } catch (error) {
+      log('resolve-error', { elapsedMs: Math.round(performance.now() - startedAt), error: String(error) })
+      console.warn('Failed to resolve external player URL', error)
+    }
+
+    updateExternalPlayer(relayUrl, {
+      mediaUrl,
+      externalHeaders,
+      externalStreams,
+      maxQuality: targetQuality
+    })
+    log('relay-updated', {
+      elapsedMs: Math.round(performance.now() - startedAt),
+      direct: Boolean(mediaUrl),
+      adaptive: Boolean(externalStreams)
+    })
+    return
+  }
 
   const payload = {
     videoId: id.value,
@@ -1056,9 +1201,7 @@ function handleExternalPlayer() {
     })
   }
 
-  if (process.env.IS_ELECTRON) {
-    window.ftElectron.openInExternalPlayer(payload)
-  }
+  openExternalPlayer(payload)
 
   if (rememberHistory.value) {
     markAsWatched()
@@ -1068,6 +1211,7 @@ function handleExternalPlayer() {
 function parseVideoData() {
   id.value = props.data.videoId
   title.value = props.data.title
+  originalTitle.value = props.data.originalTitle ?? originalTitles.get(id.value) ?? ''
 
   channelName.value = props.data.author ?? null
   collaborators.value = props.data.collaborators ?? []
@@ -1316,6 +1460,38 @@ function onDragStart(event) {
 }
 
 parseVideoData()
+
+async function loadOriginalTitle() {
+  if (!(process.env.SUPPORTS_LOCAL_API && backendPreference.value === 'local' && useOriginalVideoTitles.value && !originalTitle.value)) {
+    return
+  }
+
+  if (originalTitleRequests.has(id.value)) {
+    originalTitle.value = await originalTitleRequests.get(id.value)
+    return
+  }
+
+  const request = (async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const title_ = await getOriginalVideoTitle(id.value)
+        if (title_) return title_
+      } catch {
+        // Retry transient YouTube/WebView requests.
+      }
+    }
+    return ''
+  })()
+
+  originalTitleRequests.set(id.value, request)
+  originalTitle.value = await request
+  originalTitleRequests.delete(id.value)
+  if (originalTitle.value) {
+    originalTitles.set(id.value, originalTitle.value)
+  }
+}
+
+onMounted(loadOriginalTitle)
 
 showDeArrowTitle.value = useDeArrowTitles.value
 showDeArrowThumbnail.value = useDeArrowThumbnails.value

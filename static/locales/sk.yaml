@@ -210,6 +210,7 @@ Settings:
     General Settings: 'Všeobecné'
     Fallback to Non-Preferred Backend on Failure: 'Pri chybe prepnúť na alternatívny backend'
     Enable Search Suggestions: 'Zapnúť návrhy vyhľadávania'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Predvolená vstupná stránka'
     Locale Preference: 'Nastaviť jazyk'
     Preferred API Backend:
@@ -1024,6 +1025,7 @@ Playing Next Video Interval: Prehrávanie ďalšieho videa okamžite. Kliknite p
 More: Viac
 Unknown YouTube url type, cannot be opened in app: Neznámy typ adresy URL YouTube, nemôže byť otvorený v aplikácii
 Open New Window: Otvoriť nové okno
+Reload: Reload
 Default Invidious instance has been set to {instance}: Predvolená inštancia Invidious bola nastavená na {instance}
 Search Bar:
   Clear Input: Vyčistiť zadané údaje

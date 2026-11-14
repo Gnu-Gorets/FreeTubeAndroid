@@ -100,7 +100,7 @@ import FtIconButton from '../FtIconButton/FtIconButton.vue'
 
 import store from '../../store/index'
 
-import { showToast } from '../../helpers/utils'
+import { openExternalPlayer, showToast } from '../../helpers/utils'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
 
 const props = defineProps({
@@ -282,7 +282,9 @@ async function enableQuickBookmarkForThisPlaylist() {
 }
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => store.getters.getExternalPlayer)
+const externalPlayer = computed(() => process.env.IS_ANDROID
+  ? store.getters.getExternalPlayer !== '' ? t('Settings.External Player Settings.External Player') : ''
+  : store.getters.getExternalPlayer)
 
 /** @type {import('vue').ComputedRef<number>} */
 const defaultPlayback = computed(() => store.getters.getDefaultPlayback)
@@ -290,12 +292,10 @@ const defaultPlayback = computed(() => store.getters.getDefaultPlayback)
 const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
 
 function handleExternalPlayer() {
-  if (process.env.IS_ELECTRON) {
-    window.ftElectron.openInExternalPlayer({
-      playlistId: playlistId,
-      playbackRate: defaultPlayback.value,
-    })
-  }
+  openExternalPlayer({
+    playlistId: playlistId,
+    playbackRate: defaultPlayback.value,
+  })
 }
 </script>
 

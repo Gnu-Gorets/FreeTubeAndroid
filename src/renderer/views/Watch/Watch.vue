@@ -34,11 +34,12 @@
           :chapters="videoChapters"
           :current-chapter-index="videoCurrentChapterIndex"
           :chapters-src="chaptersSrc"
-          :title="videoTitle"
+          :title="displayVideoTitle"
           :theatre-possible="theatrePossible"
           :use-theatre-mode="useTheatreMode"
           :autoplay-possible="autoplayPossible"
           :autoplay-enabled="autoplayEnabled"
+          :autoplay-on-load="resumeDownloadedPlayback"
           :watching-playlist="watchingPlaylist"
           :vr-projection="vrProjection"
           :start-in-fullscreen="startNextVideoInFullscreen"
@@ -49,6 +50,7 @@
           class="videoPlayer"
           @error="handlePlayerError"
           @loaded="handleVideoLoaded"
+          @play="handleDownloadedPlaybackStarted"
           @timeupdate="updateCurrentChapter"
           @ended="handleVideoEnded"
           @toggle-theatre-mode="useTheatreMode = !useTheatreMode"
@@ -133,7 +135,7 @@
       <watch-video-info
         v-if="!isLoading"
         :id="videoId"
-        :title="videoTitle"
+        :title="displayVideoTitle"
         :channel-id="channelId"
         :channel-name="channelName"
         :channel-thumbnail="channelThumbnail"
@@ -144,6 +146,7 @@
         :dislike-count="videoDislikeCount"
         :view-count="videoViewCount"
         :get-timestamp="getTimestamp"
+        :get-media-url="getExternalPlayerUrl"
         :is-live-content="isLiveContent"
         :is-live="isLive"
         :is-upcoming="isUpcoming"
@@ -151,6 +154,7 @@
         :get-playlist-state="getPlaylistState"
         :length-seconds="videoLengthSeconds"
         :video-thumbnail="thumbnail"
+        :download-available="usingAndroid && !isUpcoming && !isLive && !downloadedMission"
         :in-user-playlist="!!selectedUserPlaylist"
         :is-unlisted="isUnlisted"
         :content-disclosures="contentDisclosures"
@@ -161,6 +165,7 @@
         @pause-player="pausePlayer"
         @save-watched-progress="handleWatchProgressManualSave"
         @reload-player="onManualReloadRequested"
+        @download="openDownloadDialog"
       />
       <watch-video-chapters
         v-if="!hideChapters && !isLoading && videoChapters.length > 0"
@@ -173,8 +178,9 @@
       />
       <watch-video-description
         v-if="!isLoading && !hideVideoDescription"
-        :description="videoDescription"
-        :description-html="videoDescriptionHtml"
+        :key="displayVideoDescription"
+        :description="displayVideoDescription"
+        :description-html="displayVideoDescriptionHtml"
         :license="license"
         :content-disclosures="contentDisclosures"
         class="watchVideo"
@@ -205,7 +211,7 @@
         :class="{ theatrePlaylist: useTheatreMode }"
       />
       <watch-video-playlist
-        v-if="watchingPlaylist"
+        v-if="watchingPlaylist && playlistType !== 'downloaded'"
         v-show="!isLoading"
         ref="watchVideoPlaylist"
         :watch-view-loading="isLoading"
@@ -229,6 +235,16 @@
         @pause-player="pausePlayer"
       />
     </div>
+    <DownloadDialog
+      :visible="downloadDialogVisible"
+      :video="{ id: videoId, title: videoTitle, author: channelName, duration: videoLengthSeconds, thumbnail }"
+      :formats="downloadFormats"
+      :captions="captions"
+      :refresh-formats="refreshDownloadFormats"
+      :refresh-mission="refreshMission"
+      @close="downloadDialogVisible = false"
+      @queued="downloadDialogVisible = false"
+    />
   </div>
 </template>
 

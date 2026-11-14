@@ -217,6 +217,7 @@ Settings:
     Check for Updates: 'Güncellemeleri Denetle'
     Fallback to Non-Preferred Backend on Failure: 'Hata Durumunda Tercih Edilmeyen Arka Uca Geç'
     Enable Search Suggestions: 'Arama Önerilerini Etkinleştir'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Öntanımlı Açılış Ekranı'
     Locale Preference: 'Tercih Edilen Yerel Ayar'
     Preferred API Backend:
@@ -1035,6 +1036,7 @@ Playing Next Video Interval: Sonraki video hemen oynatılıyor. İptal etmek iç
 More: Daha Fazla
 Unknown YouTube url type, cannot be opened in app: Bilinmeyen YouTube URL türü, uygulamada açılamıyor
 Open New Window: Yeni Pencere Aç
+Reload: Reload
 Default Invidious instance has been cleared: Öntanımlı Invidious örneği temizlendi
 Default Invidious instance has been set to {instance}: Öntanımlı Invidious örneği {instance} olarak ayarlandı
 Search Bar:
