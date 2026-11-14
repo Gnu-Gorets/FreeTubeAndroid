@@ -30,29 +30,31 @@ jobs:
       - name: List commits to build
         id: list
         env:
-          BEFORE_SHA: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           base_commit=b23886b04d09fd0ee82f088a0d4075deb1785c3f
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            commits="$GITHUB_SHA"
-          elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
-            commits=$(git rev-list --reverse "$BEFORE_SHA..$GITHUB_SHA")
-          else
-            commits=$(git rev-list --reverse "$base_commit..$GITHUB_SHA")
-          fi
-          if [[ -z "$commits" ]]; then
-            commits="$GITHUB_SHA"
-          fi
+          base_version=$(jq -er '.version | strings' package.json)
+          commits=$(git rev-list --reverse "$base_commit..$GITHUB_SHA")
+          pending_commits=()
+          while IFS= read -r commit; do
+            [[ -n "$commit" ]] || continue
+            commit_number=$(git rev-list --count "$base_commit..$commit")
+            release_tag="android-v${base_version}.${commit_number}-${commit:0:7}"
+            if ! gh release view "$release_tag" >/dev/null 2>&1; then
+              pending_commits+=("$commit")
+            fi
+          done <<< "$commits"
           commit_list=$(
-            printf '%s\n' "$commits" |
+            printf '%s\n' "${pending_commits[@]}" |
               jq -R -s -c 'split("\n") | map(select(length > 0))'
           )
           echo "commits=$commit_list" >> "$GITHUB_OUTPUT"
 
   release:
     needs: prepare
+    if: needs.prepare.outputs.commits != '[]'
     name: Build Android beta release
     runs-on: ubuntu-latest
     strategy:
