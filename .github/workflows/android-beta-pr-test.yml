@@ -23,6 +23,12 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: >-
+    android-beta-pr-test-${{ github.event.pull_request.number ||
+    github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     if: >-
@@ -39,6 +45,11 @@ jobs:
          contains(github.event.pull_request.labels.*.name, 'beta-apk-test'))))
     name: Build signed beta test APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit_sha: ${{ steps.version.outputs.commit_sha }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
 
     steps:
       - name: Checkout selected branch
@@ -175,31 +186,76 @@ jobs:
           sudo chown -R "$owner" \
             android/app/build/outputs/apk/release
 
-      - name: Upload test APK
+      - name: Upload APK for the release job
         uses: >-
           actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: >-
-            freetube-android-beta-test-${{ steps.version.outputs.short_sha }}
+            ${{ format('freetube-android-beta-test-{0}-{1}',
+            github.event.pull_request.number || 'manual',
+            steps.version.outputs.short_sha) }}
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 7
 
-      - name: Add APK link to pull request
-        if: github.event_name == 'pull_request'
+  publish:
+    needs: build
+    if: github.event_name == 'pull_request'
+    name: Publish latest APK for this PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: >-
+            ${{ format('freetube-android-beta-test-{0}-{1}',
+            github.event.pull_request.number, needs.build.outputs.short_sha) }}
+          path: apk
+
+      - name: Update PR test release
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          COMMIT_SHA: ${{ steps.version.outputs.commit_sha }}
-          RUN_URL: >-
-            ${{ github.server_url }}/${{ github.repository
-            }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
+          APK_PATH: apk/app-release.apk
         shell: bash
         run: |
           set -euo pipefail
+          test -f "$APK_PATH"
+          tag="android-beta-apk-test-pr-${PR_NUMBER}"
+          asset_name="freetube-android-beta-pr-test.apk"
+          title="Beta APK test for PR #${PR_NUMBER}"
+          notes=$(printf 'Latest successful test APK for PR #%s. Commit: %s.' \
+            "$PR_NUMBER" "$COMMIT_SHA")
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$APK_PATH#$asset_name" --clobber
+            gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" \
+              --method PATCH \
+              --field sha="$COMMIT_SHA" \
+              --field force=true
+            gh release edit "$tag" \
+              --title "$title" \
+              --notes "$notes" \
+              --prerelease
+          else
+            gh release create "$tag" "$APK_PATH#$asset_name" \
+              --target "$COMMIT_SHA" \
+              --title "$title" \
+              --notes "$notes" \
+              --prerelease
+          fi
+
+          download_url=$(printf '%s/releases/download/%s/%s' \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$tag" "$asset_name")
           body=$(printf \
-            'Beta test APK for commit `%s`: [download from workflow run](%s).' \
-            "$COMMIT_SHA" "$RUN_URL")
+            'Latest signed test APK for PR #%s: [download APK](%s). ' \
+            "$PR_NUMBER" "$download_url")
+          body+='This link always points to the latest successful build.'
           gh pr comment "$PR_NUMBER" \
             --repo "$GITHUB_REPOSITORY" \
             --body "$body"
