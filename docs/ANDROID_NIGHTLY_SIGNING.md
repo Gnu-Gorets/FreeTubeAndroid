@@ -114,7 +114,7 @@ This APK is unsigned and cannot update installed signed app.
 
 ## 5. GitHub beta builds
 
-Each push to `beta/0.26.0` builds an Android APK and creates a separate prerelease for each unreleased commit after `v0.26.0-beta`. This also catches commits that did not build during an earlier push. Builds are unsigned until the signing workflow is added in a separate commit. Use squash merge so the first beta commit gets version `0.26.0.1`.
+Each push to `beta/0.26.0` builds an Android APK and creates a separate prerelease for each commit in that push. Version numbers count commits after `v0.26.0-beta`, so the first squash-merged commit gets `0.26.0.1`, then the next commit gets `0.26.0.2`. Builds are unsigned until the signing workflow is added in a separate commit.
 
 Pipeline behavior:
 
