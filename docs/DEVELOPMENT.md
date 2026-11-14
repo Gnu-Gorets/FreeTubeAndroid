@@ -59,7 +59,15 @@ Build local unsigned nightly release:
 docker compose run --rm android-nightly
 ```
 
-This uses nightly application ID and `package.json` version with `-nightly.local` suffix. For signing and GitHub nightly release setup, see `docs/ANDROID_NIGHTLY_SIGNING.md`.
+This uses the nightly application ID and `-nightly.local` version suffix.
+
+Build a local unsigned beta release:
+
+```bash
+docker compose run --rm android-beta-release
+```
+
+This uses application ID `io.freetubeapp.freetubeandroid.betaRelease` and the `-beta-release.local` version suffix. Local builds are unsigned; the GitHub beta workflow publishes a signed APK. For signing secrets, see `docs/ANDROID_BETA_RELEASE.md`.
 
 ## Android build and install
 
@@ -72,7 +80,7 @@ docker compose run --rm android-build bash -lc \
    cd android && ./gradlew assembleDebug'
 ```
 
-Install resulting APK from host with `adb` only after required device checks. debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. Stable application ID is `io.freetubeapp.freetubeandroid`; nightly application ID is `io.freetubeapp.freetubeandroid.nightly`.
+Install resulting APK from host with `adb` only after required device checks. debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. Stable application ID is `io.freetubeapp.freetubeandroid`; nightly application ID is `io.freetubeapp.freetubeandroid.nightly`; beta application ID is `io.freetubeapp.freetubeandroid.betaRelease`.
 
 ### Build reproducibility
 

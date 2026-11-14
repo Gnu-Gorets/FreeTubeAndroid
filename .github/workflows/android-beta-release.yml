@@ -1,5 +1,5 @@
 ---
-name: Android Beta Nightly
+name: Android Beta Release
 
 'on':
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-beta-${{ github.ref }}-${{ github.sha }}
+  group: android-beta-release-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -100,8 +100,26 @@ jobs:
           {
             echo "version_name=$version_name"
             echo "version_code=$version_code"
-            echo "release_tag=android-v$version_name-${COMMIT_SHA:0:7}"
+            release_tag="android-beta-release-v$version_name-${COMMIT_SHA:0:7}"
+            echo "release_tag=$release_tag"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Check beta signing secrets
+        env:
+          BETA_KEYSTORE_BASE64: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_BASE64 }}
+          BETA_KEYSTORE_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD }}
+          BETA_KEY_ALIAS: ${{ secrets.ANDROID_BETA_RELEASE_KEY_ALIAS }}
+          BETA_KEY_PASSWORD: ${{ secrets.ANDROID_BETA_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$BETA_KEYSTORE_BASE64" || -z "$BETA_KEYSTORE_PASSWORD" || \
+                -z "$BETA_KEY_ALIAS" || -z "$BETA_KEY_PASSWORD" ]]; then
+            echo "::error::Missing beta signing secrets." >&2
+            exit 1
+          fi
 
       - name: Login to Docker Hub
         uses: docker/login-action@v4.6.0
@@ -110,24 +128,37 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker image
-        run: docker compose build android-nightly
+        run: docker compose build android-beta-release
 
-      - name: Build unsigned APK
+      - name: Build signed APK
         env:
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          APPLICATION_ID: io.freetubeapp.freetubeandroid.betaRelease
+          ANDROID_BETA_RELEASE_KEYSTORE_BASE64: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_BETA_RELEASE_KEY_ALIAS: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEY_ALIAS }}
+          ANDROID_BETA_RELEASE_KEY_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEY_PASSWORD }}
         run: |
           docker compose run --rm \
             -e ANDROID_VERSION_NAME="$VERSION_NAME" \
             -e ANDROID_VERSION_CODE="$VERSION_CODE" \
-            -e ANDROID_APPLICATION_ID=io.freetubeapp.freetubeandroid.nightly \
-            android-nightly
+            -e ANDROID_APPLICATION_ID="$APPLICATION_ID" \
+            -e ANDROID_BETA_RELEASE_KEYSTORE_BASE64 \
+            -e ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD \
+            -e ANDROID_BETA_RELEASE_KEY_ALIAS \
+            -e ANDROID_BETA_RELEASE_KEY_PASSWORD \
+            android-beta-release
 
       - name: Publish per-commit prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           APK_PATH: >-
-            android/app/build/outputs/apk/release/app-release-unsigned.apk
+            android/app/build/outputs/apk/release/app-release.apk
           COMMIT_SHA: ${{ matrix.commit }}
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
@@ -135,7 +166,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f "$APK_PATH"
-          asset_name="freetube-android-$VERSION_NAME.apk"
+          asset_name="freetube-android-beta-release-$VERSION_NAME.apk"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; leaving it unchanged."
             exit 0
@@ -144,6 +175,6 @@ jobs:
             "$COMMIT_SHA" "$VERSION_NAME")
           gh release create "$RELEASE_TAG" "$APK_PATH#$asset_name" \
             --target "$COMMIT_SHA" \
-            --title "FreeTube Android $VERSION_NAME" \
+            --title "FreeTube Beta Release $VERSION_NAME" \
             --notes "$notes" \
             --prerelease
