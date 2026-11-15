@@ -29,6 +29,7 @@ import contextMenu from 'electron-context-menu'
 import packageDetails from '../../package.json'
 import { handleOpenInExternalPlayer } from './externalPlayer'
 import { generatePoToken } from './poTokenGenerator'
+import { fetchLocalApiRequest } from './localApiFetch.mjs'
 import { isFreeTubeUrl } from './utils'
 
 const brotliDecompressAsync = promisify(brotliDecompress)
@@ -1029,6 +1030,7 @@ function runApp() {
       autoHideMenuBar: true,
       // useContentSize: true,
       webPreferences: {
+        webSecurity: true,
         backgroundThrottling: false,
         preload: process.env.NODE_ENV === 'development'
           ? path.resolve(__dirname, '../../dist/preload.js')
@@ -1308,6 +1310,14 @@ function runApp() {
     if (isFreeTubeUrl(event.senderFrame.url)) {
       return generatePoToken(videoId, context, initialAttestationData, ytConfig, proxyUrl)
     }
+  })
+
+  ipcMain.handle(IpcChannels.LOCAL_API_FETCH, (event, request) => {
+    if (!event.senderFrame || !isFreeTubeUrl(event.senderFrame.url)) {
+      throw new Error('Local API fetch is only available to FreeTube windows')
+    }
+
+    return fetchLocalApiRequest(request, (url, init) => session.defaultSession.fetch(url, init))
   })
 
   ipcMain.on(IpcChannels.ENABLE_PROXY, (event, url) => {
