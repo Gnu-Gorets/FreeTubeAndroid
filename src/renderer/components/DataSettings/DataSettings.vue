@@ -571,7 +571,7 @@ function importOpmlYouTubeSubscriptions(data) {
   try {
     xmlDom = new DOMParser().parseFromString(data, 'application/xml')
     const errorNode = xmlDom.querySelector('parsererror')
-    if (errorNode) throw new Error(errorNode.textContent)
+    if (errorNode) throw new Error('Malformed OPML XML')
   } catch (error) {
     console.error('error reading OPML subscriptions file')
     console.error(error)
