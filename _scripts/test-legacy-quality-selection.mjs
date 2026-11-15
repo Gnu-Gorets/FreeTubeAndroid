@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { getUniqueLegacyFormats } from '../src/renderer/components/FtShakaVideoPlayer/player-components/legacy-quality.mjs'
 
 const formats = [
@@ -14,5 +15,11 @@ assert.deepEqual(
 )
 assert.equal(getUniqueLegacyFormats(formats)[2].bitrate, 120_000)
 assert.equal(getUniqueLegacyFormats([]).length, 0)
+
+const selector = await readFile(new URL('../src/renderer/components/ft-shaka-video-player/player-components/LegacyQualitySelection.js', import.meta.url), 'utf8')
+assert.match(selector, /const sortedLegacyFormats = getUniqueLegacyFormats\(legacyFormats\)/)
+assert.match(selector, /findIndex\(format => format\.qualityLabel === this\.activeLegacyFormat_\.qualityLabel\)/)
+assert.deepEqual(getUniqueLegacyFormats(formats), [formats[0], formats[3], formats[2]])
+assert.equal(formats.length, 4, 'deduplication must not change the source list')
 
 console.log('Legacy quality selection tests passed')

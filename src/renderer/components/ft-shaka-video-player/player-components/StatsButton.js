@@ -42,6 +42,14 @@ export class StatsButton extends shaka.ui.Element {
 
     // listeners
 
+    this.eventManager.listen(controls, 'submenuopen', () => {
+      this.button_.classList.add('shaka-hidden')
+    })
+
+    this.eventManager.listen(controls, 'submenuclose', () => {
+      this.button_.classList.remove('shaka-hidden')
+    })
+
     this.eventManager.listen(this.button_, 'click', () => {
       events.dispatchEvent(new CustomEvent('setStatsVisibility', {
         detail: !this.showStats_
