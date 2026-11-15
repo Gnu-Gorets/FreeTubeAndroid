@@ -784,10 +784,10 @@ locked_session() {
 
 locked_controls() {
   locked_state || return 1
-  adb_shell am start -a MEDIA_PAUSE -n "$ACTIVITY" >/dev/null 2>&1
+  adb_shell input keyevent KEYCODE_MEDIA_PAUSE
   sleep 2
   media_session | grep -q 'state=PlaybackState {state=PAUSED' || return 1
-  adb_shell am start -a MEDIA_PLAY -n "$ACTIVITY" >/dev/null 2>&1
+  adb_shell input keyevent KEYCODE_MEDIA_PLAY
   sleep 2
   media_session | grep -q 'state=PlaybackState {state=PLAYING'
 }

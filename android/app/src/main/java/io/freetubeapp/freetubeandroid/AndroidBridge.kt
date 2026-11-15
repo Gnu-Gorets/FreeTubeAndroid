@@ -728,12 +728,16 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun enableKeepScreenOn() {
-        activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        activity.runOnUiThread {
+            activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     @JavascriptInterface
     fun disableKeepScreenOn() {
-        activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        activity.runOnUiThread {
+            activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     @JavascriptInterface
