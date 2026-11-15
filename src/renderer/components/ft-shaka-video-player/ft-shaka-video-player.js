@@ -32,6 +32,9 @@ import {
 } from '../../helpers/utils'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
+import { getNetworkType } from '../../helpers/android/network'
+import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
+import { DashQualitySelection } from '../FtShakaVideoPlayer/player-components/DashQualitySelection'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -291,14 +294,21 @@ export default defineComponent({
     })
 
     /** @type {import('vue').ComputedRef<number | 'auto'>} */
+    const wifiDefaultQuality = computed(() => parseInt(store.getters.getWifiDefaultQuality))
+    const mobileDefaultQuality = computed(() => parseInt(store.getters.getMobileDefaultQuality))
+
     const defaultQuality = computed(() => {
+      if (process.env.IS_ANDROID) {
+        return getDefaultQualityForNetwork(
+          getNetworkType(),
+          wifiDefaultQuality.value,
+          mobileDefaultQuality.value,
+          720
+        )
+      }
+
       const value = store.getters.getDefaultQuality
-
-      // TODO: Revert when auto is fixed (720 is the default setttings value)
-      if (value === 'auto') { return 720 }
-      // if (value === 'auto') { return value }
-
-      return parseInt(value)
+      return value === 'auto' ? 720 : parseInt(value)
     })
 
     /** @type {import('vue').ComputedRef<boolean>} */
@@ -843,10 +853,14 @@ export default defineComponent({
       /** @type {string[]} */
       let elementList
 
+      const qualitySelectionElement = props.format === 'legacy'
+        ? 'ft_legacy_quality'
+        : props.format === 'dash' ? 'ft_dash_quality' : 'quality'
+
       if (onlyUseOverFlowMenu.value) {
         uiConfig.overflowMenuButtons = [
           'ft_autoplay_toggle',
-          props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+          qualitySelectionElement,
           'playback_rate',
           'captions-settings',
           'ft_audio_tracks',
@@ -877,7 +891,7 @@ export default defineComponent({
           'ft_audio_tracks',
           'captions-settings',
           'playback_rate',
-          props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+          qualitySelectionElement,
           'chapter',
           'loop',
           'recenter_vr',
@@ -1950,6 +1964,17 @@ export default defineComponent({
       shakaOverflowMenu.registerElement('ft_legacy_quality', new LegacyQualitySelectionFactory())
     }
 
+    function registerDashQualitySelection() {
+      class DashQualitySelectionFactory {
+        create(rootElement, controls) {
+          return new DashQualitySelection(rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+      shakaOverflowMenu.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+    }
+
     function registerStatsButton() {
       events.addEventListener('setStatsVisibility', (/** @type {CustomEvent} */ event) => {
         showStats.value = event.detail
@@ -2039,6 +2064,9 @@ export default defineComponent({
 
       shakaControls.registerElement('ft_legacy_quality', null)
       shakaOverflowMenu.registerElement('ft_legacy_quality', null)
+
+      shakaControls.registerElement('ft_dash_quality', null)
+      shakaOverflowMenu.registerElement('ft_dash_quality', null)
 
       shakaContextMenu.registerElement('ft_stats', null)
 
@@ -2858,6 +2886,7 @@ export default defineComponent({
       registerTheatreModeButton()
       registerFullWindowButton()
       registerLegacyQualitySelection()
+      registerDashQualitySelection()
       registerStatsButton()
       registerSkipButtons()
 
