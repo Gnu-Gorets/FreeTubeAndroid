@@ -1029,7 +1029,6 @@ function runApp() {
       autoHideMenuBar: true,
       // useContentSize: true,
       webPreferences: {
-        webSecurity: false,
         backgroundThrottling: false,
         preload: process.env.NODE_ENV === 'development'
           ? path.resolve(__dirname, '../../dist/preload.js')

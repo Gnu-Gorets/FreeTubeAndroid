@@ -3,6 +3,8 @@
 
 name: Build Android Test
 
+permissions: {}
+
 on:
   workflow_dispatch:
   push:
