@@ -3,6 +3,7 @@ import allLocales from '../../../../static/locales/activeLocales.json'
 import { MAIN_PROFILE_ID, SyncEvents } from '../../../constants'
 import { DBSettingHandlers } from '../../../datastores/handlers/index'
 import { getSystemLocale, showToast } from '../../helpers/utils'
+import { getChannelsHiddenIdSet } from '../../helpers/channelsHidden.mjs'
 
 /*
  * Due to the complexity of the settings module in FreeTube, a more
@@ -477,6 +478,10 @@ const customGetters = {
   getDefaultPlayback(state) {
     return Math.round((state['defaultPlayback'] + Number.EPSILON) * 100) / 100
   },
+
+  getChannelsHiddenIdSet(state) {
+    return getChannelsHiddenIdSet(state.channelsHidden)
+  }
 }
 
 const customMutations = {}

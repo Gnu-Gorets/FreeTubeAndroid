@@ -167,6 +167,7 @@ import {
   writeFileWithPicker,
 } from '../../helpers/utils'
 import { processToBeAddedPlaylistVideo } from '../../helpers/playlists'
+import { parsePlaylistImportData } from '../../helpers/playlistImport.mjs'
 
 import android from 'android'
 import { DATA_DIRECTORY, getCurrentDataDirectory, selectDataDirectory } from '../../helpers/android/storage'
@@ -1179,32 +1180,11 @@ async function importPlaylists() {
       return
     }
 
-    let data = response.content
-
-    // for the sake of backwards compatibility,
-    // check if this is the old JSON array export (used until version 0.19.1),
-    // that didn't match the actual database format
-    const trimmedData = data.trim()
-
-    if (trimmedData[0] === '[' && trimmedData[trimmedData.length - 1] === ']') {
-      playlists = JSON.parse(trimmedData)
-    } else {
-      // otherwise assume this is the correct database format,
-      // which is also what we export now (used in 0.20.0 and later versions)
-      data = data.split('\n')
-      data.pop()
-
-      playlists = data.map(playlistJson => JSON.parse(playlistJson))
-    }
+    playlists = parsePlaylistImportData(response.content)
   } catch (err) {
     console.error(err)
     const message = t('Settings.Data Settings.Unable to read file')
     showToast(`${message}: ${err}`)
-    return
-  }
-
-  if (!Array.isArray(playlists)) {
-    showToast(t('Settings.Data Settings.Unable to read file'))
     return
   }
 
@@ -1376,9 +1356,11 @@ async function importPlaylists() {
     return
   }
 
-  if (importedPlaylistCount > 0) {
-    showToast(t('Settings.Data Settings.Playlists have been successfully imported', { count: importedPlaylistCount, total: playlists.length }, importedPlaylistCount))
-  }
+  showToast(t(
+    'Settings.Data Settings.Playlists have been successfully imported',
+    { count: importedPlaylistCount, total: playlists.length },
+    importedPlaylistCount
+  ))
 }
 
 async function exportPlaylists() {
