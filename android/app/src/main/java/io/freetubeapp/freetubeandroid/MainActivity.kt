@@ -349,11 +349,11 @@ class MainActivity : Activity() {
             }
             "io.freetubeapp.freetubeandroid.TEST_SMOKE_ACTION" -> {
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                    val action = intent?.getStringExtra("action")
+                    val action = intent.getStringExtra("action")
                     if (action == "fullscreen") runFullscreenSmokeAction()
                     else if (action == "long_press") runLongPressSmokeAction()
                     else if (action == "reload") runReloadSmokeAction()
-                    else runSmokeAction(action, intent?.getStringExtra("query"))
+                    else runSmokeAction(action, intent.getStringExtra("query"))
                 }
             }
             Intent.ACTION_VIEW -> {
