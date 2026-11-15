@@ -176,8 +176,7 @@ import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin.js'
 import { getNetworkType } from '../../helpers/android/network.js'
 import { STATE_BUFFERING, STATE_NONE, STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session.js'
 import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
-import { isPlayerMenuOpen } from '../../helpers/player/player-menu.mjs'
-import { addAndroidDoubleTapSeeking } from '../../helpers/player/android-double-tap.mjs'
+import { addAndroidDoubleTapSeeking, addAndroidPinchZoom } from '../../helpers/player/android-double-tap.mjs'
 import android from 'android'
 
 const props = defineProps({
@@ -443,7 +442,7 @@ watch(fitVideoToFullscreen, (newValue) => {
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const enterFullscreenOnDisplayRotate = computed(() => {
-  return store.getters.getEnterFullscreenOnDisplayRotate
+  return !process.env.IS_ANDROID && store.getters.getEnterFullscreenOnDisplayRotate
 })
 
 watch(enterFullscreenOnDisplayRotate, (newValue) => {
@@ -1011,6 +1010,7 @@ function configureUI(firstTime = false) {
 
     if (process.env.IS_ANDROID) {
       firstTimeConfig.seekOnTaps = true
+      firstTimeConfig.doubleClickForFullscreen = false
     }
 
     if (document.pictureInPictureEnabled) {
@@ -1075,9 +1075,14 @@ let longPressTimer
 let longPressPlaybackRate
 let longPressControlsContainer
 let removeDoubleTapSeeking
+let removePinchZoom
 
 function startLongPressPlayback(event) {
   if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+  if (!event.isPrimary) {
+    stopLongPressPlayback()
+    return
+  }
   if (event.target.closest?.('button, input, .shaka-seek-bar-container')) return
 
   clearTimeout(longPressTimer)
@@ -1107,6 +1112,7 @@ function addLongPressPlaybackListeners(controlsContainer) {
     seekBySeconds(seconds, true)
     return seconds
   })
+  removePinchZoom = addAndroidPinchZoom(container.value, video.value, showValueChange)
   controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
   controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
   controlsContainer.addEventListener('pointercancel', stopLongPressPlayback)
@@ -1117,6 +1123,8 @@ function removeLongPressPlaybackListeners() {
   if (!longPressControlsContainer) return
   removeDoubleTapSeeking?.()
   removeDoubleTapSeeking = null
+  removePinchZoom?.()
+  removePinchZoom = null
   longPressControlsContainer.removeEventListener('pointerdown', startLongPressPlayback)
   longPressControlsContainer.removeEventListener('pointerup', stopLongPressPlayback)
   longPressControlsContainer.removeEventListener('pointercancel', stopLongPressPlayback)
@@ -1373,9 +1381,6 @@ function handleMediaSeekStop() {
 }
 
 function handleAppPause() {
-  if (document.fullscreenElement) {
-    document.exitFullscreen().catch(() => {})
-  }
   ui?.configure({ enableFullscreenOnRotation: false })
 }
 
@@ -2497,7 +2502,7 @@ function keyboardShortcutHandler(event) {
   if (event.shiftKey && event.key === '?') {
     event.preventDefault()
 
-    if (ui.getControls().isFullScreenEnabled()) {
+    if (!process.env.IS_ANDROID && ui.getControls().isFullScreenEnabled()) {
       ui.getControls().toggleFullScreen()
     }
 
@@ -2541,10 +2546,12 @@ function keyboardShortcutHandler(event) {
 
   switch (event.key.toLowerCase()) {
     case KeyboardShortcuts.VIDEO_PLAYER.GENERAL.FULLSCREEN:
-      // Toggle full screen
+      // Android fullscreen changes only through the fullscreen button.
       event.preventDefault()
-      ui.getControls().toggleFullScreen()
-      blurTooltipButtons()
+      if (!process.env.IS_ANDROID) {
+        ui.getControls().toggleFullScreen()
+        blurTooltipButtons()
+      }
       break
     case 'escape':
       // Exit full window
@@ -2905,7 +2912,6 @@ function addMarkers(markers) {
 
 const isOffline = ref(!navigator.onLine)
 const isBuffering = ref(false)
-let playerMenuObserver = null
 
 function onlineHandler() {
   isOffline.value = false
@@ -2960,6 +2966,7 @@ onMounted(async () => {
   const videoElement = video.value
 
   if (process.env.IS_ANDROID) {
+    android?.setSwipeRefreshEnabled?.(false)
     window.addEventListener('media-play', handleMediaPlay)
     window.addEventListener('media-pause', handleMediaPause)
     window.addEventListener('media-seek', handleMediaSeek)
@@ -3059,17 +3066,6 @@ onMounted(async () => {
 
   controls.addEventListener('uiupdated', addUICustomizations)
   configureUI(true)
-
-  if (process.env.IS_ANDROID) {
-    playerMenuObserver = new MutationObserver(() => {
-      android?.setSwipeRefreshEnabled?.(!isPlayerMenuOpen(container.value))
-    })
-    playerMenuObserver.observe(container.value, {
-      attributes: true,
-      attributeFilter: ['class'],
-      subtree: true
-    })
-  }
 
   document.removeEventListener('keydown', keyboardShortcutHandler)
   document.addEventListener('keydown', keyboardShortcutHandler)
@@ -3487,8 +3483,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', fullscreenResizeHandler)
   window.removeEventListener('orientationchange', fullscreenResizeHandler)
 
-  playerMenuObserver?.disconnect()
-  playerMenuObserver = null
   if (process.env.IS_ANDROID) {
     android?.setSwipeRefreshEnabled?.(true)
   }
