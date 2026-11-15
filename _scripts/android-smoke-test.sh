@@ -853,16 +853,16 @@ data_directory_cancel() {
 }
 
 data_directory_move_reset() {
+  local status
   [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
   [[ -f "$TEST_APK" ]] || { echo "Test APK not found: $TEST_APK"; return 1; }
   adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
   adb_cmd install -r --user 0 "$TEST_APK" >/dev/null || return 1
   adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#dataDirectoryMoveReset" "$TEST_RUNNER" \
-    | tee "$ARTIFACT_DIR/data-directory-move-reset.log" \
-    | grep -q 'OK'
-  local status=${PIPESTATUS[0]}
+    | tee "$ARTIFACT_DIR/data-directory-move-reset.log"
+  status=${PIPESTATUS[0]}
   adb_cmd uninstall --user 0 "$TEST_PACKAGE" >/dev/null 2>&1 || true
-  ((status == 0))
+  ((status == 0)) && grep -q 'OK (' "$ARTIFACT_DIR/data-directory-move-reset.log"
 }
 
 persistence() {

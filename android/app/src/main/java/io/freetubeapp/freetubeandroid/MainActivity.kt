@@ -475,7 +475,7 @@ class MainActivity : Activity() {
     }
 
     private fun runSmokeAction(action: String?, query: String?) {
-        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player") {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "data_test_parent" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player") {
             Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
             return
         }
@@ -573,7 +573,13 @@ class MainActivity : Activity() {
                 console.log('SMOKE_SCALE_LAYOUT_TEST:' + (passed ? 'PASS' : 'FAIL') + ':scale=' + input?.value + ',width=' + innerWidth + ',layout=' + (mobile ? 'mobile' : 'desktop'));
                 return;
               }
+              if ('$action' === 'data_test_parent') {
+                window.Android?.setSmokeDataDirectoryUri?.(value);
+                window.Android?.requestDirectoryAccessDialog?.();
+                return;
+              }
               if ('$action' === 'data_export' || '$action' === 'data_select' || '$action' === 'data_reset') {
+                if ('$action' === 'data_select') window.Android?.setSmokeDataDirectoryUri?.(value);
                 const selector = '$action' === 'data_export'
                   ? '[data-test="data-export-playlists"]'
                   : ('$action' === 'data_reset'

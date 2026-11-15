@@ -73,6 +73,7 @@ class AndroidBridge(
     )
     private val externalStreams = ConcurrentHashMap<String, ExternalStream>()
     private var smokeExternalPlayerPackage: String? = null
+    private var smokeDataDirectoryUri: Uri? = null
     private var externalRelayServer: ServerSocket? = null
     private var pendingDirectoryRequest: String? = null
     private val dataDirectory: java.io.File
@@ -354,8 +355,12 @@ class AndroidBridge(
     fun requestDirectoryAccessDialog(): String {
         val id = UUID.randomUUID().toString()
         pendingDirectoryRequest = id
+        val initialUri = smokeDataDirectoryUri
+        smokeDataDirectoryUri = null
         activity.runOnUiThread {
-            activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), MainActivity.DIRECTORY_REQUEST)
+            activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                initialUri?.let { putExtra(DocumentsContract.EXTRA_INITIAL_URI, it) }
+            }, MainActivity.DIRECTORY_REQUEST)
         }
         return id
     }
@@ -895,6 +900,11 @@ class AndroidBridge(
     @JavascriptInterface
     fun setSmokeExternalPlayerPackage(playerPackage: String) {
         smokeExternalPlayerPackage = playerPackage.takeIf { it.isNotBlank() }
+    }
+
+    @JavascriptInterface
+    fun setSmokeDataDirectoryUri(uri: String) {
+        smokeDataDirectoryUri = Uri.parse(uri)
     }
 
     @JavascriptInterface
