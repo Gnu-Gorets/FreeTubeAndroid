@@ -127,7 +127,7 @@ assert.deepEqual(blocked.seeks, [])
 assert.equal(blocked.indicators.get('.shaka-rewind-container').style.opacity, '0')
 blocked.cleanup()
 
-const source = await readFile('src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.vue', 'utf8')
+const source = await readFile('src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.js', 'utf8')
 assert.match(source, /if \(process\.env\.IS_ANDROID\) \{\n\s+firstTimeConfig\.seekOnTaps = true\n\s+\}/)
 assert.match(source, /const seconds = direction \* defaultSkipInterval\.value\n\s+seekBySeconds\(seconds, true\)\n\s+return seconds/)
 assert.match(source, /if \(!process\.env\.IS_ANDROID\) return\n\s+removeLongPressPlaybackListeners\(\)/)

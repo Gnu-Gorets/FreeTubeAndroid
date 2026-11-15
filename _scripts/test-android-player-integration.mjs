@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const player = await readFile('src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.vue', 'utf8')
+const player = await readFile('src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.js', 'utf8')
+const template = await readFile('src/renderer/components/ft-shaka-video-player/ft-shaka-video-player.vue', 'utf8')
 const mediaSession = await readFile('src/renderer/helpers/android/media-session.js', 'utf8')
 
 assert.match(player, /updateMediaSessionState\(STATE_PLAYING\)/)
@@ -18,10 +19,15 @@ for (const event of ['media-play', 'media-pause', 'media-seek', 'media-seek-forw
 assert.match(player, /android\.enableKeepScreenOn\(\)/)
 assert.match(player, /android\.disableKeepScreenOn\(\)/)
 assert.match(player, /android\?\.enterPictureInPicture\?\./)
-assert.match(player, /fitScreen: fitVideoToFullscreen && fullscreenLandscape/)
+assert.match(template, /fitScreen: fitVideoToFullscreen && fullscreenLandscape/)
 assert.match(player, /getDefaultQualityForNetwork\(/)
 assert.match(player, /android\?\.setSwipeRefreshEnabled\?\.\(true\)/)
 assert.match(player, /props\.autoplayOnLoad && video\.value\.paused/)
 assert.match(player, /emit\('play'\)/)
+
+assert.match(player, /registerFitScreenButton\(\)/)
+assert.match(player, /registerPictureInPictureButton\(\)/)
+assert.match(player, /const pictureInPictureButton = process\.env\.IS_ANDROID \? 'ft_picture_in_picture' : 'picture_in_picture'/)
+assert.match(player, /playerMenuObserver\?\.disconnect\(\)/)
 
 console.log('Android player integration: PASS')
