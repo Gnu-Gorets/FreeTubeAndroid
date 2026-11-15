@@ -35,11 +35,10 @@ import {
 } from '../../helpers/utils'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
-import { STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
+import { STATE_BUFFERING, STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
 import { getNetworkType } from '../../helpers/android/network'
 import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
-import { isPlayerMenuOpen } from '../../helpers/player/player-menu.mjs'
-import { addAndroidDoubleTapSeeking } from '../../helpers/player/android-double-tap.mjs'
+import { addAndroidDoubleTapSeeking, addAndroidPinchZoom } from '../../helpers/player/android-double-tap.mjs'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -212,7 +211,6 @@ export default defineComponent({
 
     /** @type {shaka.ui.Overlay|null} */
     let ui = null
-    let playerMenuObserver = null
 
     const events = new EventTarget()
 
@@ -320,7 +318,7 @@ export default defineComponent({
 
     /** @type {import('vue').ComputedRef<boolean>} */
     const enterFullscreenOnDisplayRotate = computed(() => {
-      return store.getters.getEnterFullscreenOnDisplayRotate
+      return !process.env.IS_ANDROID && store.getters.getEnterFullscreenOnDisplayRotate
     })
 
     watch(enterFullscreenOnDisplayRotate, (newValue) => {
@@ -1040,8 +1038,10 @@ export default defineComponent({
           }
         }
 
-        // Keep Shaka's indicators; Android touch handler owns tap detection.
-        if (process.env.IS_ANDROID) firstTimeConfig.seekOnTaps = true
+        if (process.env.IS_ANDROID) {
+          firstTimeConfig.seekOnTaps = true
+          firstTimeConfig.doubleClickForFullscreen = false
+        }
 
         if (document.pictureInPictureEnabled) {
           firstTimeConfig.mediaSession.supportedActions.push('enterpictureinpicture')
@@ -1105,9 +1105,14 @@ export default defineComponent({
     let longPressPlaybackRate
     let longPressControlsContainer
     let removeDoubleTapSeeking
+    let removePinchZoom
 
     function startLongPressPlayback(event) {
       if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+      if (!event.isPrimary) {
+        stopLongPressPlayback()
+        return
+      }
       if (event.target.closest?.('button, input, .shaka-seek-bar-container')) return
 
       clearTimeout(longPressTimer)
@@ -1137,6 +1142,7 @@ export default defineComponent({
         seekBySeconds(seconds, true)
         return seconds
       })
+      removePinchZoom = addAndroidPinchZoom(container.value, video.value, showValueChange)
       controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
       controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
       controlsContainer.addEventListener('pointercancel', stopLongPressPlayback)
@@ -1145,8 +1151,10 @@ export default defineComponent({
 
     function removeLongPressPlaybackListeners() {
       if (!longPressControlsContainer) return
-      removeDoubleTapSeeking()
+      removeDoubleTapSeeking?.()
       removeDoubleTapSeeking = null
+      removePinchZoom?.()
+      removePinchZoom = null
       longPressControlsContainer.removeEventListener('pointerdown', startLongPressPlayback)
       longPressControlsContainer.removeEventListener('pointerup', stopLongPressPlayback)
       longPressControlsContainer.removeEventListener('pointercancel', stopLongPressPlayback)
@@ -1320,6 +1328,7 @@ export default defineComponent({
     function handlePlay() {
       emit('play')
       startPowerSaveBlocker()
+      if (process.env.IS_ANDROID) window.Android?.enableKeepScreenOn()
 
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing'
@@ -1331,6 +1340,7 @@ export default defineComponent({
 
     function handlePause() {
       stopPowerSaveBlocker()
+      if (process.env.IS_ANDROID) window.Android?.disableKeepScreenOn()
 
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused'
@@ -2529,7 +2539,7 @@ export default defineComponent({
       if (event.shiftKey && event.key === '?') {
         event.preventDefault()
 
-        if (ui.getControls().isFullScreenEnabled()) {
+        if (!process.env.IS_ANDROID && ui.getControls().isFullScreenEnabled()) {
           ui.getControls().toggleFullScreen()
         }
 
@@ -2573,10 +2583,12 @@ export default defineComponent({
 
       switch (event.key.toLowerCase()) {
         case KeyboardShortcuts.VIDEO_PLAYER.GENERAL.FULLSCREEN:
-          // Toggle full screen
+          // Android fullscreen changes only through the fullscreen button.
           event.preventDefault()
-          ui.getControls().toggleFullScreen()
-          blurTooltipButtons()
+          if (!process.env.IS_ANDROID) {
+            ui.getControls().toggleFullScreen()
+            blurTooltipButtons()
+          }
           break
         case 'escape':
           // Exit full window
@@ -3061,6 +3073,9 @@ export default defineComponent({
 
       player.addEventListener('buffering', event => {
         isBuffering.value = event.buffering
+        if (process.env.IS_ANDROID && event.buffering) {
+          updateMediaSessionState(STATE_BUFFERING, Math.floor(videoElement.currentTime * 1000))
+        }
       })
 
       player.addEventListener('error', event => handleError(event.detail, 'shaka error handler'))
@@ -3108,14 +3123,7 @@ export default defineComponent({
       configureUI(true)
 
       if (process.env.IS_ANDROID) {
-        playerMenuObserver = new MutationObserver(() => {
-          window.Android?.setSwipeRefreshEnabled(!isPlayerMenuOpen(container.value))
-        })
-        playerMenuObserver.observe(container.value, {
-          attributes: true,
-          attributeFilter: ['class'],
-          subtree: true
-        })
+        window.Android?.setSwipeRefreshEnabled(false)
       }
 
       document.removeEventListener('keydown', keyboardShortcutHandler)
@@ -3541,9 +3549,7 @@ export default defineComponent({
         containerResizeObserver = null
       }
 
-      if (playerMenuObserver) {
-        playerMenuObserver.disconnect()
-        playerMenuObserver = null
+      if (process.env.IS_ANDROID) {
         window.Android?.setSwipeRefreshEnabled(true)
       }
 

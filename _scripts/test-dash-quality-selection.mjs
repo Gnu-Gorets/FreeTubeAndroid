@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { getQualityMark, getUniqueVideoTracks } from '../src/renderer/components/FtShakaVideoPlayer/player-components/dash-quality.mjs'
+import { getQualityMark, getUniqueVideoTracks } from '../src/renderer/components/ft-shaka-video-player/player-components/dash-quality.mjs'
 
 const tracks = [
   { width: 1280, height: 720, bandwidth: 2_000_000, language: 'en', roles: [] },

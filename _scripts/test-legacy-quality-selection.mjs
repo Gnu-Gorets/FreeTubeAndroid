@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { getUniqueLegacyFormats } from '../src/renderer/components/FtShakaVideoPlayer/player-components/legacy-quality.mjs'
+import { getUniqueLegacyFormats } from '../src/renderer/components/ft-shaka-video-player/player-components/legacy-quality.mjs'
 
 const formats = [
   { qualityLabel: '720p', width: 1280, height: 720, bitrate: 900_000 },
