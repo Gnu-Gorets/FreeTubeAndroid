@@ -1079,6 +1079,10 @@ let removePinchZoom
 
 function startLongPressPlayback(event) {
   if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+  if (!event.isPrimary) {
+    stopLongPressPlayback()
+    return
+  }
   if (event.target.closest?.('button, input, .shaka-seek-bar-container')) return
 
   clearTimeout(longPressTimer)
@@ -1108,7 +1112,7 @@ function addLongPressPlaybackListeners(controlsContainer) {
     seekBySeconds(seconds, true)
     return seconds
   })
-  removePinchZoom = addAndroidPinchZoom(container.value, video.value)
+  removePinchZoom = addAndroidPinchZoom(container.value, video.value, showValueChange)
   controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
   controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
   controlsContainer.addEventListener('pointercancel', stopLongPressPlayback)

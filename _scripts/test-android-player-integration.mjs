@@ -26,7 +26,7 @@ assert.match(mainActivity, /ViewCompat\.setOnApplyWindowInsetsListener\(root, nu
 assert.match(await readFile('src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.css', 'utf8'), /\.ftVideoPlayer:fullscreen > \.player \{[^}]*touch-action: none;/)
 assert.match(player, /android\?\.enterPictureInPicture\?\./)
 assert.match(player, /fitScreen: fitVideoToFullscreen && fullscreenLandscape/)
-assert.match(player, /addAndroidPinchZoom\(container\.value, video\.value\)/)
+assert.match(player, /addAndroidPinchZoom\(container\.value, video\.value, showValueChange\)/)
 assert.match(player, /return !process\.env\.IS_ANDROID && store\.getters\.getEnterFullscreenOnDisplayRotate/)
 assert.match(player, /android\?\.setSwipeRefreshEnabled\?\.\(false\)/)
 assert.match(player, /android\?\.setSwipeRefreshEnabled\?\.\(true\)/)

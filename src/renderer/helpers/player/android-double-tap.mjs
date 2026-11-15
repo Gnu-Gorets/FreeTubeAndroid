@@ -2,30 +2,75 @@ const TAP_WINDOW = 500
 const SCROLL_THRESHOLD = 10
 
 /** Handle two-finger video zoom without allowing WebView page scaling. */
-export function addAndroidPinchZoom (container, video) {
-  let startDistance = 0
-  let startScale = 1
+export function addAndroidPinchZoom (container, video, showZoom) {
+  let gesture = null
   let scale = 1
+  let x = 0
+  let y = 0
 
   function distance (touches) {
     return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY)
   }
 
+  function midpoint (touches) {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2
+    }
+  }
+
   function start (event) {
+    gesture = null
     if (event.touches.length !== 2) return
-    startDistance = distance(event.touches)
-    startScale = scale
+    const startDistance = distance(event.touches)
+    if (!Number.isFinite(startDistance) || startDistance === 0) return
+    const bounds = video.getBoundingClientRect()
+    const viewport = container.getBoundingClientRect()
+    const width = bounds.width / scale
+    const height = bounds.height / scale
+    if (!width || !height) return
+    const centerX = bounds.left + bounds.width / 2 - x
+    const centerY = bounds.top + bounds.height / 2 - y
+    const point = midpoint(event.touches)
+    let pictureWidth = width
+    let pictureHeight = height
+    if (getComputedStyle(video).objectFit === 'contain' && video.videoWidth && video.videoHeight) {
+      const fit = Math.min(width / video.videoWidth, height / video.videoHeight)
+      pictureWidth = video.videoWidth * fit
+      pictureHeight = video.videoHeight * fit
+    }
+    gesture = {
+      distance: startDistance,
+      scale,
+      centerX,
+      centerY,
+      anchorX: (point.x - centerX - x) / scale,
+      anchorY: (point.y - centerY - y) / scale,
+      pictureWidth,
+      pictureHeight,
+      viewport
+    }
   }
 
   function move (event) {
-    if (!startDistance || event.touches.length < 2) return
-    event.preventDefault()
-    scale = Math.max(1, Math.min(3, startScale * distance(event.touches) / startDistance))
-    video.style.transform = scale === 1 ? '' : `scale(${scale})`
+    if (event.touches.length >= 2) event.preventDefault()
+    if (!gesture || event.touches.length !== 2) return
+    scale = Math.max(1, Math.min(8, gesture.scale * distance(event.touches) / gesture.distance))
+    const point = midpoint(event.touches)
+    const limitX = Math.max(0, (gesture.pictureWidth * scale - gesture.viewport.width) / 2)
+    const limitY = Math.max(0, (gesture.pictureHeight * scale - gesture.viewport.height) / 2)
+    x = Math.max(-limitX, Math.min(limitX, point.x - gesture.centerX - gesture.anchorX * scale))
+    y = Math.max(-limitY, Math.min(limitY, point.y - gesture.centerY - gesture.anchorY * scale))
+    video.style.transform = scale === 1 ? '' : `translate(${x}px, ${y}px) scale(${scale})`
+    showZoom(`${Number(scale.toFixed(1))}x`)
   }
 
   function end (event) {
-    if (event.type === 'touchcancel' || event.touches.length < 2) startDistance = 0
+    if (event.type === 'touchcancel' || event.touches.length !== 2) {
+      gesture = null
+    } else {
+      start(event)
+    }
   }
 
   container.addEventListener('touchstart', start, { capture: true, passive: true })
@@ -37,6 +82,7 @@ export function addAndroidPinchZoom (container, video) {
     container.removeEventListener('touchmove', move, true)
     container.removeEventListener('touchend', end, true)
     container.removeEventListener('touchcancel', end, true)
+    gesture = null
     video.style.transform = ''
   }
 }

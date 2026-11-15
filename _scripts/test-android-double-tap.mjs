@@ -3,41 +3,113 @@ import { readFile } from 'node:fs/promises'
 import { runInNewContext } from 'node:vm'
 import { addAndroidDoubleTapSeeking, addAndroidPinchZoom } from '../src/renderer/helpers/player/android-double-tap.mjs'
 
-for (const vertical of [false, true]) {
+function pinchFixture(objectFit = 'fill') {
   const listeners = new Map()
+  const messages = []
   const container = {
+    getBoundingClientRect: () => ({ left: 100, top: 200, width: 1000, height: 600 }),
     addEventListener: (type, listener) => listeners.set(type, listener),
     removeEventListener: (type, listener) => {
       assert.equal(listeners.get(type), listener)
       listeners.delete(type)
     }
   }
-  const video = { style: { transform: '' } }
-  const cleanup = addAndroidPinchZoom(container, video)
-  const send = (type, touches) => {
+  function transform() {
+    if (!video.style.transform) return { x: 0, y: 0, scale: 1 }
+    const values = video.style.transform.match(/translate\(([^p]+)px, ([^p]+)px\) scale\(([^)]+)\)/)
+    assert.ok(values, 'finite translate and scale transform')
+    return { x: Number(values[1]), y: Number(values[2]), scale: Number(values[3]) }
+  }
+  const video = {
+    style: { transform: '', objectFit },
+    videoWidth: 1600,
+    videoHeight: 900,
+    getBoundingClientRect: () => {
+      const { x, y, scale } = transform()
+      return { left: 600 + x - 500 * scale, top: 500 + y - 300 * scale, width: 1000 * scale, height: 600 * scale }
+    }
+  }
+  const cleanup = addAndroidPinchZoom(container, video, message => messages.push(message))
+  function send(type, touches) {
     const event = { type, touches, preventDefault() { this.prevented = true } }
-    listeners.get(type)(event)
+    listeners.get(type)?.(event)
     return event
   }
-  const pair = distance => [{ clientX: 0, clientY: 0 }, { clientX: vertical ? 0 : distance, clientY: vertical ? distance : 0 }]
+  return { send, cleanup, transform, messages, video, listeners }
+}
 
-  send('touchstart', pair(100))
-  assert.equal(send('touchmove', pair(200)).prevented, true)
-  assert.equal(video.style.transform, 'scale(2)')
-  send('touchend', [{}])
-  send('touchstart', pair(100))
-  send('touchmove', [...pair(500), { clientX: 250, clientY: 200 }])
-  assert.equal(video.style.transform, 'scale(3)', 'zoom is capped and blocks additional-touch browser gestures')
-  send('touchend', [{}])
-  send('touchstart', pair(100))
-  send('touchmove', pair(25))
-  assert.equal(video.style.transform, '', 'zoom cannot shrink below the original size')
-  send('touchstart', pair(100))
-  send('touchcancel', pair(100))
-  assert.equal(send('touchmove', pair(200)).prevented, undefined, 'cancel ends the active pinch')
-  cleanup()
-  assert.equal(listeners.size, 0)
-  assert.equal(video.style.transform, '')
+function pair(x, y, distance, angle = 0) {
+  const dx = Math.cos(angle) * distance / 2
+  const dy = Math.sin(angle) * distance / 2
+  return [{ clientX: x - dx, clientY: y - dy }, { clientX: x + dx, clientY: y + dy }]
+}
+
+const originalGetComputedStyle = globalThis.getComputedStyle
+globalThis.getComputedStyle = video => video.style
+try {
+  for (const angle of [0, Math.PI / 2, Math.PI / 4]) {
+    for (const [x, y] of [[200, 300], [1000, 300], [200, 700], [1000, 700], [600, 500]]) {
+      const f = pinchFixture()
+      f.send('touchstart', pair(x, y, 20, angle))
+      assert.equal(f.send('touchmove', pair(x, y, 40, angle)).prevented, true)
+      const zoomed = f.transform()
+      assert.ok(Math.abs(zoomed.scale - 2) < 1e-10)
+      assert.ok(Math.abs(600 + zoomed.x + (x - 600) * zoomed.scale - x) < 1e-10, 'horizontal focal point stays under fingers')
+      assert.ok(Math.abs(500 + zoomed.y + (y - 500) * zoomed.scale - y) < 1e-10, 'vertical focal point stays under fingers')
+      f.send('touchend', [{}])
+      f.send('touchstart', pair(600, 500, 100, angle))
+      f.send('touchmove', pair(600, 500, 100, angle))
+      assert.deepEqual(f.transform(), zoomed, 'a new pinch at another location does not jump')
+      f.cleanup()
+      assert.equal(f.listeners.size, 0)
+      assert.equal(f.video.style.transform, '')
+    }
+  }
+
+  const f = pinchFixture()
+  f.send('touchstart', pair(600, 500, 100))
+  f.send('touchmove', pair(600, 500, 110))
+  assert.equal(f.messages.at(-1), '1.1x')
+  f.send('touchmove', pair(600, 500, 1000))
+  assert.equal(f.transform().scale, 8)
+  assert.equal(f.messages.at(-1), '8x')
+  f.send('touchmove', pair(100000, -100000, 1000))
+  assert.deepEqual(f.transform(), { x: 3500, y: -2100, scale: 8 }, 'pan stays within picture bounds')
+  f.send('touchend', [{}])
+  f.send('touchstart', pair(600, 500, 100))
+  f.send('touchmove', pair(600, 500, 1))
+  assert.equal(f.video.style.transform, '', '1x restores the original image')
+  assert.equal(f.messages.at(-1), '1x')
+  f.send('touchstart', pair(600, 500, 0))
+  f.send('touchmove', pair(600, 500, 100))
+  assert.equal(f.video.style.transform, '', 'coincident fingers cannot create invalid zoom')
+  f.send('touchstart', pair(600, 500, 100))
+  f.send('touchmove', pair(600, 500, 200))
+  f.send('touchend', [{}])
+  f.send('touchstart', pair(600, 500, 100))
+  f.send('touchmove', pair(700, 550, 100))
+  assert.deepEqual(f.transform(), { x: 100, y: 50, scale: 2 }, 'two fingers pan at constant scale')
+  f.send('touchcancel', [])
+  f.send('touchmove', pair(600, 500, 400))
+  assert.deepEqual(f.transform(), { x: 100, y: 50, scale: 2 }, 'cancel ends gesture tracking')
+  f.send('touchstart', [...pair(600, 500, 100), { clientX: 650, clientY: 550 }])
+  assert.equal(f.send('touchmove', [...pair(600, 500, 200), {}]).prevented, true)
+  f.send('touchend', pair(600, 500, 100))
+  f.send('touchmove', pair(600, 500, 100))
+  assert.deepEqual(f.transform(), { x: 100, y: 50, scale: 2 }, 'returning to two fingers rebases without a jump')
+  f.cleanup()
+  const messageCount = f.messages.length
+  f.send('touchmove', pair(600, 500, 800))
+  assert.equal(f.messages.length, messageCount, 'cleanup stops zoom feedback')
+
+  const letterbox = pinchFixture('contain')
+  letterbox.send('touchstart', pair(600, 500, 100))
+  letterbox.send('touchmove', pair(100000, 100000, 200))
+  assert.deepEqual(letterbox.transform(), { x: 500, y: 262.5, scale: 2 }, 'contain bounds use the picture, not scaled black bars')
+  letterbox.cleanup()
+} finally {
+  if (originalGetComputedStyle === undefined) delete globalThis.getComputedStyle
+  else globalThis.getComputedStyle = originalGetComputedStyle
 }
 
 function fixture(shown = false) {
@@ -130,7 +202,13 @@ for (const scenario of ['timeout', 'opposite', 'hold', 'scroll', 'cancel', 'mult
       f.send('touchend', 200, 250)
       break
     case 'cancel': f.send('touchcancel', 200, 100); f.tap(200, 200); break
-    case 'multitouch': f.send('touchstart', 200, 200, { touches: [{}, {}] }); f.send('touchend', 200, 250); break
+    case 'multitouch':
+      f.send('touchstart', 200, 200)
+      f.send('touchstart', 200, 210, { touches: pair(200, 200, 100, Math.PI / 2) })
+      f.send('touchmove', 200, 220, { touches: pair(200, 200, 200, Math.PI / 2) })
+      f.send('touchend', 200, 230, { touches: [{ clientX: 200, clientY: 100 }] })
+      f.send('touchend', 200, 250)
+      break
     case 'button': assert.equal(f.tap(200, 200, { button: true }).stopped, false); break
     case 'center': assert.equal(f.tap(600, 200).stopped, false); break
     case 'menu': f.controls.menu = true; assert.equal(f.tap(200, 200).stopped, false); break
