@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 
 const player = await readFile('src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.vue', 'utf8')
 const mediaSession = await readFile('src/renderer/helpers/android/media-session.js', 'utf8')
+const bridge = await readFile('android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', 'utf8')
 
 assert.match(player, /updateMediaSessionState\(STATE_PLAYING\)/)
 assert.match(player, /updateMediaSessionState\(STATE_PAUSED, Math\.floor\(video\.value\.currentTime \* 1000\)\)/)
@@ -17,6 +18,8 @@ for (const event of ['media-play', 'media-pause', 'media-seek', 'media-seek-forw
 
 assert.match(player, /android\.enableKeepScreenOn\(\)/)
 assert.match(player, /android\.disableKeepScreenOn\(\)/)
+assert.match(bridge, /fun enableKeepScreenOn\(\) \{\s+activity\.runOnUiThread \{\s+activity\.window\.addFlags\(android\.view\.WindowManager\.LayoutParams\.FLAG_KEEP_SCREEN_ON\)/)
+assert.match(bridge, /fun disableKeepScreenOn\(\) \{\s+activity\.runOnUiThread \{\s+activity\.window\.clearFlags\(android\.view\.WindowManager\.LayoutParams\.FLAG_KEEP_SCREEN_ON\)/)
 assert.match(player, /android\?\.enterPictureInPicture\?\./)
 assert.match(player, /fitScreen: fitVideoToFullscreen && fullscreenLandscape/)
 assert.match(player, /getDefaultQualityForNetwork\(/)
