@@ -678,16 +678,9 @@ class AndroidBridge(
         mediaTitle = title
         mediaArtist = artist
         mediaDuration = duration
-        mediaSession.isActive = true
-        if (!thumbnail.isNullOrBlank()) {
-            fileExecutor.execute {
-                try {
-                    mediaThumbnail = java.net.URL(thumbnail).openStream().use(BitmapFactory::decodeStream)
-                } catch (error: Exception) { Log.w("FreeTubeWebView", "Unable to load media thumbnail", error) }
-                activity.runOnUiThread { updateMediaState(PlaybackState.STATE_PAUSED, 0) }
-            }
-        }
         activity.runOnUiThread {
+            if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+            mediaSession.isActive = true
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) notificationManager.createNotificationChannel(
                 NotificationChannel("media_controls", "Media controls", NotificationManager.IMPORTANCE_LOW)
             )
@@ -695,6 +688,14 @@ class AndroidBridge(
                 activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
             ) activity.requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 100)
             updateMediaState(PlaybackState.STATE_PAUSED, 0)
+            if (!thumbnail.isNullOrBlank()) {
+                fileExecutor.execute {
+                    try {
+                        mediaThumbnail = java.net.URL(thumbnail).openStream().use(BitmapFactory::decodeStream)
+                    } catch (error: Exception) { Log.w("FreeTubeWebView", "Unable to load media thumbnail", error) }
+                    activity.runOnUiThread { updateMediaState(PlaybackState.STATE_PAUSED, 0) }
+                }
+            }
         }
     }
 
@@ -705,8 +706,12 @@ class AndroidBridge(
     @JavascriptInterface
     fun updateMediaSessionState(state: String?, position: String?) {
         val playbackState = state?.toIntOrNull() ?: PlaybackState.STATE_PAUSED
-        if (playbackState == PlaybackState.STATE_PLAYING) startKeepAlive() else stopKeepAlive()
-        activity.runOnUiThread { updateMediaState(playbackState, position?.toLongOrNull() ?: 0) }
+        val playbackPosition = position?.toLongOrNull() ?: 0
+        activity.runOnUiThread {
+            if (!mediaSession.isActive || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+            if (playbackState == PlaybackState.STATE_PLAYING) startKeepAlive() else stopKeepAlive()
+            updateMediaState(playbackState, playbackPosition)
+        }
     }
 
     private fun startKeepAlive() {
@@ -723,9 +728,11 @@ class AndroidBridge(
 
     @JavascriptInterface
     fun cancelMediaNotification() {
-        stopKeepAlive()
-        notificationManager.cancel(1001)
-        mediaSession.isActive = false
+        activity.runOnUiThread {
+            mediaSession.isActive = false
+            stopKeepAlive()
+            notificationManager.cancel(1001)
+        }
     }
 
     @JavascriptInterface
