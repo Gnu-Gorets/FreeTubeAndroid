@@ -14,13 +14,14 @@ window.addEventListener('message', (event) => {
 
     window.parent.postMessage(JSON.stringify({
       id: data.id,
-      // Run player code only in this sandboxed iframe with an opaque origin.
+      // YouTube rotates decoder functions; static command allowlists cannot replace evaluation.
+      // Opaque iframe origin differs from parent; validate event.source instead of event.origin.
       // eslint-disable-next-line no-new-func
       result: new Function(data.code)() // codeql[js/code-injection]
     }), '*')
   } catch (error) {
     window.parent.postMessage(JSON.stringify({
-      id: data.id,
+      id: data?.id,
       error: error.toString()
     }), '*')
   }

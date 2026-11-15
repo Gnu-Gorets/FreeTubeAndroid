@@ -3,7 +3,8 @@
 
 name: Build Android Test
 
-permissions: {}
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:

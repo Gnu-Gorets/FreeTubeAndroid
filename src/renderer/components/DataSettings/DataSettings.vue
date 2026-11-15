@@ -156,7 +156,6 @@ import store from '../../store/index'
 import { defaultUpdaterId, NON_TRANSFERABLE_SETTINGS } from '../../store/modules/settings'
 
 import { MAIN_PROFILE_ID } from '../../../constants'
-import { parseOpmlFeeds } from '../../helpers/parseOpmlFeeds.mjs'
 import { handleAmbigiousContent } from '../../helpers/android/utils'
 import { calculateColorLuminance, getRandomColor } from '../../helpers/colors'
 import {
@@ -568,13 +567,19 @@ function importYouTubeSubscriptions(textDecode) {
  * @param {string} data
  */
 function importOpmlYouTubeSubscriptions(data) {
-  let feedData
+  let xmlDom
   try {
-    feedData = parseOpmlFeeds(data)
-  } catch {
+    xmlDom = new DOMParser().parseFromString(data, 'application/xml')
+    const errorNode = xmlDom.querySelector('parsererror')
+    if (errorNode) throw new Error(errorNode.textContent)
+  } catch (error) {
+    console.error('error reading OPML subscriptions file')
+    console.error(error)
     showToast(t('Settings.Data Settings.Invalid subscriptions file'))
     return
   }
+
+  const feedData = xmlDom.querySelectorAll('body outline[xmlUrl]')
   if (feedData.length === 0) {
     const message = t('Settings.Data Settings.Invalid subscriptions file')
     showToast(message)
@@ -589,7 +594,8 @@ function importOpmlYouTubeSubscriptions(data) {
   let count = 0
 
   feedData.forEach((channel) => {
-    const { xmlUrl, title: channelName } = channel
+    const xmlUrl = channel.getAttribute('xmlUrl')
+    const channelName = channel.getAttribute('title')
     let channelId
     if (xmlUrl.includes('https://www.youtube.com/feeds/videos.xml?channel_id=')) {
       channelId = new URL(xmlUrl).searchParams.get('channel_id')

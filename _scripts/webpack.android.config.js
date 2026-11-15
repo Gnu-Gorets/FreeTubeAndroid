@@ -172,10 +172,6 @@ const config = {
     })
   ],
   resolve: {
-    fallback: {
-      // Browser builds do not use sax's optional Node stream adapter.
-      stream: false
-    },
     alias: {
       DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$: path.resolve(__dirname, '../src/datastores/handlers/web.js'),
 
