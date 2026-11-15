@@ -1,6 +1,44 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { addAndroidDoubleTapSeeking } from '../src/renderer/helpers/player/android-double-tap.mjs'
+import { runInNewContext } from 'node:vm'
+import { addAndroidDoubleTapSeeking, addAndroidPinchZoom } from '../src/renderer/helpers/player/android-double-tap.mjs'
+
+for (const vertical of [false, true]) {
+  const listeners = new Map()
+  const container = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    removeEventListener: (type, listener) => {
+      assert.equal(listeners.get(type), listener)
+      listeners.delete(type)
+    }
+  }
+  const video = { style: { transform: '' } }
+  const cleanup = addAndroidPinchZoom(container, video)
+  const send = (type, touches) => {
+    const event = { type, touches, preventDefault() { this.prevented = true } }
+    listeners.get(type)(event)
+    return event
+  }
+  const pair = distance => [{ clientX: 0, clientY: 0 }, { clientX: vertical ? 0 : distance, clientY: vertical ? distance : 0 }]
+
+  send('touchstart', pair(100))
+  assert.equal(send('touchmove', pair(200)).prevented, true)
+  assert.equal(video.style.transform, 'scale(2)')
+  send('touchend', [{}])
+  send('touchstart', pair(100))
+  send('touchmove', [...pair(500), { clientX: 250, clientY: 200 }])
+  assert.equal(video.style.transform, 'scale(3)', 'zoom is capped and blocks additional-touch browser gestures')
+  send('touchend', [{}])
+  send('touchstart', pair(100))
+  send('touchmove', pair(25))
+  assert.equal(video.style.transform, '', 'zoom cannot shrink below the original size')
+  send('touchstart', pair(100))
+  send('touchcancel', pair(100))
+  assert.equal(send('touchmove', pair(200)).prevented, undefined, 'cancel ends the active pinch')
+  cleanup()
+  assert.equal(listeners.size, 0)
+  assert.equal(video.style.transform, '')
+}
 
 function fixture(shown = false) {
   const listeners = new Map()
@@ -128,8 +166,43 @@ assert.equal(blocked.indicators.get('.shaka-rewind-container').style.opacity, '0
 blocked.cleanup()
 
 const source = await readFile('src/renderer/components/FtShakaVideoPlayer/FtShakaVideoPlayer.vue', 'utf8')
-assert.match(source, /if \(process\.env\.IS_ANDROID\) \{\n\s+firstTimeConfig\.seekOnTaps = true\n\s+\}/)
+assert.match(source, /if \(process\.env\.IS_ANDROID\) \{\n\s+firstTimeConfig\.seekOnTaps = true\n\s+firstTimeConfig\.doubleClickForFullscreen = false\n\s+\}/)
 assert.match(source, /const seconds = direction \* defaultSkipInterval\.value\n\s+seekBySeconds\(seconds, true\)\n\s+return seconds/)
 assert.match(source, /if \(!process\.env\.IS_ANDROID\) return\n\s+removeLongPressPlaybackListeners\(\)/)
 assert.match(source, /removeDoubleTapSeeking\?\.\(\)/)
-console.log('Android double-tap seeking: PASS')
+// Exercise the dependency's touch path, including its previous fullscreen toggle.
+const shakaControls = await readFile('node_modules/shaka-player/ui/controls.js', 'utf8')
+const shakaButton = await readFile('node_modules/shaka-player/ui/fullscreen_button.js', 'utf8')
+const touchMethod = shakaControls.match(/ {2}onContainerTouch\(event\) \{[\s\S]*?\n {2}\}/)?.[0]
+const clickMethod = shakaControls.match(/ {2}onContainerClick\(fromTouchEvent = false\) \{[\s\S]*?\n {2}\}/)?.[0]
+const buttonHandler = shakaButton.match(/this\.eventManager\.listen\(this\.button_, 'click', (async \(\) => \{[\s\S]*?\n {4}\})\);/)?.[1]
+assert.ok(touchMethod && clickMethod && buttonHandler, 'locate actual Shaka touch and button handlers')
+const methods = runInNewContext(`({ ${touchMethod}, ${clickMethod} })`, { Date: { now: () => 100 } })
+
+for (const doubleClickForFullscreen of [true, false]) {
+  let toggles = 0
+  const controls = {
+    ...methods,
+    video_: { duration: 100 },
+    enabled_: true,
+    config_: { doubleClickForFullscreen, singleClickForPlayAndPause: false },
+    lastContainerTouchEventTime_: null,
+    isPlayingVR: () => false,
+    isFullScreenSupported: () => true,
+    isOpaque: () => true,
+    anyContextMenusAreOpen: () => false,
+    anySettingsMenusAreOpen: () => false,
+    hideUITimer_: { stop() {}, tickNow() {}, tickAfter() {} },
+    resetLastTouchEventTime() { this.lastContainerTouchEventTime_ = null },
+    toggleFullScreen() { toggles++ }
+  }
+  for (const touches of [[{ clientX: 500, clientY: 150 }], []]) {
+    controls.onContainerTouch({ touches, cancelable: true, preventDefault() {} })
+  }
+  assert.equal(toggles, doubleClickForFullscreen ? 1 : 0, 'staggered releases must not toggle Android fullscreen')
+  const button = { controls, button_: { focus() {} } }
+  const invokeButton = runInNewContext(`(function () { return (${buttonHandler})() })`)
+  await invokeButton.call(button)
+  assert.equal(toggles, doubleClickForFullscreen ? 2 : 1, 'fullscreen button remains active')
+}
+console.log('Android double-tap seeking and fullscreen gestures: PASS')

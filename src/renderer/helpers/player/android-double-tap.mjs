@@ -1,6 +1,46 @@
 const TAP_WINDOW = 500
 const SCROLL_THRESHOLD = 10
 
+/** Handle two-finger video zoom without allowing WebView page scaling. */
+export function addAndroidPinchZoom (container, video) {
+  let startDistance = 0
+  let startScale = 1
+  let scale = 1
+
+  function distance (touches) {
+    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY)
+  }
+
+  function start (event) {
+    if (event.touches.length !== 2) return
+    startDistance = distance(event.touches)
+    startScale = scale
+  }
+
+  function move (event) {
+    if (!startDistance || event.touches.length < 2) return
+    event.preventDefault()
+    scale = Math.max(1, Math.min(3, startScale * distance(event.touches) / startDistance))
+    video.style.transform = scale === 1 ? '' : `scale(${scale})`
+  }
+
+  function end (event) {
+    if (event.type === 'touchcancel' || event.touches.length < 2) startDistance = 0
+  }
+
+  container.addEventListener('touchstart', start, { capture: true, passive: true })
+  container.addEventListener('touchmove', move, { capture: true, passive: false })
+  container.addEventListener('touchend', end, true)
+  container.addEventListener('touchcancel', end, true)
+  return () => {
+    container.removeEventListener('touchstart', start, true)
+    container.removeEventListener('touchmove', move, true)
+    container.removeEventListener('touchend', end, true)
+    container.removeEventListener('touchcancel', end, true)
+    video.style.transform = ''
+  }
+}
+
 /** Handle side taps independently of Shaka's controls visibility. */
 export function addAndroidDoubleTapSeeking (container, controls, seek) {
   let touchStart = null
