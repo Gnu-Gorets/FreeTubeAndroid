@@ -943,7 +943,13 @@ class AndroidBridge(
                     while (!server.isClosed) {
                         try {
                             val client = server.accept()
-                            externalRelayExecutor.execute { relayExternalStream(client) }
+                            externalRelayExecutor.execute {
+                                try {
+                                    relayExternalStream(client)
+                                } catch (error: java.io.IOException) {
+                                    Log.w("FreeTubeExternal", "relay-request-failed message=${error.message}")
+                                }
+                            }
                         } catch (_: Exception) {
                             if (!server.isClosed) Log.w("FreeTubeWebView", "External player relay stopped")
                         }
@@ -1109,9 +1115,8 @@ class AndroidBridge(
                 setRequestProperty("Accept-Encoding", "identity")
                 range?.let { setRequestProperty("Range", it) }
             }
-            connection.connect()
-
             try {
+                connection.connect()
                 val output = client.getOutputStream().bufferedWriter()
                 val upstreamStatus = connection.responseCode
                 val rangeStart = range?.substringAfter("bytes=")?.substringBefore('-')?.toLongOrNull()
