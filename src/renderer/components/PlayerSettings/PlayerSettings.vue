@@ -68,6 +68,7 @@
           @change="updateDisplayVideoPlayButton"
         />
         <FtToggleSwitch
+          v-if="!IS_ANDROID"
           :label="t('Settings.Player Settings.Enter Fullscreen on Display Rotate')"
           :compact="true"
           :default-value="enterFullscreenOnDisplayRotate"

@@ -172,13 +172,23 @@ class MainActivity : Activity() {
                 fullscreenView = view
                 root.addView(view)
                 (view.layoutParams as? ViewGroup.MarginLayoutParams)?.setMargins(0, 0, 0, 0)
-                insetsController.hide(WindowInsetsCompat.Type.systemBars())
                 insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                ViewCompat.setOnApplyWindowInsetsListener(root) { content, insets ->
+                    if (fullscreenView != null && insets.isVisible(WindowInsetsCompat.Type.systemBars())) {
+                        content.post {
+                            if (fullscreenView != null) {
+                                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                            }
+                        }
+                    }
+                    insets
+                }
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
             }
 
             override fun onHideCustomView() {
+                ViewCompat.setOnApplyWindowInsetsListener(root, null)
                 fullscreenView?.let {
-                    ViewCompat.setOnApplyWindowInsetsListener(it, null)
                     root.removeView(it)
                 }
                 fullscreenView = null
