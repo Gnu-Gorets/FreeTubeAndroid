@@ -154,7 +154,7 @@
         :get-playlist-state="getPlaylistState"
         :length-seconds="videoLengthSeconds"
         :video-thumbnail="thumbnail"
-        :download-available="usingAndroid && !isUpcoming && !isLive && !downloadedMission"
+        :download-available="usingAndroid && downloadsEnabled && !isUpcoming && !isLive && !downloadedMission"
         :in-user-playlist="!!selectedUserPlaylist"
         :is-unlisted="isUnlisted"
         :content-disclosures="contentDisclosures"
