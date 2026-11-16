@@ -854,7 +854,13 @@ data_directory_cancel() {
 
 data_directory_move_reset() {
   [[ -f "$APK" ]] || { echo "APK not found: $APK"; return 1; }
-  [[ -f "$TEST_APK" ]] || { echo "Test APK not found: $TEST_APK"; return 1; }
+  if [[ ! -f "$TEST_APK" ]]; then
+    echo "Building missing Android instrumentation APK in Docker"
+    docker compose run --rm android-build bash -lc 'cd android && ./gradlew assembleDebugAndroidTest' 2>&1 | tee "$ARTIFACT_DIR/android-test-build.log"
+    local build_status=${PIPESTATUS[0]}
+    ((build_status == 0)) || return 1
+  fi
+  [[ -f "$TEST_APK" ]] || { echo "Test APK was not created: $TEST_APK"; return 1; }
   adb_cmd install -r --user 0 "$APK" >/dev/null || return 1
   adb_cmd install -r --user 0 "$TEST_APK" >/dev/null || return 1
   adb_shell am instrument --user 0 -w -e class "$PACKAGE.CoordinateFreeSmokeTest#dataDirectoryMoveReset" "$TEST_RUNNER" \
@@ -918,11 +924,18 @@ ui_scale_layout() {
 cleanup() {
   playback || return 1
   adb_shell input keyevent KEYCODE_BACK
-  sleep 2
-  if adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active='; then
-    adb_shell dumpsys media_session | grep -A20 -m1 'FreeTubeAndroid io.freetubeapp.freetubeandroid' | grep -q 'active=false' || return 1
-  fi
-  ! adb_shell dumpsys notification --noredact | grep -q 'io.freetubeapp.freetubeandroid.*id=1001'
+  local session notification
+  for _ in $(seq 1 "$TIMEOUT"); do
+    session=$(media_session || true)
+    notification=$(adb_shell dumpsys notification --noredact | grep -m1 'io.freetubeapp.freetubeandroid.*id=1001' || true)
+    if { [[ -z "$session" ]] || grep -q 'active=false' <<<"$session"; } && [[ -z "$notification" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Media session did not clean up: ${session:-absent}"
+  if [[ -n "$notification" ]]; then echo "Media notification remains: $notification"; fi
+  return 1
 }
 
 recovery() {

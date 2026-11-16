@@ -9,13 +9,14 @@ docker compose build android-build
 docker compose run --rm android-build bash -lc \
   'pnpm install --frozen-lockfile && \
    pnpm run pack:android:core && \
-   cd android && ./gradlew assembleDebug'
+   cd android && ./gradlew assembleDebug assembleDebugAndroidTest'
 ```
 
-APK output:
+APK outputs:
 
 ```text
 android/app/build/outputs/apk/debug/app-debug.apk
+android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 ```
 
 Local nightly release build does not require signing:
