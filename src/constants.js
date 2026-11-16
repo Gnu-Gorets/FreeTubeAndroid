@@ -44,6 +44,7 @@ const IpcChannels = {
   SET_INVIDIOUS_AUTHORIZATION: 'set-invidious-authorization',
 
   GENERATE_PO_TOKEN: 'generate-po-token',
+  LOCAL_API_FETCH: 'local-api-fetch',
 
   CHOOSE_DEFAULT_FOLDER: 'choose-default-folder',
   WRITE_TO_DEFAULT_FOLDER: 'write-to-default-folder',

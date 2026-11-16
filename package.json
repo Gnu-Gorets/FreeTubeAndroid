@@ -58,6 +58,8 @@
     "test:dash-quality-selection": "node _scripts/test-dash-quality-selection.mjs",
     "test:search-continuation": "node _scripts/test-search-continuation.mjs",
     "test:local-caption-label": "node _scripts/test-local-caption-label.mjs",
+    "test:local-api-fetch": "node _scripts/test-local-api-fetch.mjs",
+    "test:opml-parser": "node _scripts/test-opml-parser.mjs",
     "ci": "pnpm install --frozen-lockfile"
   },
   "dependencies": {
@@ -74,6 +76,7 @@
     "googlevideo": "^4.1.1",
     "marked": "^18.2.0",
     "process": "^0.11.10",
+    "sax": "^1.6.1",
     "shaka-player": "^5.3.4",
     "swiper": "^14.4.0",
     "vue": "^3.5.45",
