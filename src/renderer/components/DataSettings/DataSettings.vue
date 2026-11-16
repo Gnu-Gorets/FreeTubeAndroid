@@ -156,6 +156,7 @@ import store from '../../store/index'
 import { defaultUpdaterId, NON_TRANSFERABLE_SETTINGS } from '../../store/modules/settings'
 
 import { MAIN_PROFILE_ID } from '../../../constants'
+import { parseOpmlFeeds } from '../../helpers/parseOpmlFeeds.mjs'
 import { handleAmbigiousContent } from '../../helpers/android/utils'
 import { calculateColorLuminance, getRandomColor } from '../../helpers/colors'
 import {
@@ -567,32 +568,13 @@ function importYouTubeSubscriptions(textDecode) {
  * @param {string} data
  */
 function importOpmlYouTubeSubscriptions(data) {
-  let xmlDom
-  const domParser = new DOMParser()
+  let feedData
   try {
-    xmlDom = domParser.parseFromString(data, 'application/xml')
-
-    // https://developer.mozilla.org/en-US/docs/Web/API/DOMParser/parseFromString#error_handling
-    const errorNode = xmlDom.querySelector('parsererror')
-    if (errorNode) {
-      throw errorNode.textContent
-    }
-  } catch (err) {
-    console.error('error reading OPML subscriptions file, falling back to HTML parser...')
-    console.error(err)
-    // try parsing with the html parser instead which is more lenient
-    try {
-      const htmlDom = domParser.parseFromString(data, 'text/html')
-
-      xmlDom = htmlDom
-    } catch {
-      const message = t('Settings.Data Settings.Invalid subscriptions file')
-      showToast(`${message}: ${err}`)
-      return
-    }
+    feedData = parseOpmlFeeds(data)
+  } catch {
+    showToast(t('Settings.Data Settings.Invalid subscriptions file'))
+    return
   }
-
-  const feedData = xmlDom.querySelectorAll('body outline[xmlUrl]')
   if (feedData.length === 0) {
     const message = t('Settings.Data Settings.Invalid subscriptions file')
     showToast(message)
@@ -607,8 +589,7 @@ function importOpmlYouTubeSubscriptions(data) {
   let count = 0
 
   feedData.forEach((channel) => {
-    const xmlUrl = channel.getAttribute('xmlUrl')
-    const channelName = channel.getAttribute('title')
+    const { xmlUrl, title: channelName } = channel
     let channelId
     if (xmlUrl.includes('https://www.youtube.com/feeds/videos.xml?channel_id=')) {
       channelId = new URL(xmlUrl).searchParams.get('channel_id')

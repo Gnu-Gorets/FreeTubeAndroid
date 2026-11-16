@@ -74,10 +74,6 @@ const searchPage = ref(1)
 const nextPageRef = shallowRef(null)
 const shownResults = shallowRef([])
 
-const showFetchMoreButton = computed(() => {
-  return apiUsed.value === 'invidious' || nextPageRef.value !== null
-})
-
 const query = ref('')
 const processedQuery = computed(() => query.value.trim())
 

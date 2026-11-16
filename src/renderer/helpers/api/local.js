@@ -4,6 +4,7 @@ import { parseLooseJSON } from 'bgutils-js/utils'
 
 import { SEARCH_CHAR_LIMIT } from '../../../constants'
 import { PlayerCache } from './PlayerCache'
+import { fetchLocalApi } from './local-fetch.mjs'
 import { createLocalSearchContinuation } from './local-search-continuation.mjs'
 import {
   CHANNEL_HANDLE_REGEX,
@@ -127,8 +128,8 @@ async function createSession({ withPlayer = false, location = undefined, safetyM
     enable_safety_mode: !!safetyMode,
     client_type: clientType,
 
-    // use browser fetch
-    fetch: (fetchFunc ?? ((input, init) => fetch(input, init))),
+    // Keep Electron YouTube requests in main process to avoid renderer CORS failures.
+    fetch: (fetchFunc ?? fetchLocalApi),
     cache,
     generate_session_locally: !!generateSessionLocally
   })
@@ -421,7 +422,7 @@ export async function getLocalSearchContinuation(continuationData) {
  */
 async function getHTMLPage(url, kind) {
   // This returns session/tracking cookies but they get removed in onHeadersReceived in the main process before they are saved by Electron
-  const htmlResponse = await fetch(url,
+  const htmlResponse = await fetchLocalApi(url,
     {
       headers: {
         // We need to be able to parse the localised strings in the /next response data (e.g. view counts and published dates)
@@ -677,10 +678,10 @@ async function getLocalVideoInfoUncached(id) {
 
   const fetchFunc = async (input, init) => {
     if (!(input.url?.startsWith('https://www.youtube.com/youtubei/v1/player'))) {
-      return fetch(input, init)
+      return fetchLocalApi(input, init)
     }
 
-    const response = await fetch(input, init)
+    const response = await fetchLocalApi(input, init)
     const responseText = await response.text()
 
     responseTime = Date.now()
@@ -702,7 +703,7 @@ async function getLocalVideoInfoUncached(id) {
 
   const player = await Player.create(
     process.env.IS_ELECTRON ? new PlayerCache() : new UniversalCache(false),
-    (input, init) => fetch(input, init),
+    fetchLocalApi,
     undefined,
     // If we found the player ID in the HTML we can pass it in to save one request inside Player.create()
     htmlExtracts.playerId

@@ -138,6 +138,14 @@ export default {
     return ipcRenderer.invoke(IpcChannels.GENERATE_PO_TOKEN, videoId, context, initialAttestationData, ytConfig)
   },
 
+  /**
+   * @param {{ url: string, method: string, headers: [string, string][], credentials: RequestCredentials, body?: ArrayBuffer }} request
+   * @returns {Promise<{ status: number, statusText: string, headers: [string, string][], body: Uint8Array }>}
+   */
+  fetchLocalApi: (request) => {
+    return ipcRenderer.invoke(IpcChannels.LOCAL_API_FETCH, request)
+  },
+
   chooseDefaultFolder: () => {
     ipcRenderer.send(IpcChannels.CHOOSE_DEFAULT_FOLDER)
   },
