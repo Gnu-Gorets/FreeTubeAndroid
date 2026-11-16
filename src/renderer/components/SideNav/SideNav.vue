@@ -118,7 +118,7 @@
       </router-link>
       <SideNavMoreOptions />
       <router-link
-        v-if="usingAndroid"
+        v-if="usingAndroid && downloadsEnabled"
         class="navOption mobileShow"
         role="button"
         to="/downloads"
@@ -282,6 +282,8 @@ const backendFallback = computed(() => {
 const backendPreference = computed(() => {
   return store.getters.getBackendPreference
 })
+
+const downloadsEnabled = computed(() => store.getters.getDownloadsEnabled)
 
 /** @type {import('vue').ComputedRef<string>} */
 const currentInvidiousInstanceUrl = computed(() => {

@@ -132,6 +132,7 @@ import { getLocalClip } from './helpers/api/local.js'
 import { getClipInvidious } from './helpers/api/invidious.js'
 
 import { updateAndroidTheme } from './helpers/android/system'
+import { getDownloadSettings } from './helpers/android/downloads'
 
 const route = useRoute()
 const router = useRouter()
@@ -183,6 +184,16 @@ onMounted(async () => {
   }
 
   await store.dispatch('grabUserSettings')
+
+  if (process.env.IS_ANDROID) {
+    const downloadsEnabled = getDownloadSettings().enabled
+    if (downloadsEnabled !== store.getters.getDownloadsEnabled) {
+      await store.dispatch('updateDownloadsEnabled', downloadsEnabled)
+    }
+    if (!downloadsEnabled && route.name === 'downloads') {
+      await router.replace({ name: 'subscriptions' })
+    }
+  }
 
   if (process.env.IS_ANDROID && store.getters.getUseProxy) {
     const proxyId = crypto.randomUUID()

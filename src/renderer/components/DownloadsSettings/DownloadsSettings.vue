@@ -1,6 +1,12 @@
 <template>
   <FtSettingsSection :title="t('Downloads.Settings')">
     <FtToggleSwitch
+      :label="t('Downloads.Enable downloads')"
+      :default-value="downloadsEnabled"
+      :compact="true"
+      @change="updateDownloadsEnabled"
+    />
+    <FtToggleSwitch
       :label="t('Downloads.Wi-Fi only')"
       :default-value="wifiOnly"
       :compact="true"
@@ -70,6 +76,7 @@ import {
 
 const { t } = useI18n()
 const wifiOnly = computed(() => store.getters.getDownloadsWifiOnly)
+const downloadsEnabled = computed(() => store.getters.getDownloadsEnabled)
 const concurrency = computed(() => store.getters.getDownloadsConcurrency)
 const defaultVideoFormat = computed(() => store.getters.getDownloadsDefaultVideoFormat)
 const defaultAudioFormat = computed(() => store.getters.getDownloadsDefaultAudioFormat)
@@ -80,15 +87,20 @@ const audioFormatValues = ['auto', 'm4a', 'webm']
 const videoFormatNames = ['Auto', 'MP4', 'WebM']
 const audioFormatNames = ['Auto', 'M4A', 'WebM']
 
+function updateDownloadsEnabled(value) {
+  updateDownloadSettings({ enabled: value, wifiOnly: wifiOnly.value, concurrency: concurrency.value })
+  store.dispatch('updateDownloadsEnabled', value)
+}
+
 function updateWifiOnly(value) {
   store.dispatch('updateDownloadsWifiOnly', value)
-  updateDownloadSettings({ wifiOnly: value, concurrency: concurrency.value })
+  updateDownloadSettings({ enabled: downloadsEnabled.value, wifiOnly: value, concurrency: concurrency.value })
 }
 
 function updateConcurrency(value) {
   const parsed = Number(value)
   store.dispatch('updateDownloadsConcurrency', parsed)
-  updateDownloadSettings({ wifiOnly: wifiOnly.value, concurrency: parsed })
+  updateDownloadSettings({ enabled: downloadsEnabled.value, wifiOnly: wifiOnly.value, concurrency: parsed })
 }
 
 async function selectDirectory() {
@@ -103,6 +115,7 @@ function resetDirectory() {
 
 onMounted(async () => {
   const native = getDownloadSettings()
+  if (native.enabled !== downloadsEnabled.value) await store.dispatch('updateDownloadsEnabled', native.enabled)
   if (native.wifiOnly !== wifiOnly.value) await store.dispatch('updateDownloadsWifiOnly', native.wifiOnly)
   if (native.concurrency !== concurrency.value) await store.dispatch('updateDownloadsConcurrency', native.concurrency)
 })
