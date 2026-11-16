@@ -26,6 +26,7 @@ import {
 } from '../helpers/utils'
 import { getInvidiousChannelLive, invidiousFetch } from '../helpers/api/invidious'
 import { getLocalChannelLiveStreams } from '../helpers/api/local'
+import { fetchLocalApi } from '../helpers/api/local-fetch.mjs'
 import { parseYouTubeRSSFeed, updateVideoListAfterProcessing } from '../helpers/subscriptions'
 
 const { t } = useI18n()
@@ -306,7 +307,7 @@ async function getChannelLiveLocalRSS(channel, failedAttempts = 0) {
   const feedUrl = `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistId}`
 
   try {
-    const response = await fetch(feedUrl)
+    const response = await fetchLocalApi(feedUrl)
 
     if (response.status === 403) {
       return {
@@ -318,7 +319,7 @@ async function getChannelLiveLocalRSS(channel, failedAttempts = 0) {
       // playlists don't exist if the channel was terminated but also if it doesn't have the tab,
       // so we need to check the channel feed too before deciding it errored, as that only 404s if the channel was terminated
 
-      const response2 = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channel.id}`, {
+      const response2 = await fetchLocalApi(`https://www.youtube.com/feeds/videos.xml?channel_id=${channel.id}`, {
         method: 'HEAD'
       })
 
