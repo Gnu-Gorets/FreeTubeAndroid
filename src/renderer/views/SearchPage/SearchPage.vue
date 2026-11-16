@@ -78,10 +78,6 @@ const lastSearchHasSomeValidResults = ref(true)
 // Only used for Invidious
 const lastSearchHasSomeRawResults = ref(true)
 
-const showFetchMoreButton = computed(() => {
-  return apiUsed.value === 'invidious' || nextPageRef.value !== null
-})
-
 const query = ref('')
 const processedQuery = computed(() => query.value.trim())
 
