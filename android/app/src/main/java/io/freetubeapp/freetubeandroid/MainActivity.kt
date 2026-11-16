@@ -485,7 +485,7 @@ class MainActivity : Activity() {
     }
 
     private fun runSmokeAction(action: String?, query: String?) {
-        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player") {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player" && action != "external_player_enable") {
             Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
             return
         }
@@ -494,6 +494,27 @@ class MainActivity : Activity() {
             """
             (() => {
               const value = $value;
+              if ('$action' === 'external_player_enable') {
+                window.location.hash = '#/settings';
+                setTimeout(() => {
+                  const link = document.querySelector('.settingsMenu [data-section="external-player"]');
+                  if (!link) {
+                    console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:FAIL:settings-link-not-found');
+                    return;
+                  }
+                  link.click();
+                  setTimeout(() => {
+                    const toggle = document.querySelector('.settingsSections [data-section="external-player"] input[type="checkbox"]');
+                    if (!toggle) {
+                      console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:FAIL:toggle-not-found');
+                      return;
+                    }
+                    if (!toggle.checked) toggle.click();
+                    setTimeout(() => console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:' + (toggle.checked ? 'PASS:enabled' : 'FAIL:enable-failed')), 300);
+                  }, 500);
+                }, 300);
+                return;
+              }
               if ('$action' === 'external_player') {
                 const parts = value.split('|');
                 const index = Number(parts[0]);

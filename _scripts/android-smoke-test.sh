@@ -663,15 +663,14 @@ external_player_case() {
   local player_package="$1" network="$2" first_index="$3" second_index="$4"
   set_external_network "$network" || return 1
   adb_shell am force-stop --user 0 "$player_package" >/dev/null 2>&1 || true
-  start_app || return 1
+  open_search_results || return 1
   run_web_smoke_action external_player "$first_index|$player_package" || return 1
   wait_for "$player_package" || return 1
   sleep 5
   adb_shell input keyevent KEYCODE_MEDIA_PAUSE
   adb_shell input keyevent KEYCODE_HOME
   sleep 2
-  adb_shell am start --user 0 -n "$ACTIVITY" >/dev/null 2>&1 || return 1
-  wait_for "$PACKAGE" || return 1
+  open_search_results || return 1
   run_web_smoke_action external_player "$second_index|$player_package" || return 1
   wait_for "$player_package" || return 1
   progress "check 1/3: video playback in $player_package"
@@ -687,6 +686,8 @@ external_player_single() {
   local player_package="$1" network="$2" first_index="$3" second_index="$4" status=0
   adb_shell am force-stop --user 0 "$PACKAGE" >/dev/null 2>&1 || true
   clean_logs
+  start_app || return 1
+  run_web_smoke_action external_player_enable || { echo "Unable to enable Android External Player setting"; return 1; }
   save_external_network_state
   external_player_case "$player_package" "$network" "$first_index" "$second_index" || status=1
   restore_external_network_state

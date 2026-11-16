@@ -4,6 +4,9 @@ import { runInNewContext } from 'node:vm'
 
 const utils = await readFile('src/renderer/helpers/utils.js', 'utf8')
 const bridgeSource = await readFile('android/app/src/main/java/io/freetubeapp/freetubeandroid/AndroidBridge.kt', 'utf8')
+const activity = await readFile('android/app/src/main/java/io/freetubeapp/freetubeandroid/MainActivity.kt', 'utf8')
+const smokeScript = await readFile('_scripts/android-smoke-test.sh', 'utf8')
+const externalPlayerCase = section(smokeScript, 'external_player_case() {', 'external_player_single() {')
 const bridge = section(bridgeSource, '    @JavascriptInterface\n    fun openExternalPlayer(', '    @JavascriptInterface\n    fun shareText(')
 const picker = section(bridge, '    private fun showExternalPlayerPicker(', '    private fun launchExternalPlayer(')
 const launch = section(bridge, '    private fun launchExternalPlayer(', '    @JavascriptInterface\n    fun setSmokeExternalPlayerPackage(')
@@ -11,6 +14,11 @@ const update = section(bridge, '    @JavascriptInterface\n    fun updateExternal
 const video = await readFile('src/renderer/components/FtListVideo/FtListVideo.vue', 'utf8')
 const playlist = await readFile('src/renderer/components/FtListPlaylist/FtListPlaylist.vue', 'utf8')
 const watchInfo = await readFile('src/renderer/components/WatchVideoInfo/WatchVideoInfo.vue', 'utf8')
+
+assert.match(activity, /action != "external_player_enable"/)
+assert.match(activity, /if \('\$action' === 'external_player_enable'\)[\s\S]*?if \(!toggle\.checked\) toggle\.click\(\)[\s\S]*?SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:.*PASS:enabled/)
+assert.match(smokeScript, /run_web_smoke_action external_player_enable/)
+assert.equal((externalPlayerCase.match(/open_search_results \|\| return 1/g) || []).length, 2)
 
 assert.match(utils, /export function openExternalPlayer\(payload\)/)
 assert.match(utils, /window\.Android\.openExternalPlayer\(/)
