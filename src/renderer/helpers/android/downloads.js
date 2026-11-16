@@ -42,7 +42,7 @@ export function getDownloads() {
 }
 
 export function getDownloadSettings() {
-  return isAndroid ? JSON.parse(android.getDownloadSettings()) : { wifiOnly: false, concurrency: 1 }
+  return isAndroid ? JSON.parse(android.getDownloadSettings()) : { enabled: true, wifiOnly: false, concurrency: 1 }
 }
 
 export function updateDownloadSettings(settings) {
