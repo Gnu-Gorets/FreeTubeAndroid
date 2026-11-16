@@ -239,12 +239,7 @@ async function getNextpageLocal(payload) {
     const { results, continuationData } = await getLocalSearchContinuation(payload.options.nextPageRef)
 
     if (results.length === 0) {
-      return
-    }
-
-    if (results.length === 0) {
       nextPageRef.value = null
-      lastSearchHasSomeValidResults.value = validResultsCount > 0
       return
     }
 

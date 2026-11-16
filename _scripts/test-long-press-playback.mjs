@@ -16,8 +16,8 @@ assert.match(source, /if \(!process\.env\.IS_ANDROID\) \{\n\s+shakaContextMenu\.
 assert.match(source, /shakaOverflowMenu\.registerElement\('ft_stats', new StatsButtonFactory\(\)\)/)
 assert.match(source, /onBeforeUnmount\(\(\) => \{[\s\S]*?removeLongPressPlaybackListeners\(\)[\s\S]*?\n\}\)/)
 
-const start = source.match(/function startLongPressPlayback\(event\) \{[\s\S]*?\n    \}/)?.[0]
-const stop = source.match(/function stopLongPressPlayback\(\) \{[\s\S]*?\n    \}/)?.[0]
+const start = source.match(/function startLongPressPlayback\(event\) \{[\s\S]*?\n {4}\}/)?.[0]
+const stop = source.match(/function stopLongPressPlayback\(\) \{[\s\S]*?\n {4}\}/)?.[0]
 assert.ok(start && stop)
 const timers = new Map()
 let nextTimer = 0

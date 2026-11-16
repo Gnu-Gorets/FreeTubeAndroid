@@ -72,7 +72,6 @@ const shakaControlKeysToShortcuts = {
 /** @type {Map<string, string>} */
 const LOCALE_MAPPINGS = new Map(process.env.SHAKA_LOCALE_MAPPINGS)
 
-
 export default defineComponent({
   name: 'FtShakaVideoPlayer',
   props: {
@@ -326,7 +325,6 @@ export default defineComponent({
         enableFullscreenOnRotation: newValue
       })
     })
-
 
     const seekingIsPossible = computed(() => {
       if (props.manifestMimeType !== 'application/x-mpegurl') {

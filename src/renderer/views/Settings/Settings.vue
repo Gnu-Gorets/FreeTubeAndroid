@@ -264,8 +264,6 @@ function pushState(path) {
 onBeforeUnmount(() => {
   document.removeEventListener('scroll', markScrolledToSectionAsActive)
   window.removeEventListener('resize', handleResize)
-  searchObserver?.disconnect()
-  clearSearchHighlight()
   window.removeEventListener('popstate', onPopState)
 })
 
@@ -298,10 +296,6 @@ const sectionRefs = useTemplateRef('sectionRefs')
  * @param {string} sectionType
  */
 function navigateToSection(sectionType, forcedMobile = false) {
-  if (searchQuery.value.trim()) {
-    searchStartScrollY = null
-    updateSearchQuery('')
-  }
   if (isInDesktopView.value) {
     nextTick(() => {
       const sectionElement = sectionRefs.value.find(sectionRef => {
