@@ -44,7 +44,7 @@ Options:
                         locked-state, locked-notification, locked-session,
                         export, data-directory-cancel,
                         locked-controls, locked-audio-focus, locked-cleanup, locked-force-stop,
-                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, proxy, network-quality,
+                        fullscreen-fit-screen, fullscreen-auto-rotate, long-press, settings-sort, ui-scale-layout, downloads-toggle, proxy, network-quality,
                         external_player, external_player_wifi_vlc, external_player_wifi_mpv,
                         external_player_mobile_vlc, external_player_mobile_mpv
   --keep-data           do not clear app data (default)
@@ -872,6 +872,14 @@ data_directory_move_reset() {
   ((status == 0))
 }
 
+downloads_toggle() {
+  clean_logs
+  start_app || return 1
+  run_web_smoke_action downloads_toggle || return 1
+  screenshot downloads-toggle
+  no_runtime_errors
+}
+
 persistence() {
   clean_logs
   start_app || return 1
@@ -1033,6 +1041,7 @@ case "$TEST" in
   locked-force-stop) run_test locked-force-stop locked_force_stop ;;
   audio-focus) run_test audio-focus audio_focus ;;
   persistence) run_test persistence persistence ;;
+  downloads-toggle) run_test downloads-toggle downloads_toggle ;;
   export) run_test export export_data ;;
   data-directory-cancel) run_test data-directory-cancel data_directory_cancel ;;
   data-directory-move-reset) run_test data-directory-move-reset data_directory_move_reset ;;

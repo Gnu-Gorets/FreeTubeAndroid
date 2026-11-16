@@ -15,6 +15,7 @@ import Channel from '../views/Channel/Channel.vue'
 import Watch from '../views/Watch/Watch.vue'
 import Hashtag from '../views/Hashtag/Hashtag.vue'
 import Post from '../views/Post.vue'
+import store from '../store'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -164,6 +165,12 @@ const router = createRouter({
         }
       }, 500)
     })
+  }
+})
+
+router.beforeEach(to => {
+  if (process.env.IS_ANDROID && to.name === 'downloads' && !store.getters.getDownloadsEnabled) {
+    return { name: 'subscriptions' }
   }
 })
 
