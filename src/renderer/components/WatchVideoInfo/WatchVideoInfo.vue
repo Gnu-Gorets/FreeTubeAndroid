@@ -170,6 +170,7 @@ import FtSubscribeButton from '../FtSubscribeButton/FtSubscribeButton.vue'
 import store from '../../store'
 
 import { formatNumber, openExternalPlayer, showToast, getLocalesWithFallback } from '../../helpers/utils'
+import { openAndroidExternalPlayer } from '../../helpers/android/external-player'
 
 const props = defineProps({
   id: {
@@ -390,7 +391,7 @@ const externalPlayer = computed(() => process.env.IS_ANDROID
 /** @type {import('vue').ComputedRef<number>} */
 const defaultPlayback = computed(() => store.getters.getDefaultPlayback)
 
-function handleExternalPlayer() {
+async function handleExternalPlayer() {
   emit('pause-player')
 
   let payload
@@ -421,7 +422,11 @@ function handleExternalPlayer() {
     }
   }
 
-  openExternalPlayer(payload)
+  if (process.env.IS_ANDROID) {
+    await openAndroidExternalPlayer(payload)
+  } else {
+    openExternalPlayer(payload)
+  }
 
   if (rememberHistory.value) {
     // Marking as watched

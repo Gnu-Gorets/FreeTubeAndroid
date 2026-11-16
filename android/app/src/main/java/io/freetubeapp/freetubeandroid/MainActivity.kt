@@ -485,7 +485,7 @@ class MainActivity : Activity() {
     }
 
     private fun runSmokeAction(action: String?, query: String?) {
-        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player") {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player" && action != "external_player_enable") {
             Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
             return
         }
@@ -494,6 +494,43 @@ class MainActivity : Activity() {
             """
             (() => {
               const value = $value;
+              if ('$action' === 'external_player_enable') {
+                void (async () => {
+                  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+                  const waitFor = async check => {
+                    const start = Date.now();
+                    while (Date.now() - start < 5000) {
+                      if (check()) return true;
+                      await delay(100);
+                    }
+                    return false;
+                  };
+                  const originalHash = location.hash;
+                  try {
+                    location.hash = '#/settings';
+                    const linkSelector = '.settingsMenu a[data-section="external-player"]';
+                    if (!await waitFor(() => document.querySelector(linkSelector))) throw new Error('settings link not found');
+                    document.querySelector(linkSelector).click();
+                    const sectionSelector = '.settingsSections [data-section="external-player"]';
+                    if (!await waitFor(() => {
+                      const section = document.querySelector(sectionSelector);
+                      return section && !section.classList.contains('hideOnMobile') && section.querySelector('input[type="checkbox"]');
+                    })) throw new Error('external player toggle not found');
+                    const toggle = document.querySelector(sectionSelector + ' input[type="checkbox"]');
+                    const changed = !toggle.checked;
+                    if (changed) toggle.click();
+                    if (!await waitFor(() => toggle.checked)) throw new Error('external player did not enable');
+                    await delay(500);
+                    console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:PASS:' + (changed ? 'enabled' : 'already-enabled'));
+                  } catch (error) {
+                    console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:FAIL:' + error.message);
+                  } finally {
+                    location.hash = originalHash;
+                  }
+                })();
+                return;
+              }
+
               if ('$action' === 'external_player') {
                 const parts = value.split('|');
                 const index = Number(parts[0]);
