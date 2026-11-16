@@ -106,8 +106,6 @@ import FtFlexBox from './ft-flex-box/ft-flex-box.vue'
 import FtPrompt from './FtPrompt/FtPrompt.vue'
 
 import store from '../store/index'
-import { UI_SCALE } from '../../constants.js'
-
 import { colors } from '../helpers/colors'
 import { useColorTranslations } from '../composables/colors'
 
