@@ -2,6 +2,7 @@
   <FtSettingsSection :title="t('Downloads.Settings')">
     <FtToggleSwitch
       :label="t('Downloads.Enable downloads')"
+      test-id="downloads-enabled"
       :default-value="downloadsEnabled"
       :compact="true"
       @change="updateDownloadsEnabled"
