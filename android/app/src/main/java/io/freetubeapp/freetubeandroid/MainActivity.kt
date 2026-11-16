@@ -485,7 +485,7 @@ class MainActivity : Activity() {
     }
 
     private fun runSmokeAction(action: String?, query: String?) {
-        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player" && action != "external_player_enable") {
+        if (action != "search" && action != "settings" && action != "fit" && action != "fit_visual" && action != "fullscreen" && action != "long_press" && action != "reload" && action != "video_state" && action != "proxy" && action != "proxy_off" && action != "data_export" && action != "data_select" && action != "data_reset" && action != "persistence_set" && action != "persistence_check" && action != "scale_layout" && action != "external_player" && action != "external_player_enable" && action != "downloads_toggle") {
             Log.i("FreeTubeSmoke", "SMOKE_ACTION:$action:FAIL:unsupported")
             return
         }
@@ -527,6 +527,54 @@ class MainActivity : Activity() {
                   } finally {
                     location.hash = originalHash;
                   }
+                })();
+                return;
+              }
+              if ('$action' === 'downloads_toggle') {
+                void (async () => {
+                const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+                const waitFor = async (check, timeout = 5000) => {
+                  const start = Date.now();
+                  while (Date.now() - start < timeout) {
+                    if (check()) return true;
+                    await delay(100);
+                  }
+                  return false;
+                };
+                const setEnabled = async enabled => {
+                  window.location.hash = '#/settings';
+                  await delay(700);
+                  document.querySelector('.settingsMenu a[data-section="downloads"]')?.click();
+                  if (!await waitFor(() => document.querySelector('[data-test="downloads-enabled"]'))) return false;
+                  const input = document.querySelector('[data-test="downloads-enabled"]');
+                  if (input.checked !== enabled) input.click();
+                  return waitFor(() => input.checked === enabled &&
+                    JSON.parse(window.Android.getDownloadSettings()).enabled === enabled);
+                };
+                const original = JSON.parse(window.Android.getDownloadSettings()).enabled;
+                let passed = false;
+                try {
+                  const nav = () => document.querySelector('.sideNav a[href$="/downloads"]');
+                  if (!await setEnabled(false)) throw new Error('unable to disable');
+                  if (!await waitFor(() => !nav())) throw new Error('Downloads nav visible while disabled');
+                  window.location.hash = '#/downloads';
+                  if (!await waitFor(() => location.hash === '#/subscriptions')) throw new Error('disabled route was not blocked');
+                  if (!await setEnabled(true)) throw new Error('unable to enable');
+                  if (!await waitFor(() => !!nav())) throw new Error('Downloads nav hidden while enabled');
+                  window.location.hash = '#/downloads';
+                  if (!await waitFor(() => location.hash === '#/downloads')) throw new Error('enabled route was blocked');
+                  passed = true;
+                } catch (error) {
+                  console.error('SMOKE_DOWNLOADS_TOGGLE_TEST:', error);
+                } finally {
+                  try {
+                    if (!await setEnabled(original)) passed = false;
+                  } catch (error) {
+                    passed = false;
+                    console.error('SMOKE_DOWNLOADS_TOGGLE_RESTORE:', error);
+                  }
+                  console.log('SMOKE_DOWNLOADS_TOGGLE_TEST:' + (passed ? 'PASS' : 'FAIL') + ':restored=' + original);
+                }
                 })();
                 return;
               }

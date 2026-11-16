@@ -24,6 +24,7 @@ internal class DownloadManager(
     private var lastProgressPersistAt = 0L
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val preferences = context.getSharedPreferences("downloads", Context.MODE_PRIVATE)
+    @Volatile private var enabled = preferences.getBoolean(KEY_ENABLED, true)
     @Volatile private var wifiOnly = preferences.getBoolean(KEY_WIFI_ONLY, true)
     @Volatile private var concurrency = preferences.getInt(KEY_CONCURRENCY, DEFAULT_CONCURRENCY).coerceIn(1, MAX_CONCURRENCY)
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -68,6 +69,7 @@ internal class DownloadManager(
     }
 
     fun enqueue(request: JSONObject): String {
+        check(enabled) { "Downloads are disabled" }
         DownloadMission.validateRequest(request)
         val id = UUID.randomUUID().toString()
         val mission = JSONObject(request.toString()).apply {
@@ -90,6 +92,10 @@ internal class DownloadManager(
             }
         }
         synchronized(lock) {
+            if (!enabled) {
+                deleteTemporaryParts(mission)
+                error("Downloads are disabled")
+            }
             missions[id] = mission
             persistLocked()
             startNextLocked()
@@ -105,20 +111,26 @@ internal class DownloadManager(
     }
 
     fun settings(): JSONObject = JSONObject().apply {
+        put("enabled", enabled)
         put("wifiOnly", wifiOnly)
         put("concurrency", concurrency)
     }
 
     fun updateSettings(settings: JSONObject) {
+        val newEnabled = settings.optBoolean("enabled", enabled)
         val newWifiOnly = settings.optBoolean("wifiOnly", wifiOnly)
         val newConcurrency = settings.optInt("concurrency", concurrency).coerceIn(1, MAX_CONCURRENCY)
         synchronized(lock) {
+            val disabling = enabled && !newEnabled
+            enabled = newEnabled
             wifiOnly = newWifiOnly
             concurrency = newConcurrency
             preferences.edit()
+                .putBoolean(KEY_ENABLED, enabled)
                 .putBoolean(KEY_WIFI_ONLY, wifiOnly)
                 .putInt(KEY_CONCURRENCY, concurrency)
                 .apply()
+            if (disabling) active.values.forEach(DownloadMission::pause)
             startNextLocked()
         }
     }
@@ -126,6 +138,7 @@ internal class DownloadManager(
     fun replaceUrls(id: String, request: JSONObject): Boolean {
         DownloadMission.validateRequest(request)
         synchronized(lock) {
+            if (!enabled) return false
             val mission = missions[id] ?: return false
             if (active.containsKey(id) || !mission.optBoolean("needsRefresh", false)) return false
             val oldParts = mission.getJSONArray("parts")
@@ -169,6 +182,7 @@ internal class DownloadManager(
 
     fun resume(id: String): Boolean {
         synchronized(lock) {
+            if (!enabled) return false
             val mission = missions[id] ?: return false
             if (mission.optString("status") != DownloadMission.STATUS_PAUSED) return false
             mission.put("status", DownloadMission.STATUS_QUEUED)
@@ -180,6 +194,7 @@ internal class DownloadManager(
 
     fun retry(id: String): Boolean {
         synchronized(lock) {
+            if (!enabled) return false
             val mission = missions[id] ?: return false
             if (mission.optString("status") != DownloadMission.STATUS_FAILED) return false
             if (mission.optBoolean("needsRefresh", false)) return false
@@ -256,7 +271,7 @@ internal class DownloadManager(
     }
 
     private fun startNextLocked() {
-        if (!storage.isNetworkAvailable(wifiOnly)) return
+        if (!enabled || !storage.isNetworkAvailable(wifiOnly)) return
         while (active.size < concurrency) {
             val next = missions.values.firstOrNull {
                 it.optString("status") == DownloadMission.STATUS_QUEUED && !active.containsKey(it.optString("id"))
@@ -325,6 +340,7 @@ internal class DownloadManager(
     }
 
     companion object {
+        private const val KEY_ENABLED = "enabled"
         private const val KEY_WIFI_ONLY = "wifiOnly"
         private const val KEY_CONCURRENCY = "concurrency"
         private const val DEFAULT_CONCURRENCY = 3
