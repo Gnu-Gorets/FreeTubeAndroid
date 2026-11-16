@@ -1,0 +1,126 @@
+---
+name: Android Beta Release
+
+'on':
+  push:
+    branches:
+      - beta/0.26.0
+
+permissions:
+  contents: write
+
+jobs:
+  beta-release:
+    name: Build Android beta release
+    if: github.repository == 'Gnu-Gorets/FreeTubeAndroid'
+    runs-on: ubuntu-latest
+    env:
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Read beta version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_version=$(jq -er '.version | strings' package.json)
+          [[ "$base_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]{0,9}$ ]]
+          (( GITHUB_RUN_NUMBER <= 2100000000 ))
+          version_name="${base_version}.${GITHUB_RUN_NUMBER}"
+          if git show-ref --verify --quiet "refs/tags/$version_name"; then
+            test "$(git rev-parse "$version_name^{commit}")" = "$GITHUB_SHA"
+          fi
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "apk_name=freetube-${version_name}-beta-release.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker compose build android-build
+
+      - name: Prepare beta signing files
+        env:
+          ANDROID_BETA_RELEASE_KEYSTORE_BASE64: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_BETA_RELEASE_KEY_ALIAS: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEY_ALIAS }}
+          ANDROID_BETA_RELEASE_KEY_PASSWORD: >-
+            ${{ secrets.ANDROID_BETA_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          node <<'NODE'
+          const fs = require('node:fs')
+          const prefix = 'ANDROID_BETA_RELEASE_'
+          for (const name of ['KEYSTORE_BASE64', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD']) {
+            if (!process.env[prefix + name]) throw new Error(`Missing beta signing secret: ${name}`)
+          }
+          fs.writeFileSync('android/app/beta-release.keystore', Buffer.from(process.env[prefix + 'KEYSTORE_BASE64'], 'base64'))
+          const escape = value => value.split('').map(char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0')).join('')
+          const properties = [
+            'storeFile=beta-release.keystore',
+            'storePassword=' + escape(process.env[prefix + 'KEYSTORE_PASSWORD']),
+            'keyAlias=' + escape(process.env[prefix + 'KEY_ALIAS']),
+            'keyPassword=' + escape(process.env[prefix + 'KEY_PASSWORD'])
+          ]
+          fs.writeFileSync('android/keystore.properties', properties.join('\n') + '\n')
+          NODE
+
+      - name: Build signed beta release APK
+        env:
+          ANDROID_VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          docker compose run --rm \
+            -e ANDROID_VERSION_NAME -e ANDROID_VERSION_CODE \
+            android-build bash -lc '
+              set -euo pipefail
+              pnpm install --frozen-lockfile
+              pnpm run pack:android:core
+              cd android
+              ./gradlew clean assembleRelease \
+                -PandroidVersionName="$ANDROID_VERSION_NAME" \
+                -PandroidVersionCode="$ANDROID_VERSION_CODE" \
+                -PandroidApplicationId=io.freetubeapp.freetubeandroid
+              "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
+                app/build/outputs/apk/release/app-release.apk
+            '
+
+      - name: Publish beta release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          APK_NAME: ${{ steps.version.outputs.apk_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+          notes=$(printf 'Commit: `%s`\nVersion: `%s`\nWorkflow run: `%s`' \
+            "$GITHUB_SHA" "$VERSION_NAME" "$GITHUB_RUN_ID")
+          if gh release view "$VERSION_NAME" >/dev/null 2>&1; then
+            gh release upload "$VERSION_NAME" "$APK_NAME" --clobber
+            gh release edit "$VERSION_NAME" \
+              --title "$VERSION_NAME" --notes "$notes" --prerelease --latest=false
+          else
+            gh release create "$VERSION_NAME" "$APK_NAME" \
+              --target "$GITHUB_SHA" --title "$VERSION_NAME" \
+              --notes "$notes" --prerelease --latest=false
+          fi
+
+      - name: Remove beta signing files
+        if: always()
+        run: rm -f android/app/beta-release.keystore android/keystore.properties

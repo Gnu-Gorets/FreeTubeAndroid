@@ -6,3 +6,5 @@ coverage
 android/.gradle
 android/app/build
 *.log
+android/keystore.properties
+**/*.keystore
