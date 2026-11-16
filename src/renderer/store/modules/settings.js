@@ -178,6 +178,7 @@ const state = {
   defaultViewingMode: 'default',
   defaultVideoFormat: 'dash',
   downloadsWifiOnly: true,
+  downloadsEnabled: true,
   downloadsConcurrency: 3,
   downloadsDefaultVideoFormat: 'auto',
   downloadsDefaultAudioFormat: 'auto',

@@ -32,7 +32,8 @@ const actions = {
     })
   },
 
-  enqueueDownload({ dispatch }, request) {
+  enqueueDownload({ dispatch, rootState }, request) {
+    if (!rootState.settings.downloadsEnabled) throw new Error('Downloads are disabled')
     const id = enqueueNativeDownload(request)
     dispatch('grabDownloads')
     return id

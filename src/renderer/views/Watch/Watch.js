@@ -296,6 +296,9 @@ export default defineComponent({
     }
   },
   computed: {
+    downloadsEnabled: function () {
+      return this.$store.getters.getDownloadsEnabled
+    },
     historyEntry: function () {
       return this.$store.getters.getHistoryCacheById[this.videoId]
     },
@@ -703,6 +706,7 @@ export default defineComponent({
     },
 
     openDownloadDialog: function () {
+      if (!this.downloadsEnabled) return
       console.warn('[Downloads] Open dialog ' + JSON.stringify({
         backendPreference: this.backendPreference,
         downloadFormats: this.downloadFormats.length,
