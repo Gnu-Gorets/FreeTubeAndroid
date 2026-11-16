@@ -648,7 +648,7 @@ wait_for_external_quality() {
       | grep "\"networkType\":\"$network\"" \
       | tail -1 || true)
     target=$(sed -n 's/.*"targetQuality":\([0-9]*\).*/\1/p' <<<"$state")
-    adaptive=$(sed -n 's/.*"selectedAdaptiveHeight":\([0-9]*\).*/\1/p' <<<"$state")
+    adaptive=$(sed -n 's/.*"selectedHeight":\([0-9]*\).*/\1/p' <<<"$state")
     if [[ "$target" == "$expected" && "$adaptive" == "$expected" ]]; then
       progress "external quality matched: network=$network expected=${expected}p actual=${adaptive}p"
       return 0
@@ -663,6 +663,8 @@ external_player_case() {
   local player_package="$1" network="$2" first_index="$3" second_index="$4"
   set_external_network "$network" || return 1
   adb_shell am force-stop --user 0 "$player_package" >/dev/null 2>&1 || true
+  start_app || return 1
+  run_web_smoke_action external_player_enable || return 1
   open_search_results || return 1
   run_web_smoke_action external_player "$first_index|$player_package" || return 1
   wait_for "$player_package" || return 1

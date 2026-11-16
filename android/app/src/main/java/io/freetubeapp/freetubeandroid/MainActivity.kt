@@ -495,24 +495,39 @@ class MainActivity : Activity() {
             (() => {
               const value = $value;
               if ('$action' === 'external_player_enable') {
-                window.location.hash = '#/settings';
-                setTimeout(() => {
-                  const link = document.querySelector('.settingsMenu [data-section="external-player"]');
-                  if (!link) {
-                    console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:FAIL:settings-link-not-found');
-                    return;
-                  }
-                  link.click();
-                  setTimeout(() => {
-                    const toggle = document.querySelector('.settingsSections [data-section="external-player"] input[type="checkbox"]');
-                    if (!toggle) {
-                      console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:FAIL:toggle-not-found');
-                      return;
+                void (async () => {
+                  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+                  const waitFor = async check => {
+                    const start = Date.now();
+                    while (Date.now() - start < 5000) {
+                      if (check()) return true;
+                      await delay(100);
                     }
-                    if (!toggle.checked) toggle.click();
-                    setTimeout(() => console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:' + (toggle.checked ? 'PASS:enabled' : 'FAIL:enable-failed')), 300);
-                  }, 500);
-                }, 300);
+                    return false;
+                  };
+                  const originalHash = location.hash;
+                  try {
+                    location.hash = '#/settings';
+                    const linkSelector = '.settingsMenu a[data-section="external-player"]';
+                    if (!await waitFor(() => document.querySelector(linkSelector))) throw new Error('settings link not found');
+                    document.querySelector(linkSelector).click();
+                    const sectionSelector = '.settingsSections [data-section="external-player"]';
+                    if (!await waitFor(() => {
+                      const section = document.querySelector(sectionSelector);
+                      return section && !section.classList.contains('hideOnMobile') && section.querySelector('input[type="checkbox"]');
+                    })) throw new Error('external player toggle not found');
+                    const toggle = document.querySelector(sectionSelector + ' input[type="checkbox"]');
+                    const changed = !toggle.checked;
+                    if (changed) toggle.click();
+                    if (!await waitFor(() => toggle.checked)) throw new Error('external player did not enable');
+                    await delay(500);
+                    console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:PASS:' + (changed ? 'enabled' : 'already-enabled'));
+                  } catch (error) {
+                    console.log('SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:FAIL:' + error.message);
+                  } finally {
+                    location.hash = originalHash;
+                  }
+                })();
                 return;
               }
               if ('$action' === 'downloads_toggle') {
