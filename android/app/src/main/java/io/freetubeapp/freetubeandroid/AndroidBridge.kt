@@ -814,7 +814,7 @@ class AndroidBridge(
         val useManifest = manifestUri?.scheme in setOf("http", "https") && manifestUri?.host.isNullOrBlank() == false
         val isYoutubeWatchUrl = uri.host == "www.youtube.com" && uri.path in setOf("/watch", "/playlist")
         val usePendingRelay = pending && streamsJson == null && !useManifest
-        val useDirectUrl = !pending && streamsJson == null && !useManifest && !isYoutubeWatchUrl
+        val useDirectUrl = !pending && streamsJson == null && !useManifest && !isYoutubeWatchUrl && headers.isEmpty()
         Log.d("FreeTubeExternal", "[$requestId] relay-registration-start elapsedMs=${elapsedMs()} useManifest=$useManifest useDirectUrl=$useDirectUrl pending=$pending")
         val relayUrl = if (useDirectUrl) {
             url
@@ -839,7 +839,7 @@ class AndroidBridge(
                 relayUrl,
                 title,
                 if (useDirectUrl) mediaMimeType?.substringBefore(';')?.takeIf { it.contains('/') } ?: "video/*"
-                else if (useManifest) "video/*" else "video/mp4",
+                else if (useManifest || streamsJson != null) "video/*" else "video/mp4",
                 when {
                     useDirectUrl -> ""
                     useManifest || streamsJson != null -> ".mpd"
@@ -884,6 +884,7 @@ class AndroidBridge(
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     setDataAndType(Uri.parse(intentUrl), mimeType)
+                    smokeExternalPlayerPackage?.takeIf { it.isNotBlank() }?.let(::setPackage)
                     if (!title.isNullOrBlank()) putExtra("title", title)
                 }
                 Log.d("FreeTubeExternal", "${requestId?.let { "[$it] " } ?: ""}player-intent-ready type=${intent.type} urlSuffix=$extension")

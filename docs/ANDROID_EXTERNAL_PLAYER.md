@@ -1,5 +1,11 @@
 # Android external player
 
+## Video launch and quality
+
+Video cards and watch pages resolve media before opening external players. Wi-Fi uses **Default Wi-Fi Resolution**; cellular uses **Default Mobile Network Resolution**. Unknown networks use 720p.
+
+Selection prefers adaptive video with audio. Progressive video with audio is fallback. Resolution uses highest available height at or below configured value, or lowest available height if none fit. Extraction failures show errors without launching empty streams.
+
 ## VLC cannot open local FreeTube relay over mobile data
 
 If VLC for Android reports `503 ERR_CONNECT_FAIL` for FreeTube external player URL while mpv works, check active mobile APN. Some carriers configure HTTP proxy that incorrectly receives loopback requests to `127.0.0.1`.

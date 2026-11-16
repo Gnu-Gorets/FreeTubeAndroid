@@ -51,7 +51,7 @@
     "test:android-double-tap": "node _scripts/test-android-double-tap.mjs",
     "test:android-player-integration": "node _scripts/test-android-player-integration.mjs",
     "test:network-default-resolution": "node _scripts/test-network-default-resolution.mjs",
-    "test:external-player": "node _scripts/test-external-player.mjs",
+    "test:external-player": "node _scripts/test-external-player.mjs && node _scripts/test-external-streams.mjs",
     "test:external-player-range-regression": "node _scripts/test-external-player-range-regression.mjs",
     "test:player-menu": "node _scripts/test-player-menu.mjs",
     "test:legacy-quality-selection": "node _scripts/test-legacy-quality-selection.mjs",
