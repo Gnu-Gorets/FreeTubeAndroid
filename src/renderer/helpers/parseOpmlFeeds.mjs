@@ -1,12 +1,23 @@
 import sax from 'sax'
 
 export function parseOpmlFeeds (data) {
+  try {
+    return parseFeeds(data, true)
+  } catch {
+    // Preserve lenient OPML imports without parsing HTML into DOM.
+    return parseFeeds(data, false)
+  }
+}
+
+function parseFeeds (data, strict) {
   const feeds = []
   const ancestors = []
-  const parser = sax.parser(true)
+  const parser = sax.parser(strict, { lowercase: true })
   parser.onopentag = (node) => {
-    if (node.name === 'outline' && ancestors.includes('body') && node.attributes.xmlUrl) {
-      feeds.push(node.attributes)
+    if (node.name === 'outline' && ancestors.includes('body')) {
+      const { xmlurl, ...attributes } = node.attributes
+      const xmlUrl = attributes.xmlUrl ?? xmlurl
+      if (xmlUrl) feeds.push({ ...attributes, xmlUrl })
     }
     ancestors.push(node.name)
   }

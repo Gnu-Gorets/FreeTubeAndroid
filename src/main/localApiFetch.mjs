@@ -17,6 +17,7 @@ const ALLOWED_HEADERS = new Set([
   'x-goog-authuser',
   'x-goog-pageid',
   'x-goog-visitor-id',
+  'x-origin',
   'x-youtube-bootstrap-logged-in',
   'x-youtube-client-name',
   'x-youtube-client-version',
@@ -34,7 +35,7 @@ const ALLOWED_RESPONSE_HEADERS = new Set([
 ])
 
 function isAllowedPath (pathname, method) {
-  if (method === 'GET' && ['/', '/watch', '/iframe_api'].includes(pathname)) {
+  if (method === 'GET' && ['/', '/watch', '/iframe_api', '/sw.js_data'].includes(pathname)) {
     return true
   }
 

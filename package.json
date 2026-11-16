@@ -59,6 +59,7 @@
     "test:search-continuation": "node _scripts/test-search-continuation.mjs",
     "test:local-caption-label": "node _scripts/test-local-caption-label.mjs",
     "test:local-api-fetch": "node _scripts/test-local-api-fetch.mjs",
+    "test:opml-parser": "node _scripts/test-opml-parser.mjs",
     "ci": "pnpm install --frozen-lockfile"
   },
   "dependencies": {

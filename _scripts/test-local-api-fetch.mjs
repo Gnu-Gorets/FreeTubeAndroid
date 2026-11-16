@@ -25,6 +25,29 @@ assert.equal(allowedResponse.status, 200)
 assert.deepEqual(allowedResponse.headers, [['content-type', 'application/json']])
 assert.equal(new TextDecoder().decode(allowedResponse.body), '{"ok":true}')
 
+for (const sessionRequest of [
+  request({
+    url: 'https://www.youtube.com/sw.js_data',
+    method: 'GET',
+    headers: [['accept', '*/*'], ['cookie', 'PREF=tz=UTC']],
+    body: undefined
+  }),
+  request({
+    url: 'https://www.youtube.com/youtubei/v1/config?prettyPrint=false',
+    headers: [['X-Origin', 'https://www.youtube.com'], ['content-type', 'application/json']]
+  })
+]) {
+  const response = await fetchLocalApiRequest(sessionRequest, async (url, init) => {
+    assert.equal(url, sessionRequest.url)
+    assert.equal(init.method, sessionRequest.method)
+    for (const [name, value] of sessionRequest.headers) {
+      assert.equal(init.headers.get(name), value)
+    }
+    return new Response('{"session":true}')
+  })
+  assert.equal(new TextDecoder().decode(response.body), '{"session":true}')
+}
+
 for (const method of ['GET', 'HEAD']) {
   const response = await fetchLocalApiRequest({
     url: 'https://www.youtube.com/feeds/videos.xml?channel_id=test',
@@ -43,6 +66,8 @@ for (const invalid of [
   request({ url: 'https://example.com/youtubei/v1/player' }),
   request({ url: 'http://www.youtube.com/youtubei/v1/player' }),
   request({ url: 'https://www.youtube.com/private' }),
+  request({ url: 'https://www.youtube.com/sw.js_data' }),
+  request({ url: 'https://www.youtube.com/sw.js_data/extra', method: 'GET', body: undefined }),
   request({ url: 'https://www.youtube.com/watch', method: 'POST' }),
   request({ url: 'https://www.youtube.com/feeds/videos.xml', method: 'POST' }),
   request({ headers: [['x-arbitrary-header', 'value']] }),
