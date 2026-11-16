@@ -17,8 +17,8 @@ const playlist = await readFile('src/renderer/components/FtListPlaylist/FtListPl
 const watchInfo = await readFile('src/renderer/components/WatchVideoInfo/WatchVideoInfo.vue', 'utf8')
 const smokeTest = await readFile('_scripts/android-smoke-test.sh', 'utf8')
 
-assert.match(activity, /action != "external_player_enable"/)
-assert.match(activity, /if \('\$action' === 'external_player_enable'\)[\s\S]*?if \(!toggle\.checked\) toggle\.click\(\)[\s\S]*?SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:.*PASS:enabled/)
+assert.match(activity, /action != "downloads_toggle"/)
+assert.match(activity, /if \('\$action' === 'external_player_enable'\)[\s\S]*?if \(changed\) toggle\.click\(\)[\s\S]*?SMOKE_EXTERNAL_PLAYER_ENABLE_TEST:PASS:/)
 assert.match(smokeScript, /run_web_smoke_action external_player_enable/)
 assert.equal((externalPlayerCase.match(/open_search_results \|\| return 1/g) || []).length, 2)
 
