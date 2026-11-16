@@ -2,9 +2,8 @@
 name: Android Beta Release
 
 'on':
-  push:
-    branches:
-      - beta/0.26.0
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -12,7 +11,10 @@ permissions:
 jobs:
   beta-release:
     name: Build Android beta release
-    if: github.repository == 'Gnu-Gorets/FreeTubeAndroid'
+    if: >-
+      github.repository == 'Gnu-Gorets/FreeTubeAndroid' &&
+      github.event.release.prerelease &&
+      startsWith(github.event.release.tag_name, '0.26.0.')
     runs-on: ubuntu-latest
     env:
       GH_REPO: ${{ github.repository }}
@@ -21,11 +23,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Read beta version
         id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -33,10 +38,12 @@ jobs:
           [[ "$base_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]{0,9}$ ]]
           (( GITHUB_RUN_NUMBER <= 2100000000 ))
-          version_name="${base_version}.${GITHUB_RUN_NUMBER}"
-          if git show-ref --verify --quiet "refs/tags/$version_name"; then
-            test "$(git rev-parse "$version_name^{commit}")" = "$GITHUB_SHA"
-          fi
+          version_name="$RELEASE_TAG"
+          suffix="${version_name#"$base_version".}"
+          [[ "$version_name" == "$base_version.$suffix" ]]
+          [[ "$suffix" =~ ^[1-9][0-9]*$ ]]
+          git show-ref --verify --quiet "refs/tags/$version_name"
+          test "$(git rev-parse "$version_name^{commit}")" = "$(git rev-parse HEAD)"
           echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
           echo "apk_name=freetube-${version_name}-beta-release.apk" >> "$GITHUB_OUTPUT"
 
@@ -100,7 +107,7 @@ jobs:
                 app/build/outputs/apk/release/app-release.apk
             '
 
-      - name: Publish beta release
+      - name: Upload beta APK
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
@@ -109,17 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
-          notes=$(printf 'Commit: `%s`\nVersion: `%s`\nWorkflow run: `%s`' \
-            "$GITHUB_SHA" "$VERSION_NAME" "$GITHUB_RUN_ID")
-          if gh release view "$VERSION_NAME" >/dev/null 2>&1; then
-            gh release upload "$VERSION_NAME" "$APK_NAME" --clobber
-            gh release edit "$VERSION_NAME" \
-              --title "$VERSION_NAME" --notes "$notes" --prerelease --latest=false
-          else
-            gh release create "$VERSION_NAME" "$APK_NAME" \
-              --target "$GITHUB_SHA" --title "$VERSION_NAME" \
-              --notes "$notes" --prerelease --latest=false
-          fi
+          gh release upload "$VERSION_NAME" "$APK_NAME" --clobber
 
       - name: Remove beta signing files
         if: always()

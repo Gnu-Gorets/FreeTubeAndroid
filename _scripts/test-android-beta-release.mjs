@@ -6,12 +6,17 @@ import { join } from 'node:path'
 import { load } from 'js-yaml'
 
 const workflow = load(readFileSync('.github/workflows/android-beta-release.yml', 'utf8'))
-assert.deepEqual(workflow.on, { push: { branches: ['beta/0.26.0'] } })
+assert.deepEqual(workflow.on, { release: { types: ['published'] } })
 assert.equal(workflow.concurrency, undefined)
 assert.equal(workflow.jobs['beta-release'].concurrency, undefined)
 const job = workflow.jobs['beta-release']
 assert.equal(job.env.GH_REPO, '$' + '{{ github.repository }}')
+assert.match(job.if, /github\.event\.release\.prerelease/)
+assert.match(job.if, /startsWith\(github\.event\.release\.tag_name, '0\.26\.0\.'\)/)
+assert.doesNotMatch(JSON.stringify(workflow), /gh release (create|edit)|git (tag|push)|--notes/)
 const step = name => job.steps.find(item => item.name === name)
+assert.equal(step('Checkout').with.ref, '$' + '{{ github.event.release.tag_name }}')
+assert.equal(step('Read beta version').env.RELEASE_TAG, '$' + '{{ github.event.release.tag_name }}')
 assert.equal(step('Checkout').with['fetch-depth'], 0)
 assert.equal(step('Checkout').with['persist-credentials'], false)
 assert.equal(step('Remove beta signing files').if, 'always()')
@@ -35,16 +40,19 @@ function success(result) {
   assert.equal(result.status, 0, result.stderr)
   return result.stdout.trim()
 }
-function version(base, number) {
+function version(base, number, tag = `${base}.${number}`) {
   writeFileSync(join(directory, 'package.json'), JSON.stringify({ version: base }))
   writeFileSync(env.GITHUB_OUTPUT, '')
-  return run('bash', ['-c', step('Read beta version').run], { GITHUB_RUN_NUMBER: number })
+  return run('bash', ['-c', step('Read beta version').run], { GITHUB_RUN_NUMBER: number, RELEASE_TAG: tag })
 }
 try {
   success(run('git', ['init', '--quiet']))
   success(run('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-m', 'test']))
   env.GITHUB_SHA = success(run('git', ['rev-parse', 'HEAD']))
+  success(run('git', ['tag', '0.26.0.1']))
+  success(run('git', ['tag', '0.27.0.11']))
   for (const number of ['1', '2', '10', '1']) {
+    if (number !== '1') success(run('git', ['tag', `0.26.0.${number}`]))
     success(version('0.26.0', number))
     assert.equal(readFileSync(env.GITHUB_OUTPUT, 'utf8'), `version_name=0.26.0.${number}\napk_name=freetube-0.26.0.${number}-beta-release.apk\n`)
   }
@@ -56,9 +64,13 @@ try {
   for (const number of ['0', '-1', '01', '1.2', '2100000001', '99999999999999999999']) {
     assert.notEqual(version('0.26.0', number).status, 0)
   }
-  success(run('git', ['tag', '0.26.0.1']))
-  success(version('0.26.0', '1'))
-  assert.notEqual(run('bash', ['-c', step('Read beta version').run], { GITHUB_SHA: 'wrong-commit' }).status, 0)
+  success(version('0.26.0', '12', '0.26.0.1'))
+  assert.match(readFileSync(env.GITHUB_OUTPUT, 'utf8'), /version_name=0\.26\.0\.1/)
+  for (const tag of ['0.26.0.0', '0.26.0.01', '0.27.0.11', 'v0.26.0.1', '0.26.0.1\nunsafe', '0.26.0.99']) {
+    assert.notEqual(version('0.26.0', '1', tag).status, 0)
+  }
+  success(run('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-m', 'next']))
+  assert.notEqual(version('0.26.0', '1').status, 0)
 
   mkdirSync(join(directory, 'android/app'), { recursive: true })
   const signingEnv = {
@@ -83,29 +95,24 @@ try {
 
   const bin = join(directory, 'bin')
   mkdirSync(bin)
-  writeFileSync(join(bin, 'gh'), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$GH_LOG"\nif [[ "$1 $2" == "release view" ]]; then exit "$VIEW_STATUS"; fi\n')
+  writeFileSync(join(bin, 'gh'), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$GH_LOG"\nexit "$UPLOAD_STATUS"\n')
   chmodSync(join(bin, 'gh'), 0o700)
   mkdirSync(join(directory, 'android/app/build/outputs/apk/release'), { recursive: true })
   writeFileSync(join(directory, 'android/app/build/outputs/apk/release/app-release.apk'), 'signed fixture')
   for (const status of ['1', '0']) {
     const log = join(directory, 'gh-log')
     writeFileSync(log, '')
-    success(run('bash', ['-c', step('Publish beta release').run], {
+    const result = run('bash', ['-c', step('Upload beta APK').run], {
       PATH: `${bin}:${env.PATH}`,
       GH_LOG: log,
-      VIEW_STATUS: status,
+      UPLOAD_STATUS: status,
       VERSION_NAME: '0.26.0.1',
       APK_NAME: 'freetube-0.26.0.1-beta-release.apk',
-    }))
+    })
+    assert.equal(result.status, Number(status), result.stderr)
     assert.equal(readFileSync(join(directory, 'freetube-0.26.0.1-beta-release.apk'), 'utf8'), 'signed fixture')
     const calls = readFileSync(log, 'utf8')
-    assert.match(calls, /--title 0\.26\.0\.1/)
-    assert.match(calls, /--prerelease --latest=false/)
-    if (status === '1') {
-      assert.match(calls, new RegExp(`release create 0\\.26\\.0\\.1 freetube-0\\.26\\.0\\.1-beta-release\\.apk --target ${env.GITHUB_SHA}`))
-    } else {
-      assert.match(calls, /release upload 0\.26\.0\.1 freetube-0\.26\.0\.1-beta-release\.apk --clobber/)
-    }
+    assert.equal(calls, 'release upload 0.26.0.1 freetube-0.26.0.1-beta-release.apk --clobber\n')
   }
   success(run('bash', ['-c', step('Remove beta signing files').run]))
   assert.equal(existsSync(join(directory, 'android/keystore.properties')), false)

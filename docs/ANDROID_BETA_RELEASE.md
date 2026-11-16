@@ -1,15 +1,33 @@
 # Android beta releases
 
-Each squash merge into `beta/0.26.0` triggers `Android Beta Release`. No manual version bump is required.
+Pushes to `beta/0.26.0` do not create tags or releases. Create and push tags manually after one or more commits, then publish GitHub prerelease with your own notes. Publishing triggers `Android Beta Release`, which builds APK from release tag and attaches it without changing release title or notes.
+
+Release tag must point to commit containing this workflow update. Publishing drafts as prereleases is supported. Saving drafts, pushing tags, and editing notes do not trigger builds.
 
 - Base version comes from `package.json`.
-- Full version is `<base-version>.<github.run_number>`, starting with `0.26.0.1` for workflow run 1.
-- Each run creates its own tag and GitHub prerelease. Both names equal full version, without `v` prefix.
+- Full version comes from manually created tag: `<base-version>.<positive-integer>`, such as `0.26.0.1`, without `v` prefix or leading zeros in suffix.
+- Workflow accepts published prereleases with tags starting with `0.26.0.`. Tag base must match `package.json` at tagged commit.
 - APK download filename is `freetube-<full-version>-beta-release.apk`.
 - Native Android `versionName` equals full version; `versionCode` equals workflow run number.
 - Application ID is `io.freetubeapp.freetubeandroid`, not nightly ID. Web About still shows shared package version.
 
-Reruns retain version and tag, and replace APK for that same commit. Failed runs consume numbers; rerun failed jobs to recover their release. Numbering continues when package version changes. Preserve workflow identity and append-only branch history to retain update ordering. Do not add concurrency cancellation: each squash commit needs its own build.
+Reruns retain version and replace APK on existing release. Upload failure fails workflow; it never creates missing releases or tags. Failed runs consume version codes; rerun failed jobs to recover APK. Version code follows workflow run number, not tag suffix. Publish releases in update order, preserve workflow identity, and do not move published tags.
+
+## Manual release notes
+
+Write Android fork changes first and upstream link last. Example for `0.26.0.1`:
+
+```markdown
+## Android
+
+- Describe Android changes since previous fork release.
+
+## Upstream
+
+[FreeTube v0.26.0-beta release notes](https://github.com/FreeTubeApp/FreeTube/releases/tag/v0.26.0-beta)
+```
+
+Workflow does not generate or overwrite these notes.
 
 Signing uses these repository secrets only:
 
