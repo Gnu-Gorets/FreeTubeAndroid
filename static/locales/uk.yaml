@@ -212,6 +212,7 @@ Settings:
     Check for Updates: 'Перевіряти наявність оновлень'
     Fallback to Non-Preferred Backend on Failure: 'Повернення до допоміжного бекенду у разі невдачі'
     Enable Search Suggestions: 'Увімкнути рекомендації пошуку'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Типова головна сторінка'
     Locale Preference: 'Локальні налаштування'
     Preferred API Backend:
@@ -985,6 +986,7 @@ Playing Next Video Interval: Відтворення наступного від�
 More: Докладніше
 Unknown YouTube url type, cannot be opened in app: Невідомий тип URL-адреси YouTube, не вдається відкрити в додатку
 Open New Window: Відкрити нове вікно
+Reload: Reload
 Default Invidious instance has been cleared: Типовий екземпляр Invidious очищено
 Default Invidious instance has been set to {instance}: 'Типовим екземпляром Invidious встановлено {instance}'
 Search Bar:

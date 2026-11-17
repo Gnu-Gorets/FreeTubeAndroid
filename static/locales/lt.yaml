@@ -23,6 +23,7 @@ Close: 'Uždaryti'
 Back: 'Atgal'
 Forward: 'Pirmyn'
 Open New Window: 'Atidaryti naują langą'
+Reload: Reload
 
 # Global
 # Anything shared among components / views should be put here
@@ -115,6 +116,7 @@ Settings:
     Check for Updates: 'Tikrinti ar yra atnaujinimų'
     Fallback to Non-Preferred Backend on Failure: 'Nepavykus rinktis alternatyvią posistemę'
     Enable Search Suggestions: 'Įjungti paieškos pasiūlymus'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'Numatytasis pradinis puslapis'
     Locale Preference: 'Kalbos pasirinkimas'
     System Default: 'Sistemos numatytieji'
@@ -635,7 +637,7 @@ Channels:
   Count: rastas (-i) {number} kanalas (-ai).
   Empty: Jūsų kanalų sąrašas šiuo metu tuščias.
   Unsubscribe Prompt: Ar tikrai norite atšaukti {channelName} prenumeratą?
-Screenshot Success: Ekrano kopija išsaugota kaip „{filePath}“
+Screenshot Success: Ekrano kopija išsaugota
 Screenshot Error: Ekrano kopija nepavyko. {error}
 Chapters:
   Chapters: Skirsniai

@@ -6,6 +6,7 @@ import Trending from '../views/Trending/Trending.vue'
 import Popular from '../views/Popular/Popular.vue'
 import UserPlaylists from '../views/UserPlaylists/UserPlaylists.vue'
 import History from '../views/History/History.vue'
+import Downloads from '../views/Downloads/Downloads.vue'
 import Settings from '../views/Settings/Settings.vue'
 import About from '../views/About/About.vue'
 import SearchPage from '../views/SearchPage/SearchPage.vue'
@@ -14,6 +15,7 @@ import Channel from '../views/Channel/Channel.vue'
 import Watch from '../views/Watch/Watch.vue'
 import Hashtag from '../views/Hashtag/Hashtag.vue'
 import Post from '../views/Post.vue'
+import store from '../store'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -76,6 +78,16 @@ const router = createRouter({
       },
       component: History
     },
+    ...(process.env.IS_ANDROID
+      ? [{
+          path: '/downloads',
+          name: 'downloads',
+          meta: {
+            title: 'Downloads'
+          },
+          component: Downloads
+        }]
+      : []),
     {
       path: '/settings',
       name: 'settings',
@@ -153,6 +165,12 @@ const router = createRouter({
         }
       }, 500)
     })
+  }
+})
+
+router.beforeEach(to => {
+  if (process.env.IS_ANDROID && to.name === 'downloads' && !store.getters.getDownloadsEnabled) {
+    return { name: 'subscriptions' }
   }
 })
 

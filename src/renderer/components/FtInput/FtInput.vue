@@ -54,6 +54,7 @@
         :disabled="disabled"
         :spellcheck="false"
         :aria-label="showLabel ? null : placeholder"
+        :data-test="testId"
         @input="handleInput"
         @focus="handleFocus"
         @blur="handleInputBlur"
@@ -199,6 +200,10 @@ const props = defineProps({
   tooltip: {
     type: String,
     default: ''
+  },
+  testId: {
+    type: String,
+    default: null
   }
 })
 
@@ -409,7 +414,7 @@ function handleRemoveClick(index) {
  */
 function handleKeyDown(event) {
 // Update Input box value if enter key was pressed and option selected
-  if (event.key === 'Enter' && !event.isComposing) {
+  if ((event.key === 'Enter' && !event.isComposing) || event.keyCode === 13) {
     if (removeButtonSelectedIndex.value !== -1) {
       handleRemoveClick(removeButtonSelectedIndex.value)
     } else if (searchState.selectedOption !== -1) {

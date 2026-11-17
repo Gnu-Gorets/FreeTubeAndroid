@@ -3,7 +3,13 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    allow:
+      - dependency-name: "sax"
+      - dependency-name: "copy-webpack-plugin"
+      - dependency-name: "serialize-javascript"
+      - dependency-name: "css-minimizer-webpack-plugin"
+      - dependency-name: "json-minimizer-webpack-plugin"
     labels:
       - "PR: waiting for review"
       - "PR: dependencies"

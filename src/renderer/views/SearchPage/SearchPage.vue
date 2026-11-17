@@ -239,6 +239,7 @@ async function getNextpageLocal(payload) {
     const { results, continuationData } = await getLocalSearchContinuation(payload.options.nextPageRef)
 
     if (results.length === 0) {
+      nextPageRef.value = null
       return
     }
 
@@ -287,6 +288,7 @@ async function performSearchInvidious(payload, options = { resetSearchPage: fals
   try {
     const results = await getInvidiousSearchResults(payload.query, searchPage.value, payload.searchSettings)
     if (!results) {
+      isLoading.value = false
       return
     }
 

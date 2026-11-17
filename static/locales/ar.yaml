@@ -207,6 +207,7 @@ Settings:
     General Settings: 'العامة'
     Fallback to Non-Preferred Backend on Failure: 'الرجوع إلى الواجهة الخلفية الغير مفضلة عند الفشل'
     Enable Search Suggestions: 'تفعيل الإقتراحات عند البحث'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'الصفحة ‪المقصودة الافتراضية'
     Locale Preference: 'اللغات المفضلة'
     Preferred API Backend:
@@ -919,7 +920,7 @@ Comments:
   Hearted: القلب
   Subscribed: مشترك
   There are no comments available for this post: لا توجد تعليقات متاحة لهذا المنشور
-  Hide {replyCount} replies: ­إخفاء رد واحد | إخفاء {عدد الردود}
+  Hide {replyCount} replies: إخفاء رد واحد | إخفاء {replyCount} ردود
   View 1 reply from {channelName}: عرض رد واحد من {channelName}
   View {replyCount} replies from {channelName} and others: عرض {replyCount} ردًا من {channelName} وآخرين
 Up Next: 'التالي'
@@ -982,6 +983,7 @@ More: المزيد
 Playing Next Video Interval: سيتم تشغيل الفيديو التالي على الفور.| إضغط للإلغاء.| سيبدأ الفيديو التالي في {nextVideoInterval} ثانية.| إضغط للإلغاء.
 Unknown YouTube url type, cannot be opened in app: نوع URL غير معروف على YouTube، لا يمكن فتحه في التطبيق
 Open New Window: افتح نافذة جديدة
+Reload: Reload
 Default Invidious instance has been cleared: تم مسح مثيل Invidious الافتراضي
 Default Invidious instance has been set to {instance}: تم تعيين المثيل الافتراضي Invidious إلى {instance}
 Search Bar:

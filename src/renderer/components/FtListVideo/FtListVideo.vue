@@ -301,7 +301,7 @@
 
 <script setup>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 
@@ -317,13 +317,19 @@ import {
   getRelativeTimeFromDate,
   isNumberRounded,
   openExternalLink,
+  openExternalPlayer,
   showToast,
   toDistractionFreeTitle,
   deepCopy,
   debounce
 } from '../../helpers/utils.js'
 import { deArrowData, deArrowThumbnail } from '../../helpers/sponsorblock.js'
+import { openAndroidExternalPlayer } from '../../helpers/android/external-player'
+import { getOriginalVideoTitle } from '../../helpers/api/original-video-title.mjs'
 import thumbnailPlaceholder from '../../assets/img/thumbnail_placeholder.svg'
+
+const originalTitles = new Map()
+const originalTitleRequests = new Map()
 
 const props = defineProps({
   data: {
@@ -418,6 +424,7 @@ const route = useRoute()
 
 const id = ref('')
 const title = ref('')
+const originalTitle = ref('')
 const channelName = ref(null)
 const channelId = ref(null)
 const collaborators = ref([])
@@ -808,7 +815,9 @@ const hideVideoViews = computed(() => store.getters.getHideVideoViews)
 const addWatchedStyle = computed(() => historyEntryExists.value && !inHistory.value)
 
 /** @type {import('vue').ComputedRef<string>} */
-const externalPlayer = computed(() => store.getters.getExternalPlayer)
+const externalPlayer = computed(() => process.env.IS_ANDROID
+  ? store.getters.getExternalPlayer !== '' ? t('Settings.External Player Settings.External Player') : ''
+  : store.getters.getExternalPlayer)
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const externalPlayerIsDefaultViewingMode = computed(() => {
@@ -832,10 +841,14 @@ const saveVideoHistoryWithLastViewedPlaylist = computed(() => store.getters.getS
 const showDistractionFreeTitles = computed(() => store.getters.getShowDistractionFreeTitles)
 
 /** @type {import('vue').ComputedRef<string>} */
+const useOriginalVideoTitles = computed(() => store.getters.getUseOriginalVideoTitles)
+
 const displayTitle = computed(() => {
   let title_
   if (showDeArrowTitle.value && deArrowCache.value?.title) {
     title_ = deArrowCache.value.title
+  } else if (useOriginalVideoTitles.value && originalTitle.value) {
+    title_ = originalTitle.value
   } else {
     title_ = title.value
   }
@@ -1032,8 +1045,18 @@ function toggleDeArrow() {
   }
 }
 
-function handleExternalPlayer() {
+async function handleExternalPlayer() {
   emit('pause-player')
+
+  if (process.env.IS_ANDROID) {
+    await openAndroidExternalPlayer({
+      videoId: id.value,
+      title: displayTitle.value,
+      playlistId: playlistIdFinal.value,
+      startTime: watchProgress.value
+    })
+    return
+  }
 
   const payload = {
     videoId: id.value,
@@ -1056,9 +1079,7 @@ function handleExternalPlayer() {
     })
   }
 
-  if (process.env.IS_ELECTRON) {
-    window.ftElectron.openInExternalPlayer(payload)
-  }
+  openExternalPlayer(payload)
 
   if (rememberHistory.value) {
     markAsWatched()
@@ -1068,6 +1089,7 @@ function handleExternalPlayer() {
 function parseVideoData() {
   id.value = props.data.videoId
   title.value = props.data.title
+  originalTitle.value = props.data.originalTitle ?? originalTitles.get(id.value) ?? ''
 
   channelName.value = props.data.author ?? null
   collaborators.value = props.data.collaborators ?? []
@@ -1316,6 +1338,38 @@ function onDragStart(event) {
 }
 
 parseVideoData()
+
+async function loadOriginalTitle() {
+  if (!(process.env.SUPPORTS_LOCAL_API && backendPreference.value === 'local' && useOriginalVideoTitles.value && !originalTitle.value)) {
+    return
+  }
+
+  if (originalTitleRequests.has(id.value)) {
+    originalTitle.value = await originalTitleRequests.get(id.value)
+    return
+  }
+
+  const request = (async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const title_ = await getOriginalVideoTitle(id.value)
+        if (title_) return title_
+      } catch {
+        // Retry transient YouTube/WebView requests.
+      }
+    }
+    return ''
+  })()
+
+  originalTitleRequests.set(id.value, request)
+  originalTitle.value = await request
+  originalTitleRequests.delete(id.value)
+  if (originalTitle.value) {
+    originalTitles.set(id.value, originalTitle.value)
+  }
+}
+
+onMounted(loadOriginalTitle)
 
 showDeArrowTitle.value = useDeArrowTitles.value
 showDeArrowThumbnail.value = useDeArrowThumbnails.value

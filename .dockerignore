@@ -1,0 +1,10 @@
+.git
+node_modules
+dist
+build
+coverage
+android/.gradle
+android/app/build
+*.log
+android/keystore.properties
+**/*.keystore

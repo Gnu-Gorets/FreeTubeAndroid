@@ -24,6 +24,7 @@ Close: 'Bağla'
 Back: 'Geri'
 Forward: 'İrəli'
 Open New Window: 'Yeni Pəncərə Aç'
+Reload: Reload
 
 Version {versionNumber} is now available!  Click for more details: '{versionNumber} versiyası indi mövcuddur!  Daha çox təfərrüat üçün kliklə'
 Download From Site: 'Saytdan Yüklə'
@@ -209,6 +210,7 @@ Settings:
     Check for Updates: 'Yeniləmələri Yoxlayın'
     Fallback to Non-Preferred Backend on Failure: 'Uğursuzluqda Üstünlük Verilməyən Arxa Uca Qayıdış'
     Enable Search Suggestions: 'Axtarış Təkliflərini Aktivləşdirin'
+    Use Original Video Titles: Use Original Video Titles
     Default Landing Page: 'İlkin Açılış Səhifəsi'
     Locale Preference: 'Bölgə Üstünlüyü'
     System Default: 'Sistem Standartı'

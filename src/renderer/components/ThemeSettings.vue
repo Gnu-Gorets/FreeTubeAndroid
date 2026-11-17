@@ -39,7 +39,7 @@
         />
       </div>
     </div>
-    <template v-if="usingElectron">
+    <template v-if="usingElectron || usingAndroid">
       <FtFlexBox>
         <FtSlider
           :label="$t('Settings.Theme Settings.UI Scale')"
@@ -48,6 +48,7 @@
           :max-value="300"
           :step="5"
           value-extension="%"
+          test-id="ui-scale"
           @change="updateUiScale"
         />
       </FtFlexBox>
@@ -280,6 +281,7 @@ function updateUiScale(value) {
 
 /** @type {boolean} */
 const usingElectron = process.env.IS_ELECTRON
+const usingAndroid = process.env.IS_ANDROID
 
 const RESTART_PROMPT_VALUES = [
   'restart',

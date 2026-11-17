@@ -6,8 +6,11 @@ import store from '../../store/index'
 import { KeyboardShortcuts } from '../../../constants'
 import { AudioTrackSelection } from './player-components/AudioTrackSelection'
 import { FullWindowButton } from './player-components/FullWindowButton'
+import { FitScreenButton } from './player-components/FitScreenButton'
 import { LegacyQualitySelection } from './player-components/LegacyQualitySelection'
+import { DashQualitySelection } from './player-components/DashQualitySelection'
 import { ScreenshotButton } from './player-components/ScreenshotButton'
+import { PictureInPictureButton } from './player-components/PictureInPictureButton'
 import { StatsButton } from './player-components/StatsButton'
 import { TheatreModeButton } from './player-components/TheatreModeButton'
 import { AutoplayToggle } from './player-components/AutoplayToggle'
@@ -32,6 +35,10 @@ import {
 } from '../../helpers/utils'
 import { MANIFEST_TYPE_SABR } from '../../helpers/player/SabrManifestParser'
 import { setupSabrScheme } from '../../helpers/player/SabrSchemePlugin'
+import { STATE_BUFFERING, STATE_PAUSED, STATE_PLAYING, updateMediaSessionState } from '../../helpers/android/media-session'
+import { getNetworkType } from '../../helpers/android/network'
+import { getDefaultQualityForNetwork } from '../../helpers/player/network-quality.mjs'
+import { addAndroidDoubleTapSeeking, addAndroidPinchZoom } from '../../helpers/player/android-double-tap.mjs'
 
 /** @typedef {import('../../helpers/sponsorblock').SponsorBlockCategory} SponsorBlockCategory */
 
@@ -149,6 +156,10 @@ export default defineComponent({
       type: Boolean,
       default: false
     },
+    autoplayOnLoad: {
+      type: Boolean,
+      default: false
+    },
     watchingPlaylist: {
       type: Boolean,
       default: false
@@ -181,6 +192,7 @@ export default defineComponent({
   emits: [
     'error',
     'loaded',
+    'play',
     'ended',
     'timeupdate',
     'toggle-autoplay',
@@ -221,6 +233,7 @@ export default defineComponent({
     const activeLegacyFormat = shallowRef(null)
 
     const fullWindowEnabled = ref(false)
+    const fullscreenLandscape = ref(false)
     const startInFullwindow = props.startInFullwindow
     let startInFullscreen = props.startInFullscreen
     let startInPip = props.startInPip
@@ -290,20 +303,21 @@ export default defineComponent({
       })
     })
 
-    /** @type {import('vue').ComputedRef<number | 'auto'>} */
-    const defaultQuality = computed(() => {
-      const value = store.getters.getDefaultQuality
+    const wifiDefaultQuality = computed(() => parseInt(store.getters.getWifiDefaultQuality))
+    const mobileDefaultQuality = computed(() => parseInt(store.getters.getMobileDefaultQuality))
 
-      // TODO: Revert when auto is fixed (720 is the default setttings value)
-      if (value === 'auto') { return 720 }
-      // if (value === 'auto') { return value }
+    const defaultQuality = computed(() => getDefaultQualityForNetwork(
+      process.env.IS_ANDROID ? getNetworkType() : 'unknown',
+      wifiDefaultQuality.value,
+      mobileDefaultQuality.value,
+      720
+    ))
 
-      return parseInt(value)
-    })
+    const initialQuality = defaultQuality
 
     /** @type {import('vue').ComputedRef<boolean>} */
     const enterFullscreenOnDisplayRotate = computed(() => {
-      return store.getters.getEnterFullscreenOnDisplayRotate
+      return !process.env.IS_ANDROID && store.getters.getEnterFullscreenOnDisplayRotate
     })
 
     watch(enterFullscreenOnDisplayRotate, (newValue) => {
@@ -323,6 +337,17 @@ export default defineComponent({
       return props.manifestSrc.includes('/force_finished/1') ||
         // Check how many seconds we are allowed to seek, 30 is too short, 3600 is an hour which is great
         (match != null && parseInt(match[1] || '0') > 30)
+    })
+
+    /** @type {import('vue').ComputedRef<boolean>} */
+    const fitVideoToFullscreen = computed(() => {
+      return store.getters.getFitVideoToFullscreen
+    })
+
+    watch(fitVideoToFullscreen, (newValue) => {
+      events.dispatchEvent(new CustomEvent('setFitScreen', {
+        detail: newValue
+      }))
     })
 
     /** @type {import('vue').ComputedRef<number>} */
@@ -817,14 +842,20 @@ export default defineComponent({
     })
 
     const uiConfig = computed(() => {
+      const pictureInPictureButton = process.env.IS_ANDROID ? 'ft_picture_in_picture' : 'picture_in_picture'
       const controlPanelElements = [
         'ft_skip_previous',
         'play_pause',
         'ft_skip_next',
         'mute_volume',
         'time_and_duration',
-        'spacer'
+        'spacer',
+        'ft_fit_screen'
       ]
+
+      const qualitySelectionElement = props.format === 'legacy'
+        ? 'ft_legacy_quality'
+        : props.format === 'dash' ? 'ft_dash_quality' : 'quality'
 
       /** @type {shaka.extern.UIConfiguration} */
       const uiConfig = {
@@ -846,14 +877,14 @@ export default defineComponent({
       if (onlyUseOverFlowMenu.value) {
         uiConfig.overflowMenuButtons = [
           'ft_autoplay_toggle',
-          props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+          qualitySelectionElement,
           'playback_rate',
           'captions-settings',
           'ft_audio_tracks',
           'chapter',
           'loop',
           'ft_screenshot',
-          'picture_in_picture',
+          pictureInPictureButton,
           'ft_full_window',
           'recenter_vr',
           'toggle_stereoscopic',
@@ -861,13 +892,17 @@ export default defineComponent({
 
         elementList = uiConfig.overflowMenuButtons
 
-        uiConfig.controlPanelElements.push('overflow_menu', 'fullscreen')
+        uiConfig.controlPanelElements.push('overflow_menu')
+        if (process.env.IS_ANDROID && props.format !== 'audio') {
+          uiConfig.controlPanelElements.push(pictureInPictureButton, 'ft_full_window')
+        }
+        uiConfig.controlPanelElements.push('fullscreen')
       } else {
         uiConfig.controlPanelElements.push(
           'ft_screenshot',
           'ft_autoplay_toggle',
           'overflow_menu',
-          'picture_in_picture',
+          pictureInPictureButton,
           'ft_theatre_mode',
           'ft_full_window',
           'fullscreen'
@@ -877,7 +912,7 @@ export default defineComponent({
           'ft_audio_tracks',
           'captions-settings',
           'playback_rate',
-          props.format === 'legacy' ? 'ft_legacy_quality' : 'quality',
+          qualitySelectionElement,
           'chapter',
           'loop',
           'recenter_vr',
@@ -885,6 +920,16 @@ export default defineComponent({
         )
 
         elementList = uiConfig.controlPanelElements
+      }
+
+      if (process.env.IS_ANDROID) {
+        removeFromArrayIfExists(uiConfig.overflowMenuButtons, pictureInPictureButton)
+        removeFromArrayIfExists(uiConfig.controlPanelElements, 'ft_full_window')
+        removeFromArrayIfExists(uiConfig.overflowMenuButtons, 'ft_full_window')
+        if (props.format !== 'audio' && !uiConfig.controlPanelElements.includes(pictureInPictureButton)) {
+          uiConfig.controlPanelElements.push(pictureInPictureButton)
+        }
+        uiConfig.overflowMenuButtons.push('ft_full_window', 'ft_stats')
       }
 
       if (!enableScreenshot.value || props.format === 'audio') {
@@ -900,7 +945,7 @@ export default defineComponent({
       }
 
       if (props.format === 'audio') {
-        removeFromArrayIfExists(elementList, 'picture_in_picture')
+        removeFromArrayIfExists(elementList, pictureInPictureButton)
       }
 
       if (isLive.value) {
@@ -941,8 +986,8 @@ export default defineComponent({
         /** @type {shaka.extern.UIConfiguration} */
         const firstTimeConfig = {
           addSeekBar: seekingIsPossible.value,
-          customContextMenu: true,
-          contextMenuElements: ['ft_stats'],
+          customContextMenu: !process.env.IS_ANDROID,
+          contextMenuElements: process.env.IS_ANDROID ? [] : ['ft_stats'],
           enableTooltips: true,
           seekBarColors: {
             // shaka-player's chapter markers only show up part of the time for the DASH and audio formats
@@ -989,6 +1034,11 @@ export default defineComponent({
           documentPictureInPicture: {
             enabled: false
           }
+        }
+
+        if (process.env.IS_ANDROID) {
+          firstTimeConfig.seekOnTaps = true
+          firstTimeConfig.doubleClickForFullscreen = false
         }
 
         if (document.pictureInPictureEnabled) {
@@ -1049,9 +1099,72 @@ export default defineComponent({
       }
     }
 
+    let longPressTimer
+    let longPressPlaybackRate
+    let longPressControlsContainer
+    let removeDoubleTapSeeking
+    let removePinchZoom
+
+    function startLongPressPlayback(event) {
+      if (!process.env.IS_ANDROID || event.pointerType === 'mouse' || video.value.paused) return
+      if (!event.isPrimary) {
+        stopLongPressPlayback()
+        return
+      }
+      if (event.target.closest?.('button, input, .shaka-seek-bar-container')) return
+
+      clearTimeout(longPressTimer)
+      longPressTimer = setTimeout(() => {
+        longPressPlaybackRate = video.value.playbackRate
+        video.value.playbackRate = Math.min(2, maxVideoPlaybackRate.value)
+        showValueChange(`${video.value.playbackRate.toFixed(2)}x`)
+      }, 500)
+    }
+
+    function stopLongPressPlayback() {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+      if (longPressPlaybackRate !== undefined) {
+        video.value.playbackRate = longPressPlaybackRate
+        longPressPlaybackRate = undefined
+      }
+    }
+
+    function addLongPressPlaybackListeners(controlsContainer) {
+      if (!process.env.IS_ANDROID) return
+      removeLongPressPlaybackListeners()
+      longPressControlsContainer = controlsContainer
+      removeDoubleTapSeeking = addAndroidDoubleTapSeeking(controlsContainer, ui.getControls(), direction => {
+        if (!canSeek()) return 0
+        const seconds = direction * defaultSkipInterval.value
+        seekBySeconds(seconds, true)
+        return seconds
+      })
+      removePinchZoom = addAndroidPinchZoom(container.value, video.value, showValueChange)
+      controlsContainer.addEventListener('pointerdown', startLongPressPlayback)
+      controlsContainer.addEventListener('pointerup', stopLongPressPlayback)
+      controlsContainer.addEventListener('pointercancel', stopLongPressPlayback)
+      controlsContainer.addEventListener('pointerleave', stopLongPressPlayback)
+    }
+
+    function removeLongPressPlaybackListeners() {
+      if (!longPressControlsContainer) return
+      removeDoubleTapSeeking?.()
+      removeDoubleTapSeeking = null
+      removePinchZoom?.()
+      removePinchZoom = null
+      longPressControlsContainer.removeEventListener('pointerdown', startLongPressPlayback)
+      longPressControlsContainer.removeEventListener('pointerup', stopLongPressPlayback)
+      longPressControlsContainer.removeEventListener('pointercancel', stopLongPressPlayback)
+      longPressControlsContainer.removeEventListener('pointerleave', stopLongPressPlayback)
+      stopLongPressPlayback()
+      longPressControlsContainer = null
+    }
+
     function addUICustomizations() {
       /** @type {HTMLDivElement} */
       const controlsContainer = ui.getControls().getControlsContainer()
+      addLongPressPlaybackListeners(controlsContainer)
 
       controlsContainer.removeEventListener('wheel', handleControlsContainerWheel)
       controlsContainer.removeEventListener('click', handleControlsContainerClick, true)
@@ -1211,18 +1324,27 @@ export default defineComponent({
     // #region video event handlers
 
     function handlePlay() {
+      emit('play')
       startPowerSaveBlocker()
+      if (process.env.IS_ANDROID) window.Android?.enableKeepScreenOn()
 
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing'
+      }
+      if (process.env.IS_ANDROID && window.Android) {
+        window.Android.updateMediaSessionState(3, Math.round(video.value.currentTime * 1000))
       }
     }
 
     function handlePause() {
       stopPowerSaveBlocker()
+      if (process.env.IS_ANDROID) window.Android?.disableKeepScreenOn()
 
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused'
+      }
+      if (process.env.IS_ANDROID && window.Android) {
+        window.Android.updateMediaSessionState(2, Math.round(video.value.currentTime * 1000))
       }
     }
 
@@ -1232,11 +1354,20 @@ export default defineComponent({
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'none'
       }
+      if (process.env.IS_ANDROID && window.Android) {
+        window.Android.updateMediaSessionState(0, Math.round(video.value.currentTime * 1000))
+      }
 
       emit('ended')
     }
 
     function handleCanPlay() {
+      isBuffering.value = false
+
+      if (props.autoplayOnLoad && video.value.paused) {
+        video.value.play().catch(error => console.warn('[Player] Downloaded next autoplay failed', error))
+      }
+
       // PiP can only be activated once the video's readState and video track are populated
       if (startInPip && props.format !== 'audio' && ui.getControls().isPiPAllowed() && process.env.IS_ELECTRON) {
         startInPip = false
@@ -1379,11 +1510,12 @@ export default defineComponent({
           request.body = new Uint8Array([0x78, 0]) // protobuf: { 15: 0 } (no idea what it means but this is what YouTube uses)
 
           if (request.headers.Range) {
-            request.uris[0] += `&range=${request.headers.Range.split('=')[1]}`
+            url.searchParams.set('range', request.headers.Range.split('=')[1])
             delete request.headers.Range
           }
 
-          request.uris[0] += '&alr=yes'
+          url.searchParams.set('alr', 'yes')
+          request.uris[0] = url.toString()
         }
       }
     }
@@ -1566,12 +1698,12 @@ export default defineComponent({
       const isPortrait = legacyFormats[0].height > legacyFormats[0].width
 
       let matches = legacyFormats.filter(variant => {
-        return previousQuality === isPortrait ? variant.width : variant.height
+        return previousQuality === (isPortrait ? variant.width : variant.height)
       })
 
       if (matches.length === 0) {
         matches = legacyFormats.filter(variant => {
-          return previousQuality > isPortrait ? variant.width : variant.height
+          return previousQuality > (isPortrait ? variant.width : variant.height)
         })
 
         if (matches.length > 0) {
@@ -1677,10 +1809,10 @@ export default defineComponent({
       const codecsMatch = mimeType.match(/codecs="(?<videoCodec>.+), ?(?<audioCodec>.+)"/)
 
       stats.codecs.audioItag = itag
-      stats.codecs.audioCodec = codecsMatch.groups.audioCodec
+      stats.codecs.audioCodec = codecsMatch?.groups?.audioCodec || ''
 
       stats.codecs.videoItag = itag
-      stats.codecs.videoCodec = codecsMatch.groups.videoCodec
+      stats.codecs.videoCodec = codecsMatch?.groups?.videoCodec || ''
 
       stats.resolution.frameRate = fps
 
@@ -1881,6 +2013,23 @@ export default defineComponent({
       shakaOverflowMenu.registerElement('ft_theatre_mode', new TheatreModeButtonFactory())
     }
 
+    function registerFitScreenButton() {
+      events.addEventListener('toggleFitScreen', (/** @type {CustomEvent} */ event) => {
+        store.dispatch('updateFitVideoToFullscreen', event.detail)
+      })
+
+      /**
+       * @implements {shaka.extern.IUIElement.Factory}
+       */
+      class FitScreenButtonFactory {
+        create(rootElement, controls) {
+          return new FitScreenButton(fitVideoToFullscreen.value, events, rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_fit_screen', new FitScreenButtonFactory())
+    }
+
     function registerFullWindowButton() {
       events.addEventListener('setFullWindow', (/** @type {CustomEvent} */ event) => {
         if (event.detail) {
@@ -1950,6 +2099,17 @@ export default defineComponent({
       shakaOverflowMenu.registerElement('ft_legacy_quality', new LegacyQualitySelectionFactory())
     }
 
+    function registerDashQualitySelection() {
+      class DashQualitySelectionFactory {
+        create(rootElement, controls) {
+          return new DashQualitySelection(rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+      shakaOverflowMenu.registerElement('ft_dash_quality', new DashQualitySelectionFactory())
+    }
+
     function registerStatsButton() {
       events.addEventListener('setStatsVisibility', (/** @type {CustomEvent} */ event) => {
         showStats.value = event.detail
@@ -1968,7 +2128,23 @@ export default defineComponent({
         }
       }
 
-      shakaContextMenu.registerElement('ft_stats', new StatsButtonFactory())
+      if (!process.env.IS_ANDROID) {
+        shakaContextMenu.registerElement('ft_stats', new StatsButtonFactory())
+      }
+      shakaOverflowMenu.registerElement('ft_stats', new StatsButtonFactory())
+    }
+
+    function registerPictureInPictureButton() {
+      if (!process.env.IS_ANDROID) return
+
+      class PictureInPictureButtonFactory {
+        create(rootElement, controls) {
+          return new PictureInPictureButton(events, rootElement, controls)
+        }
+      }
+
+      shakaControls.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
+      shakaOverflowMenu.registerElement('ft_picture_in_picture', new PictureInPictureButtonFactory())
     }
 
     function registerScreenshotButton() {
@@ -2037,10 +2213,17 @@ export default defineComponent({
       shakaControls.registerElement('ft_full_window', null)
       shakaOverflowMenu.registerElement('ft_full_window', null)
 
+      shakaControls.registerElement('ft_fit_screen', null)
+
       shakaControls.registerElement('ft_legacy_quality', null)
       shakaOverflowMenu.registerElement('ft_legacy_quality', null)
+      shakaControls.registerElement('ft_dash_quality', null)
+      shakaOverflowMenu.registerElement('ft_dash_quality', null)
 
-      shakaContextMenu.registerElement('ft_stats', null)
+      if (!process.env.IS_ANDROID) {
+        shakaContextMenu.registerElement('ft_stats', null)
+      }
+      shakaOverflowMenu.registerElement('ft_stats', null)
 
       shakaControls.registerElement('ft_screenshot', null)
       shakaOverflowMenu.registerElement('ft_screenshot', null)
@@ -2354,7 +2537,7 @@ export default defineComponent({
       if (event.shiftKey && event.key === '?') {
         event.preventDefault()
 
-        if (ui.getControls().isFullScreenEnabled()) {
+        if (!process.env.IS_ANDROID && ui.getControls().isFullScreenEnabled()) {
           ui.getControls().toggleFullScreen()
         }
 
@@ -2398,10 +2581,12 @@ export default defineComponent({
 
       switch (event.key.toLowerCase()) {
         case KeyboardShortcuts.VIDEO_PLAYER.GENERAL.FULLSCREEN:
-          // Toggle full screen
+          // Android fullscreen changes only through the fullscreen button.
           event.preventDefault()
-          ui.getControls().toggleFullScreen()
-          blurTooltipButtons()
+          if (!process.env.IS_ANDROID) {
+            ui.getControls().toggleFullScreen()
+            blurTooltipButtons()
+          }
           break
         case 'escape':
           // Exit full window
@@ -2541,7 +2726,9 @@ export default defineComponent({
           // Toggle picture in picture
           if (props.format !== 'audio') {
             const controls = ui.getControls()
-            if (controls.isPiPAllowed()) {
+            if (process.env.IS_ANDROID) {
+              window.Android?.enterPictureInPicture(!video_.paused)
+            } else if (controls.isPiPAllowed()) {
               controls.togglePiP()
             }
           }
@@ -2636,6 +2823,8 @@ export default defineComponent({
      * @param {object?} details
      */
     function handleError(error, context, details) {
+      isBuffering.value = false
+
       // These two errors are just wrappers around another error, so use the original error instead
       // As they can be nested (e.g. multiple googlevideo redirects because the Invidious server was far away from the user) we should pick the inner most one
       while (error.code === ErrorCode.REQUEST_FILTER_ERROR || error.code === ErrorCode.RESPONSE_FILTER_ERROR) {
@@ -2769,8 +2958,30 @@ export default defineComponent({
       isOffline.value = true
     }
 
+    function updateFullscreenOrientation() {
+      const fullscreenElement = document.fullscreenElement
+      const playerBounds = container.value?.getBoundingClientRect()
+      const orientationAngle = screen.orientation?.angle
+      let isLandscape = orientationAngle === 90 || orientationAngle === 270
+
+      if (process.env.IS_ANDROID) {
+        isLandscape = window.Android?.isLandscape?.() === true
+      } else if (orientationAngle === undefined) {
+        isLandscape = playerBounds !== undefined && playerBounds.width > playerBounds.height
+      }
+
+      fullscreenLandscape.value = fullscreenElement === container.value && isLandscape
+    }
+
     function fullscreenChangeHandler() {
-      nextTick(showOverlayControls)
+      nextTick(() => {
+        updateFullscreenOrientation()
+        showOverlayControls()
+      })
+    }
+
+    function fullscreenResizeHandler() {
+      updateFullscreenOrientation()
     }
 
     window.addEventListener('online', onlineHandler)
@@ -2788,8 +2999,38 @@ export default defineComponent({
     // #region setup
     const initLoadWaitTimeToastAC = new AbortController()
 
+    const mediaPlay = () => video.value?.play()
+    const mediaPause = () => video.value?.pause()
+    const mediaSeek = event => {
+      if (video.value && Number.isFinite(event.detail?.position)) video.value.currentTime = event.detail.position / 1000
+    }
+    let mediaSeekInterval
+    const startMediaSeek = direction => {
+      clearInterval(mediaSeekInterval)
+      seekBySeconds(direction * defaultSkipInterval.value, true)
+      mediaSeekInterval = setInterval(() => seekBySeconds(direction, true), 250)
+    }
+    const mediaSeekForward = () => seekBySeconds(defaultSkipInterval.value, true)
+    const mediaSeekBackward = () => seekBySeconds(-defaultSkipInterval.value, true)
+    const mediaSeekForwardStart = () => startMediaSeek(1)
+    const mediaSeekBackwardStart = () => startMediaSeek(-1)
+    const mediaSeekStop = () => clearInterval(mediaSeekInterval)
+
     onMounted(async () => {
       const videoElement = video.value
+      if (process.env.IS_ANDROID) {
+        window.addEventListener('media-play', mediaPlay)
+        window.addEventListener('media-pause', mediaPause)
+        window.addEventListener('media-seek', mediaSeek)
+        window.addEventListener('media-seek-forward', mediaSeekForward)
+        window.addEventListener('media-seek-backward', mediaSeekBackward)
+        window.addEventListener('media-seek-forward-start', mediaSeekForwardStart)
+        window.addEventListener('media-seek-backward-start', mediaSeekBackwardStart)
+        window.addEventListener('media-seek-stop', mediaSeekStop)
+        videoElement.addEventListener('play', () => updateMediaSessionState(STATE_PLAYING))
+        videoElement.addEventListener('pause', () => updateMediaSessionState(STATE_PAUSED))
+        videoElement.addEventListener('timeupdate', () => updateMediaSessionState(videoElement.paused ? STATE_PAUSED : STATE_PLAYING, Math.floor(videoElement.currentTime * 1000)))
+      }
 
       const volume = sessionStorage.getItem('volume')
       if (volume !== null) {
@@ -2830,6 +3071,9 @@ export default defineComponent({
 
       player.addEventListener('buffering', event => {
         isBuffering.value = event.buffering
+        if (process.env.IS_ANDROID && event.buffering) {
+          updateMediaSessionState(STATE_BUFFERING, Math.floor(videoElement.currentTime * 1000))
+        }
       })
 
       player.addEventListener('error', event => handleError(event.detail, 'shaka error handler'))
@@ -2852,12 +3096,15 @@ export default defineComponent({
       videoResizeObserver.observe(videoElement)
 
       registerScreenshotButton()
+      registerPictureInPictureButton()
       registerAudioTrackSelection()
       registerAutoplayToggle()
 
       registerTheatreModeButton()
       registerFullWindowButton()
+      registerFitScreenButton()
       registerLegacyQualitySelection()
+      registerDashQualitySelection()
       registerStatsButton()
       registerSkipButtons()
 
@@ -2873,9 +3120,15 @@ export default defineComponent({
       controls.addEventListener('uiupdated', addUICustomizations)
       configureUI(true)
 
+      if (process.env.IS_ANDROID) {
+        window.Android?.setSwipeRefreshEnabled(false)
+      }
+
       document.removeEventListener('keydown', keyboardShortcutHandler)
       document.addEventListener('keydown', keyboardShortcutHandler)
       document.addEventListener('fullscreenchange', fullscreenChangeHandler)
+      window.addEventListener('resize', fullscreenResizeHandler)
+      window.addEventListener('orientationchange', fullscreenResizeHandler)
 
       player.addEventListener('loading', () => {
         hasLoaded.value = false
@@ -2917,6 +3170,8 @@ export default defineComponent({
       })
     })
     onUnmounted(() => {
+      isBuffering.value = false
+      removeLongPressPlaybackListeners()
       initLoadWaitTimeToastAC.abort()
     })
 
@@ -2962,7 +3217,7 @@ export default defineComponent({
 
           if (defaultQuality.value !== 'auto') {
             if (props.format === 'dash') {
-              setDashQuality(defaultQuality.value)
+              setDashQuality(initialQuality.value)
             } else {
               let variants = player.getVariantTracks()
 
@@ -2981,7 +3236,7 @@ export default defineComponent({
           handleError(error, 'loading dash/audio manifest and setting default quality in mounted')
         }
       } else {
-        await setLegacyQuality(props.startTime)
+        await setLegacyQuality(props.startTime, initialQuality.value)
       }
     }
 
@@ -3284,10 +3539,16 @@ export default defineComponent({
 
       document.removeEventListener('keydown', keyboardShortcutHandler)
       document.removeEventListener('fullscreenchange', fullscreenChangeHandler)
+      window.removeEventListener('resize', fullscreenResizeHandler)
+      window.removeEventListener('orientationchange', fullscreenResizeHandler)
 
       if (containerResizeObserver) {
         containerResizeObserver.disconnect()
         containerResizeObserver = null
+      }
+
+      if (process.env.IS_ANDROID) {
+        window.Android?.setSwipeRefreshEnabled(true)
       }
 
       if (videoResizeObserver) {
@@ -3307,6 +3568,15 @@ export default defineComponent({
 
       window.removeEventListener('online', onlineHandler)
       window.removeEventListener('offline', offlineHandler)
+      window.removeEventListener('media-play', mediaPlay)
+      window.removeEventListener('media-pause', mediaPause)
+      window.removeEventListener('media-seek', mediaSeek)
+      window.removeEventListener('media-seek-forward', mediaSeekForward)
+      window.removeEventListener('media-seek-backward', mediaSeekBackward)
+      window.removeEventListener('media-seek-forward-start', mediaSeekForwardStart)
+      window.removeEventListener('media-seek-backward-start', mediaSeekBackwardStart)
+      window.removeEventListener('media-seek-stop', mediaSeekStop)
+      clearInterval(mediaSeekInterval)
     })
 
     // #endregion tear down
@@ -3341,6 +3611,7 @@ export default defineComponent({
      */
     async function destroyPlayer() {
       ignoreErrors = true
+      removeLongPressPlaybackListeners()
 
       let uiState = { startNextVideoInFullscreen: false, startNextVideoInFullwindow: false, startNextVideoInPip: false }
 
@@ -3382,8 +3653,15 @@ export default defineComponent({
       return uiState
     }
 
+    function getExternalPlayerUrl() {
+      const currentSrc = video.value?.currentSrc
+      if (currentSrc?.startsWith('http')) return currentSrc
+      return props.manifestSrc?.startsWith('http') ? props.manifestSrc : null
+    }
+
     expose({
       hasLoaded,
+      getExternalPlayerUrl,
 
       isPaused,
       pause,
@@ -3434,6 +3712,8 @@ export default defineComponent({
 
       fullWindowEnabled,
       forceAspectRatio,
+      fullscreenLandscape,
+      fitVideoToFullscreen,
 
       showStats,
       stats,
@@ -3444,6 +3724,7 @@ export default defineComponent({
 
       skippedSponsorBlockSegments,
 
+      isBuffering,
       showOfflineMessage,
 
       handlePlay,

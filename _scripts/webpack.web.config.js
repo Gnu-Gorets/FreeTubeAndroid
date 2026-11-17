@@ -13,12 +13,16 @@ const {
 } = require('./getShakaLocales')
 
 const isDevMode = process.env.NODE_ENV === 'development'
+const { version: swiperVersion } = JSON.parse(fs.readFileSync(path.join(__dirname, '../node_modules/swiper/package.json')))
 
 /** @type {import('webpack').Configuration} */
 const config = {
   name: 'web',
   mode: process.env.NODE_ENV,
   devtool: isDevMode ? 'eval-cheap-module-source-map' : false,
+  performance: {
+    hints: false,
+  },
   entry: {
     web: path.join(__dirname, '../src/renderer/main.js'),
   },
@@ -187,6 +191,7 @@ const config = {
       __VUE_I18N_LEGACY_API__: 'false',
       __VUE_I18N_FULL_INSTALL__: 'false',
       __INTLIFY_PROD_DEVTOOLS__: 'false',
+      'process.env.SWIPER_VERSION': `'${swiperVersion}'`
     }),
     new webpack.ProvidePlugin({
       process: 'process/browser.js'
@@ -205,6 +210,7 @@ const config = {
   resolve: {
     alias: {
       DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$: path.resolve(__dirname, '../src/datastores/handlers/web.js'),
+      android: path.resolve(__dirname, '../src/renderer/helpers/android/web.js'),
 
       // change to "shaka-player.ui-es2021.debug.js" to get debug logs (update jsconfig to get updated types)
       'shaka-player$': 'shaka-player/dist/shaka-player.ui-es2021.js',
@@ -231,7 +237,7 @@ config.plugins.push(
     'process.env.GEOLOCATION_NAMES': JSON.stringify(fs.readdirSync(path.join(__dirname, '..', 'static', 'geolocations')).map(filename => filename.replace('.json', ''))),
     'process.env.SHAKA_LOCALE_MAPPINGS': JSON.stringify(SHAKA_LOCALE_MAPPINGS),
     'process.env.SHAKA_LOCALES_PREBUNDLED': JSON.stringify(SHAKA_LOCALES_PREBUNDLED)
-  }),
+  })
 )
 
 module.exports = config

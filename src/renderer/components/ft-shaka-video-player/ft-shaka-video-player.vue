@@ -4,6 +4,7 @@
     class="ftVideoPlayer shaka-video-container"
     :class="{
       fullWindow: fullWindowEnabled,
+      fitScreen: fitVideoToFullscreen && fullscreenLandscape,
       sixteenByNine: forceAspectRatio && !fullWindowEnabled
     }"
   >
@@ -14,7 +15,7 @@
       preload="auto"
       crossorigin="anonymous"
       playsinline
-      :autoplay="autoplayVideos ? true : null"
+      :autoplay="autoplayVideos || autoplayOnLoad ? true : null"
       :poster="thumbnail"
       @play="handlePlay"
       @pause="handlePause"
@@ -37,6 +38,15 @@
       ref="vrCanvas"
       class="vrCanvas"
     />
+    <div
+      v-if="isBuffering"
+      class="bufferingOverlay"
+      aria-hidden="true"
+    >
+      <span
+        class="bufferingSpinner"
+      />
+    </div>
     <div
       v-if="showStats"
       class="stats"
