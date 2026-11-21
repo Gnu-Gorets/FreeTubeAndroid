@@ -510,7 +510,7 @@ export default defineComponent({
     }
   },
   methods: {
-    async reloadView() {
+    async onRouteChange() {
       if (this.isReloadingView) { return }
 
       try {
@@ -541,18 +541,13 @@ export default defineComponent({
         }
       } finally {
         this.isReloadingView = false
+      }
+    },
 
+    async reloadView() {
       try {
         this.isReloadingView = true
-
-<<<<<<< HEAD
         await this.handleRouteChange()
-=======
-      // react to route changes...
-      this.videoId = this.$route.params.id
-      this.resetVideoState()
-      await this.$nextTick()
->>>>>>> 2b799b73 (feat(android): add downloads feature (#8))
 
         if (this.$refs.player) {
           await this.destroyPlayer()
@@ -562,7 +557,6 @@ export default defineComponent({
         this.videoId = this.$route.params.id
         this.resetVideoState()
 
-<<<<<<< HEAD
         this.firstLoad = true
         this.videoPlayerLoaded = false
         this.activeFormat = this.defaultVideoFormat
@@ -570,6 +564,8 @@ export default defineComponent({
         this.checkIfTimestamp()
         this.checkIfPlaylist()
         this.setViewingModeOnRouteChange()
+
+        if (await this.loadDownloadedMission()) return
 
         switch (this.backendPreference) {
           case 'local':
@@ -581,17 +577,6 @@ export default defineComponent({
         }
       } finally {
         this.isReloadingView = false
-=======
-      if (await this.loadDownloadedMission()) return
-
-      switch (this.backendPreference) {
-        case 'local':
-          await this.getVideoInformationLocal()
-          break
-        case 'invidious':
-          this.getVideoInformationInvidious()
-          break
->>>>>>> 2b799b73 (feat(android): add downloads feature (#8))
       }
     },
 
