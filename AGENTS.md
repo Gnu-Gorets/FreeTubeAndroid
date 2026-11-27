@@ -8,7 +8,7 @@
 
 ## Checks and builds
 
-1. Host checks use `pnpm@11`:
+1. For host checks, use pnpm pinned in `package.json`:
 
 ```bash
 pnpm install --frozen-lockfile

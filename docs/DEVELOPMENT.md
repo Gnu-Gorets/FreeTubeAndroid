@@ -80,6 +80,22 @@ Install resulting APK from host with `adb` only after required device checks. de
 
 Android builds are functionally reproducible with documented Docker and toolchain workflow, but byte-for-byte APK reproducibility is not currently guaranteed. generated `assets/web.js` output/source map can differ between equivalent builds. Do not commit generated build output; validate functional artifacts with `assembleDebug` and device smoke tests.
 
+### F-Droid dependency checks
+
+F-Droid's `gradlew-fdroid --write-verification-metadata sha256 help` report includes dependencies used only by build and test tools. For example, Android Gradle Plugin pulls `io.opencensus:opencensus-api` and `io.opencensus:opencensus-proto` into host test tools through Unified Test Platform. Tracker flags in this report do not show whether those dependencies ship in APKs.
+
+Check release runtime dependencies from repository root:
+
+```bash
+docker compose run --rm android-build bash -lc \
+  'cd android && ./gradlew :app:dependencyInsight \
+   --configuration releaseRuntimeClasspath --dependency io.opencensus'
+```
+
+For debug builds, use `debugRuntimeClasspath`. To verify APK contents, extract every `classes*.dex` file from each APK and use `$ANDROID_HOME/build-tools/36.0.0/dexdump` in Docker. Check class descriptors for `Lio/opencensus/`.
+
+If neither check finds OpenCensus, report both results in F-Droid RFP. Do not exclude host test dependencies just to clear report flags.
+
 ## Required physical test device
 
 Android work must use connected physical test phone whenever available. Android has main personal and work profiles; all Android interaction through `adb` must use personal profile (`user 0`), never work profile.

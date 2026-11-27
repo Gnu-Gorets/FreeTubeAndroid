@@ -1,0 +1,5 @@
+FreeTube Android lets you watch YouTube without video ads and subscribe to channels without Google sign-in. Subscriptions, playlists, and watch history stay on your device.
+
+FreeTube Android does not use Google's official YouTube API. It can fetch videos directly from YouTube or through Invidious. With direct connections, YouTube can still see your video requests and IP address.
+
+FreeTube Android supports picture-in-picture, external players, SponsorBlock, themes, and profiles.
